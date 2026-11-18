@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { TlvError, concatBytes, encodeTlv, findTag, parseTlv } from "../src/tlv.js";
+import { concatBytes } from "../src/bytes.js";
+import { TlvError, encodeTlv, findTag, parseTlv } from "../src/tlv.js";
 
 const hex = (s: string) => Uint8Array.from(s.replace(/\s+/g, "").match(/../g)!.map((b) => parseInt(b, 16)));
 
@@ -17,8 +18,16 @@ describe("parseTlv", () => {
     expect([...t!.value]).toEqual([0xaa, 0xbb]);
   });
 
-  it("3バイトタグ(DF8101)", () => {
-    const [t] = parseTlv(hex("DF8101 01 FF"));
+  it("仕様書どおりタグは最大2バイト(住居地イメージ DFD1)", () => {
+    const [t] = parseTlv(hex("DFD1 02 AABB"));
+    expect(t!.tag).toBe(0xdfd1);
+    expect([...t!.value]).toEqual([0xaa, 0xbb]);
+    // 厳密な BER では D1 の b8 が立っているため長さバイトまでタグとして読み、壊れる
+    expect(() => parseTlv(hex("DFD1 02 AABB"), { strictBer: true })).toThrow(TlvError);
+  });
+
+  it("strictBer: 3バイトタグ(DF8101)", () => {
+    const [t] = parseTlv(hex("DF8101 01 FF"), { strictBer: true });
     expect(t!.tag).toBe(0xdf8101);
   });
 
@@ -60,6 +69,7 @@ describe("parseTlv", () => {
     ["値が足りない", "C0 05 0102"],
     ["長さがない", "C0"],
     ["タグが途中で終わる", "5F"],
+    ["2バイト目のタグがない", "DF"],
     ["長形式の長さが足りない", "C0 82 01"],
     ["不定長", "61 80 0000"],
     ["長さバイト数が過大", "C0 85 0000000001 00"],

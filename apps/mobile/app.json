@@ -31,7 +31,12 @@
         "react-native-nfc-manager",
         {
           "nfcPermission": "在留カードのICチップを読み取るためにNFCを使用します",
-          "selectIdentifiers": [],
+          "selectIdentifiers": [
+            "D392F0004F0100000000000000000000",
+            "D392F0004F0200000000000000000000",
+            "D392F0004F0300000000000000000000",
+            "D392F0004F0400000000000000000000"
+          ],
           "includeNdefEntitlement": false
         }
       ],

@@ -1,98 +1,109 @@
 /**
  * 在留カード IC の電子署名(チェックコード)検証。サーバー専用(node:crypto)。
  *
- * 署名対象: 券面(表)イメージと顔画像を連結したデータの SHA-256。
- * 方式: RSA PKCS#1 v1.5。公開鍵で復号した結果を計算したハッシュと比較する。
+ * - 旧様式(仕様書 Ver1.5 3.4.3): RSA 2048 / PKCS#1 v1.5。公開鍵で復号した結果はパディング + SHA-256 ハッシュ
+ *   (DigestInfo なし)。署名対象は 券面(表)イメージ(7000)||顔画像(3000) の値。
+ * - 第2世代・特定(3.4.3): ECDSA secp384r1 / SHA-256。チェックコードは r||s(96 バイト)。
+ *   署名対象は 券面記載事項(53)||顔画像(3000)||氏名イメージ(2500)。
  *
- * TODO(0-2): 仕様書で次を確定させ、SPEC_NOTES.md と合わせて固める
- *  - 連結するのが TLV の値部のみか、タグ・長さを含むか(現状は呼び出し側が渡したバイト列をそのまま連結)
- *  - 復号結果が生のハッシュ(32バイト)か DigestInfo 付きか(現状は両方受け付ける)
- *  - 証明書チェーン(入管庁の信頼する発行者証明書)と失効の扱い
+ * 公開鍵はカード内の証明書(DB / DD)から取り出す。発行者(入管庁)の証明書は仕様書に記載がないため
+ * trustedIssuers で外から与える。与えない場合は issuerTrusted=null(未確認)で返す。
  */
-import { X509Certificate, createHash, publicDecrypt, timingSafeEqual, constants, type KeyObject } from "node:crypto";
+import {
+  X509Certificate,
+  constants,
+  createHash,
+  publicDecrypt,
+  timingSafeEqual,
+  verify as cryptoVerify,
+  type KeyObject,
+} from "node:crypto";
+import type { SignatureParts } from "./parse.js";
 
-/** DigestInfo(SHA-256)の DER プレフィックス(RFC 8017 9.2 注記) */
-const SHA256_DIGEST_INFO_PREFIX = Uint8Array.from([
-  0x30, 0x31, 0x30, 0x0d, 0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x01, 0x05, 0x00, 0x04, 0x20,
-]);
+export type SignatureFailureReason =
+  | "certificate_invalid" // 証明書として読めない
+  | "key_type_mismatch" // 様式と鍵種別が合わない
+  | "decrypt_failed" // RSA: 鍵が違う・パディング不正
+  | "unexpected_format" // RSA: 復号結果がハッシュ長でない
+  | "digest_mismatch" // RSA: データと署名が一致しない
+  | "signature_invalid"; // ECDSA: 検証失敗
 
-export type VerifyFailureReason =
-  | "decrypt_failed" // 鍵が違う・パディング不正(改ざん・偽造の疑い)
-  | "unexpected_format" // 復号できたがハッシュ形式でない
-  | "digest_mismatch" // データが署名と一致しない(改ざんの疑い)
-  | "certificate_untrusted" // 証明書が信頼する発行者で検証できない
-  | "certificate_expired";
+export type SignatureVerification =
+  | {
+      status: "valid";
+      /** 証明書が信頼する発行者で検証できたか。null は発行者未設定で未確認 */
+      issuerTrusted: boolean | null;
+      certificateValidAt: boolean;
+    }
+  | { status: "invalid"; reason: SignatureFailureReason }
+  /** 年少者のカード等で署名が記録されていない */
+  | { status: "absent" };
 
-export type VerifyResult = { ok: true } | { ok: false; reason: VerifyFailureReason };
-
-export interface CheckCodeInput {
-  /** 券面(表)イメージ */
-  frontImage: Uint8Array;
-  /** 顔画像 */
-  faceImage: Uint8Array;
-  /** チェックコード(RSA 署名値) */
-  checkCode: Uint8Array;
-  /** 署名検証用の公開鍵 */
-  publicKey: KeyObject;
-}
-
-export function computeSignedDigest(frontImage: Uint8Array, faceImage: Uint8Array): Buffer {
-  return createHash("sha256").update(frontImage).update(faceImage).digest();
-}
-
-export function verifyCheckCode(input: CheckCodeInput): VerifyResult {
-  let recovered: Buffer;
-  try {
-    recovered = publicDecrypt({ key: input.publicKey, padding: constants.RSA_PKCS1_PADDING }, input.checkCode);
-  } catch {
-    return { ok: false, reason: "decrypt_failed" };
-  }
-
-  let signedDigest: Buffer;
-  if (recovered.length === 32) {
-    signedDigest = recovered;
-  } else if (
-    recovered.length === SHA256_DIGEST_INFO_PREFIX.length + 32 &&
-    Buffer.from(SHA256_DIGEST_INFO_PREFIX).equals(recovered.subarray(0, SHA256_DIGEST_INFO_PREFIX.length))
-  ) {
-    signedDigest = recovered.subarray(SHA256_DIGEST_INFO_PREFIX.length);
-  } else {
-    return { ok: false, reason: "unexpected_format" };
-  }
-
-  const actual = computeSignedDigest(input.frontImage, input.faceImage);
-  return timingSafeEqual(actual, signedDigest) ? { ok: true } : { ok: false, reason: "digest_mismatch" };
-}
-
-export interface CertificateCheckInput {
-  /** カードから読み出した公開鍵証明書(DER) */
-  certificateDer: Uint8Array;
-  /** 信頼する発行者証明書(サーバーで一元管理) */
-  trustedIssuers: readonly X509Certificate[];
-  /** 判定時刻(既定は現在) */
+export interface VerifyOptions {
+  trustedIssuers?: readonly X509Certificate[];
+  /** 証明書の有効期間の判定時刻(既定は現在) */
   at?: Date;
 }
 
-export type CertificateCheckResult =
-  | { ok: true; publicKey: KeyObject; certificate: X509Certificate }
-  | { ok: false; reason: Extract<VerifyFailureReason, "certificate_untrusted" | "certificate_expired"> };
-
-/**
- * カードの証明書を信頼する発行者で検証し、署名検証用の公開鍵を返す。
- * 有効期間はカード発行時点で有効だったかが本来の論点のため、at で判定時刻を渡せるようにしている。
- */
-export function checkCardCertificate(input: CertificateCheckInput): CertificateCheckResult {
+export function verifyCardSignature(
+  signature: SignatureParts | null,
+  options: VerifyOptions = {},
+): SignatureVerification {
+  if (!signature) return { status: "absent" };
   let cert: X509Certificate;
   try {
-    cert = new X509Certificate(input.certificateDer);
+    cert = new X509Certificate(trimDer(signature.certificate));
   } catch {
-    return { ok: false, reason: "certificate_untrusted" };
+    return { status: "invalid", reason: "certificate_invalid" };
   }
-  const issuer = input.trustedIssuers.find((i) => cert.checkIssued(i) && cert.verify(i.publicKey));
-  if (!issuer) return { ok: false, reason: "certificate_untrusted" };
-  const at = (input.at ?? new Date()).getTime();
-  if (at < Date.parse(cert.validFrom) || at > Date.parse(cert.validTo)) {
-    return { ok: false, reason: "certificate_expired" };
+  const key = cert.publicKey;
+  const result =
+    signature.algorithm === "rsa-pkcs1v15-sha256"
+      ? verifyRsa(key, signature.signedData, signature.checkCode)
+      : verifyEcdsa(key, signature.signedData, signature.checkCode);
+  if (result) return { status: "invalid", reason: result };
+
+  const issuers = options.trustedIssuers ?? [];
+  const issuerTrusted =
+    issuers.length === 0 ? null : issuers.some((i) => cert.checkIssued(i) && cert.verify(i.publicKey));
+  const at = (options.at ?? new Date()).getTime();
+  const certificateValidAt = at >= Date.parse(cert.validFrom) && at <= Date.parse(cert.validTo);
+  return { status: "valid", issuerTrusted, certificateValidAt };
+}
+
+function verifyRsa(key: KeyObject, data: Uint8Array, checkCode: Uint8Array): SignatureFailureReason | null {
+  if (key.asymmetricKeyType !== "rsa") return "key_type_mismatch";
+  let recovered: Buffer;
+  try {
+    recovered = publicDecrypt({ key, padding: constants.RSA_PKCS1_PADDING }, checkCode);
+  } catch {
+    return "decrypt_failed";
   }
-  return { ok: true, publicKey: cert.publicKey, certificate: cert };
+  if (recovered.length !== 32) return "unexpected_format";
+  const digest = createHash("sha256").update(data).digest();
+  return timingSafeEqual(digest, recovered) ? null : "digest_mismatch";
+}
+
+function verifyEcdsa(key: KeyObject, data: Uint8Array, checkCode: Uint8Array): SignatureFailureReason | null {
+  if (key.asymmetricKeyType !== "ec" || key.asymmetricKeyDetails?.namedCurve !== "secp384r1") {
+    return "key_type_mismatch";
+  }
+  if (checkCode.length !== 96) return "signature_invalid";
+  const ok = cryptoVerify("sha256", data, { key, dsaEncoding: "ieee-p1363" }, checkCode);
+  return ok ? null : "signature_invalid";
+}
+
+/**
+ * DER の SEQUENCE ヘッダから全体長を求め、後ろの 0x00 埋めを除く。
+ * 旧様式の公開鍵証明書(DB)は 1200 バイト固定長で、証明書の後ろが 0x00 で埋まっている場合がある。
+ */
+export function trimDer(der: Uint8Array): Uint8Array {
+  if (der[0] !== 0x30 || der.length < 2) return der;
+  const l = der[1]!;
+  if (l < 0x80) return der.subarray(0, Math.min(der.length, 2 + l));
+  const n = l & 0x7f;
+  if (n === 0 || n > 3 || der.length < 2 + n) return der;
+  let len = 0;
+  for (let i = 0; i < n; i++) len = len * 256 + der[2 + i]!;
+  return der.subarray(0, Math.min(der.length, 2 + n + len));
 }

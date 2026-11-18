@@ -18,5 +18,9 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },
-  "description": "在留カードICの TLV パース(端末・サーバー共通)と署名検証(サーバー専用: ./verify)"
+  "description": "在留カードICの TLV パース(端末・サーバー共通)と署名検証(サーバー専用: ./verify)",
+  "dependencies": {
+    "@noble/ciphers": "^2.4.0",
+    "@noble/hashes": "^2.4.0"
+  }
 }

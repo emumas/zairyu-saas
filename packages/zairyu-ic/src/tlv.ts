@@ -32,6 +32,12 @@ export interface ParseOptions {
   recursive?: boolean;
   /** TLV 間の 0x00 / 0xFF パディングを読み飛ばす(ISO 7816-4。既定 true) */
   skipPadding?: boolean;
+  /**
+   * 厳密な BER のタグ規則(後続バイトの b8 が 1 なら続く)に従う。既定 false。
+   * 在留カード仕様書 3.2.3.1 はタグを 1〜2 バイトと定め、第2世代の住居地イメージのタグ "DF D1" は
+   * 2 バイト目の b8 が 1 のため、厳密な BER では読めない。既定ではタグを最大 2 バイトとして扱う。
+   */
+  strictBer?: boolean;
 }
 
 const MAX_TAG_BYTES = 3;
@@ -56,7 +62,10 @@ function parseRange(bytes: Uint8Array, start: number, end: number, options: Pars
     // タグ
     let tag = first;
     pos++;
-    if ((first & 0x1f) === 0x1f) {
+    if ((first & 0x1f) === 0x1f && !options.strictBer) {
+      if (pos >= end) throw new TlvError("タグが途中で終わっています", tlvStart);
+      tag = tag * 256 + bytes[pos++]!;
+    } else if ((first & 0x1f) === 0x1f) {
       let count = 1;
       for (;;) {
         if (pos >= end) throw new TlvError("タグが途中で終わっています", tlvStart);
@@ -131,15 +140,5 @@ export function encodeTlv(tag: number, value: Uint8Array): Uint8Array {
   out.set(tagBytes, 0);
   out.set(lenBytes, tagBytes.length);
   out.set(value, tagBytes.length + lenBytes.length);
-  return out;
-}
-
-export function concatBytes(...parts: readonly Uint8Array[]): Uint8Array {
-  const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
-  let o = 0;
-  for (const p of parts) {
-    out.set(p, o);
-    o += p.length;
-  }
   return out;
 }

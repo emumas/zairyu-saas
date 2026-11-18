@@ -1,95 +1,104 @@
+import { X509Certificate, constants, generateKeyPairSync, privateEncrypt, sign } from "node:crypto";
 import { readFileSync } from "node:fs";
-import { X509Certificate, constants, createHash, generateKeyPairSync, privateEncrypt, sign } from "node:crypto";
 import { describe, expect, it } from "vitest";
-import { checkCardCertificate, verifyCheckCode } from "../src/verify.js";
+import { concatBytes, padNulls } from "../src/bytes.js";
+import type { SignatureParts } from "../src/parse.js";
+import { trimDer, verifyCardSignature } from "../src/verify.js";
+import { rsaRawSign } from "./fixtures.js";
+import { makeCertAndKey } from "./helpers.js";
 
-const { publicKey, privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
-const other = generateKeyPairSync("rsa", { modulusLength: 2048 });
+const rsa = makeCertAndKey("rsa");
+const ec = makeCertAndKey("ec");
+const data = new TextEncoder().encode("signed-data");
+const otherIssuer = new X509Certificate(readFileSync(new URL("./fixtures/test-other.der", import.meta.url)));
 
-const front = new TextEncoder().encode("front-image-bytes");
-const face = new TextEncoder().encode("face-image-bytes");
-const data = Buffer.concat([front, face]);
+const rsaParts = (checkCode: Uint8Array, signedData = data): SignatureParts => ({
+  algorithm: "rsa-pkcs1v15-sha256",
+  checkCode,
+  certificate: padNulls(rsa.certDer, 1200), // 旧様式は 1200 バイト固定長
+  signedData,
+});
+const ecParts = (checkCode: Uint8Array, signedData = data): SignatureParts => ({
+  algorithm: "ecdsa-p384-sha256",
+  checkCode,
+  certificate: ec.certDer,
+  signedData,
+});
 
-/** 生ハッシュを PKCS#1 v1.5(type 1)で署名したもの */
-const rawSig = privateEncrypt(
-  { key: privateKey, padding: constants.RSA_PKCS1_PADDING },
-  createHash("sha256").update(data).digest(),
-);
-/** 標準の RSASSA-PKCS1-v1_5 + SHA-256(DigestInfo 付き) */
-const digestInfoSig = sign("sha256", data, privateKey);
-
-describe("verifyCheckCode", () => {
-  it("生ハッシュ形式の署名を検証できる", () => {
-    expect(verifyCheckCode({ frontImage: front, faceImage: face, checkCode: rawSig, publicKey })).toEqual({ ok: true });
-  });
-
-  it("DigestInfo 形式の署名を検証できる", () => {
-    expect(verifyCheckCode({ frontImage: front, faceImage: face, checkCode: digestInfoSig, publicKey })).toEqual({
-      ok: true,
+describe("旧様式 RSA", () => {
+  it("生ハッシュ形式の署名を検証できる(0x00 埋めの証明書も読める)", () => {
+    expect(verifyCardSignature(rsaParts(rsaRawSign(rsa.key, data)))).toEqual({
+      status: "valid",
+      issuerTrusted: null,
+      certificateValidAt: true,
     });
   });
 
-  it("画像が改ざんされていれば digest_mismatch", () => {
-    const tampered = Uint8Array.from(face);
+  it("DigestInfo 付きの署名は仕様と異なるため unexpected_format", () => {
+    expect(verifyCardSignature(rsaParts(sign("sha256", data, rsa.key)))).toEqual({ status: "invalid", reason: "unexpected_format" });
+  });
+
+  it("データが改ざんされていれば digest_mismatch", () => {
+    const tampered = Uint8Array.from(data);
     tampered[0]! ^= 1;
-    expect(verifyCheckCode({ frontImage: front, faceImage: tampered, checkCode: rawSig, publicKey })).toEqual({
-      ok: false,
-      reason: "digest_mismatch",
-    });
+    expect(verifyCardSignature(rsaParts(rsaRawSign(rsa.key, data), tampered))).toEqual({ status: "invalid", reason: "digest_mismatch" });
   });
 
-  it("連結順が逆なら一致しない", () => {
-    expect(verifyCheckCode({ frontImage: face, faceImage: front, checkCode: rawSig, publicKey }).ok).toBe(false);
+  it("別の鍵の署名は decrypt_failed", () => {
+    const other = generateKeyPairSync("rsa", { modulusLength: 2048 });
+    expect(verifyCardSignature(rsaParts(rsaRawSign(other.privateKey, data)))).toMatchObject({ status: "invalid" });
   });
 
-  it("別の鍵では復号できない", () => {
-    expect(
-      verifyCheckCode({ frontImage: front, faceImage: face, checkCode: rawSig, publicKey: other.publicKey }),
-    ).toEqual({ ok: false, reason: "decrypt_failed" });
+  it("ハッシュ以外が署名されていれば unexpected_format", () => {
+    const sig = privateEncrypt({ key: rsa.key, padding: constants.RSA_PKCS1_PADDING }, Buffer.alloc(20, 1));
+    expect(verifyCardSignature(rsaParts(sig))).toEqual({ status: "invalid", reason: "unexpected_format" });
+  });
+});
+
+describe("第2世代・特定 ECDSA P-384", () => {
+  it("r||s 形式の署名を検証できる", () => {
+    const sig = sign("sha256", data, { key: ec.key, dsaEncoding: "ieee-p1363" });
+    expect(sig.length).toBe(96);
+    expect(verifyCardSignature(ecParts(sig))).toMatchObject({ status: "valid" });
   });
 
-  it("署名値が壊れていれば失敗", () => {
-    const broken = Buffer.from(rawSig);
-    broken[10]! ^= 0xff;
-    expect(verifyCheckCode({ frontImage: front, faceImage: face, checkCode: broken, publicKey }).ok).toBe(false);
+  it("改ざんで signature_invalid", () => {
+    const sig = sign("sha256", data, { key: ec.key, dsaEncoding: "ieee-p1363" });
+    expect(verifyCardSignature(ecParts(sig, Uint8Array.from(concatBytes(data, Uint8Array.of(0)))))).toEqual({ status: "invalid", reason: "signature_invalid" });
   });
 
-  it("ハッシュ以外のデータが署名されていれば unexpected_format", () => {
-    const sig = privateEncrypt({ key: privateKey, padding: constants.RSA_PKCS1_PADDING }, Buffer.alloc(20, 1));
-    expect(verifyCheckCode({ frontImage: front, faceImage: face, checkCode: sig, publicKey })).toEqual({
-      ok: false,
-      reason: "unexpected_format",
+  it("鍵種別が合わなければ key_type_mismatch", () => {
+    expect(verifyCardSignature({ ...ecParts(new Uint8Array(96)), certificate: rsa.certDer })).toEqual({
+      status: "invalid",
+      reason: "key_type_mismatch",
     });
   });
 });
 
-describe("checkCardCertificate", () => {
-  const fixture = (name: string) => readFileSync(new URL(`./fixtures/${name}`, import.meta.url));
-  const issuer = new X509Certificate(fixture("test-issuer.der"));
-  const otherIssuer = new X509Certificate(fixture("test-other.der"));
-  const card = fixture("test-card.der");
-  const validAt = new Date(Date.parse(new X509Certificate(card).validFrom) + 86_400_000);
-
-  it("信頼する発行者が発行した証明書なら公開鍵を返す", () => {
-    const r = checkCardCertificate({ certificateDer: card, trustedIssuers: [otherIssuer, issuer], at: validAt });
-    expect(r.ok).toBe(true);
-    if (r.ok) expect(r.publicKey.asymmetricKeyType).toBe("rsa");
+describe("証明書", () => {
+  it("信頼する発行者を渡すと issuerTrusted を判定する", () => {
+    const sig = sign("sha256", data, { key: ec.key, dsaEncoding: "ieee-p1363" });
+    expect(verifyCardSignature(ecParts(sig), { trustedIssuers: [ec.cert] })).toMatchObject({ issuerTrusted: true });
+    expect(verifyCardSignature(ecParts(sig), { trustedIssuers: [otherIssuer] })).toMatchObject({ issuerTrusted: false });
   });
 
-  it("発行者が信頼リストにない", () => {
-    expect(checkCardCertificate({ certificateDer: card, trustedIssuers: [otherIssuer], at: validAt })).toEqual({
-      ok: false,
-      reason: "certificate_untrusted",
+  it("有効期間外を判定する", () => {
+    const sig = sign("sha256", data, { key: ec.key, dsaEncoding: "ieee-p1363" });
+    expect(verifyCardSignature(ecParts(sig), { at: new Date("2200-01-01") })).toMatchObject({ certificateValidAt: false });
+  });
+
+  it("壊れた証明書は certificate_invalid", () => {
+    expect(verifyCardSignature({ ...ecParts(new Uint8Array(96)), certificate: ec.certDer.subarray(0, 40) })).toEqual({
+      status: "invalid",
+      reason: "certificate_invalid",
     });
   });
 
-  it("有効期間外", () => {
-    expect(
-      checkCardCertificate({ certificateDer: card, trustedIssuers: [issuer], at: new Date("2200-01-01T00:00:00Z") }),
-    ).toEqual({ ok: false, reason: "certificate_expired" });
+  it("署名なしは absent", () => {
+    expect(verifyCardSignature(null)).toEqual({ status: "absent" });
   });
 
-  it("DER として壊れている", () => {
-    expect(checkCardCertificate({ certificateDer: card.subarray(0, 50), trustedIssuers: [issuer] }).ok).toBe(false);
+  it("trimDer は後ろの 0x00 埋めを除く", () => {
+    expect(trimDer(padNulls(rsa.certDer, 1200)).length).toBe(rsa.certDer.length);
   });
 });
