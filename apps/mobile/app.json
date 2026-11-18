@@ -10,7 +10,8 @@
       "supportsTablet": false,
       "bundleIdentifier": "com.example.zairyu",
       "infoPlist": {
-        "NFCReaderUsageDescription": "在留カードのICチップを読み取るためにNFCを使用します"
+        "NFCReaderUsageDescription": "在留カードのICチップを読み取るためにNFCを使用します",
+        "NSCameraUsageDescription": "在留カードの券面から番号を読み取るためにカメラを使用します(画像は端末内で処理し、保存しません)"
       }
     },
     "android": {
@@ -21,7 +22,16 @@
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false,
-      "package": "com.example.zairyu"
+      "package": "com.example.zairyu",
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.NFC"
+      ],
+      "blockedPermissions": [
+        "android.permission.RECORD_AUDIO",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"

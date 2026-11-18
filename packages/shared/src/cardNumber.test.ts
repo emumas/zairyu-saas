@@ -31,6 +31,18 @@ describe("extractCardNumberCandidates", () => {
     expect(extractCardNumberCandidates("A8I2345\nO78CD")).toEqual([]); // 行をまたいだものは拾わない
     expect(extractCardNumberCandidates("A8I2345O78CD")).toEqual(["AB12345078CD"]);
   });
+  it("券面らしい OCR 全文(他の英数字・日付が混ざる)から番号だけを拾う", () => {
+    const text = [
+      "日本国政府 在留カード",
+      "番号 NO. AB12345678CD",
+      "氏名 NGUYEN VAN A",
+      "生年月日 1995年04月01日 性別 M. 国籍・地域 VIETNAM",
+      "在留期間(満了日) 3年 (2029年06月20日)",
+      "このカードは 2029年06月20日まで有効",
+    ].join("\n");
+    expect(extractCardNumberCandidates(text)[0]).toBe("AB12345678CD");
+  });
+
   it("候補がなければ空配列", () => {
     expect(extractCardNumberCandidates("NO NUMBER HERE")).toEqual([]);
   });

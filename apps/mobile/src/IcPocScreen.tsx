@@ -13,6 +13,7 @@ import {
 import { useEffect, useState } from "react";
 import { ActivityIndicator, AppState, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { api } from "./api";
+import { CardNumberScanner } from "./CardNumberScanner";
 import { randomBytes, tokuteiDeliveryKey } from "./config";
 import { isNfcAvailable, maxReadLengthFor, withIsoDep } from "./nfc";
 
@@ -57,6 +58,11 @@ export function IcPocScreen() {
   const [result, setResult] = useState<(VerifyResult & Measurement) | null>(null);
   const [history, setHistory] = useState<Measurement[]>([]);
   const [nfcOk, setNfcOk] = useState<boolean | null>(null);
+  const [scannerOpen, setScannerOpen] = useState(false);
+  /** OCR で入力した番号(手で直したかの判定用) */
+  const [ocrNumber, setOcrNumber] = useState<string | null>(null);
+  const [ocrCandidates, setOcrCandidates] = useState<string[]>([]);
+  const [ocrStats, setOcrStats] = useState({ shots: 0, found: 0, confirmedByIc: 0, rejectedByIc: 0, editedByUser: 0 });
 
   const cardNumber = normalizeCardNumberInput(input);
   const valid = isValidCardNumber(cardNumber);
@@ -68,10 +74,30 @@ export function IcPocScreen() {
       if (s !== "active") {
         setResult(null);
         setInput("");
+        setOcrNumber(null);
+        setOcrCandidates([]);
       }
     });
     return () => sub.remove();
   }, []);
+
+  /** IC 認証の成否で OCR の番号が正しかったかを数える(IC 認証が通る = 番号が正しい) */
+  function recordOcrOutcome(icAccepted: boolean) {
+    if (!ocrNumber) return;
+    setOcrStats((st) => {
+      if (cardNumber !== ocrNumber) return { ...st, editedByUser: st.editedByUser + 1 };
+      return icAccepted ? { ...st, confirmedByIc: st.confirmedByIc + 1 } : { ...st, rejectedByIc: st.rejectedByIc + 1 };
+    });
+    setOcrNumber(null);
+  }
+
+  function onOcrResult(r: { candidates: string[] }) {
+    setScannerOpen(false);
+    setOcrStats((st) => ({ ...st, shots: st.shots + 1, found: st.found + 1 }));
+    setOcrCandidates(r.candidates);
+    setOcrNumber(r.candidates[0]!);
+    setInput(r.candidates[0]!);
+  }
 
   async function onRead() {
     setBusy(true);
@@ -100,8 +126,12 @@ export function IcPocScreen() {
       };
       setResult({ ...verified, ...m });
       setHistory((h) => [m, ...h].slice(0, 20));
+      recordOcrOutcome(true);
     } catch (e) {
       setError(errorMessage(e));
+      const numberRejected =
+        e instanceof CardNumberMismatchError || (e instanceof CardReadError && e.step === "mutual_authenticate");
+      if (numberRejected) recordOcrOutcome(false);
     } finally {
       setBusy(false);
     }
@@ -124,6 +154,22 @@ export function IcPocScreen() {
         editable={!busy}
       />
       {input.length > 0 && !valid && <Text style={styles.ng}>英字2文字+数字8桁+英字2文字で入力してください</Text>}
+      <Pressable style={styles.secondary} disabled={busy} onPress={() => setScannerOpen(true)}>
+        <Text style={styles.secondaryText}>券面を撮影して番号を読む</Text>
+      </Pressable>
+      {ocrCandidates.length > 1 && (
+        <View style={styles.row}>
+          <Text style={styles.key}>他の候補</Text>
+          <View style={styles.value}>
+            {ocrCandidates.slice(1).map((c) => (
+              <Pressable key={c} onPress={() => { setInput(c); setOcrNumber(c); }}>
+                <Text style={styles.link}>{c}</Text>
+              </Pressable>
+            ))}
+          </View>
+        </View>
+      )}
+      {ocrNumber && <Text style={styles.hint}>読み取った番号を券面と見比べて確認してください</Text>}
 
       <Pressable style={[styles.button, (!valid || busy) && styles.buttonDisabled]} disabled={!valid || busy} onPress={onRead}>
         {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>ICを読み取る</Text>}
@@ -151,6 +197,23 @@ export function IcPocScreen() {
           </Pressable>
         </View>
       )}
+
+      {ocrStats.shots > 0 && (
+        <View style={styles.card}>
+          <Text style={styles.label}>OCR 計測</Text>
+          <Text style={styles.mono}>
+            撮影 {ocrStats.shots} / 候補あり {ocrStats.found} / IC で正しさ確認 {ocrStats.confirmedByIc} / IC で誤り判明{" "}
+            {ocrStats.rejectedByIc} / 手で修正 {ocrStats.editedByUser}
+          </Text>
+        </View>
+      )}
+
+      <CardNumberScanner
+        visible={scannerOpen}
+        onClose={() => setScannerOpen(false)}
+        onResult={onOcrResult}
+        onFailedShot={() => setOcrStats((st) => ({ ...st, shots: st.shots + 1 }))}
+      />
 
       {history.length > 0 && (
         <View style={styles.card}>
@@ -190,5 +253,7 @@ const styles = StyleSheet.create({
   key: { width: 140, color: "#555" },
   value: { flex: 1 },
   link: { color: "#0b5cad", marginTop: 8 },
+  secondary: { borderWidth: 1, borderColor: "#0b5cad", borderRadius: 8, padding: 12, alignItems: "center" },
+  secondaryText: { color: "#0b5cad", fontSize: 15, fontWeight: "600" },
   mono: { fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace", fontSize: 12 },
 });
