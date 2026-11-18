@@ -10,7 +10,7 @@ import { ascii } from "./bytes.js";
 import type { RsaPublicKey } from "./crypto/rsaOaep.js";
 import { buildMutualAuthData, buildSetSessionKeyData, completeMutualAuth } from "./keyExchange.js";
 import { createSm, type SecureMessaging } from "./sm.js";
-import { AID, CARD_TYPE, GEN2_EF_ID, GEN2_EF_SIZE, READ_P1, TAG, type CardFormat, type CardKind } from "./spec.js";
+import { AID, CARD_TYPE, GEN2_EF_ID, GEN2_EF_SIZE, LEGACY_EF_SIZE, READ_P1, TAG, type CardFormat, type CardKind } from "./spec.js";
 import { findTag, parseTlv } from "./tlv.js";
 
 export type Transceive = (apdu: Uint8Array) => Promise<Uint8Array>;
@@ -67,6 +67,11 @@ export interface ReadOptions {
   tokuteiDeliveryKey?: RsaPublicKey;
   /** 特定在留カードで SM 読出しを分割する長さ(個人番号カードの制限。既定 0x400) */
   tokuteiChunkSize?: number;
+  /**
+   * 1 回の READ BINARY で要求する最大長。端末が拡張長 APDU の大きな応答を受けられない場合に設定する
+   * (Android の IsoDep.getMaxTransceiveLength 等から決める)。未設定なら EF 全体を 1 回で読む
+   */
+  maxReadLength?: number;
   /** 経過時間の計測(既定 Date.now) */
   now?: () => number;
 }
@@ -109,37 +114,49 @@ export async function readResidenceCard(transceive: Transceive, options: ReadOpt
   }
 
   // 3. EF の読み出し
+  const r = new EfReader(s, sm, options.maxReadLength);
   if (format === "legacy") {
+    const p = READ_P1.legacy;
+    const size = LEGACY_EF_SIZE;
     await s.send("select", Apdu.selectAid(AID.df1));
-    files["df1/ef01"] = await readSm(s, sm, READ_P1.legacy.df1.frontImage);
-    files["df1/ef02"] = await readSm(s, sm, READ_P1.legacy.df1.face);
+    files["df1/ef01"] = await r.read(p.df1.frontImage, size.df1.frontImage, true);
+    files["df1/ef02"] = await r.read(p.df1.face, size.df1.face, true);
     await s.send("select", Apdu.selectAid(AID.df2));
-    files["df2/ef01"] = (await s.send("read", Apdu.readBinary(READ_P1.legacy.df2.address, 0))).data;
+    files["df2/ef01"] = await r.read(p.df2.address, size.df2.address, false);
     if (kind === "residence") {
-      files["df2/ef02"] = (await s.send("read", Apdu.readBinary(READ_P1.legacy.df2.outsideComprehensive, 0))).data;
-      files["df2/ef03"] = (await s.send("read", Apdu.readBinary(READ_P1.legacy.df2.outsideIndividual, 0))).data;
-      files["df2/ef04"] = (await s.send("read", Apdu.readBinary(READ_P1.legacy.df2.renewalStatus, 0))).data;
+      files["df2/ef02"] = await r.read(p.df2.outsideComprehensive, size.df2.outsideComprehensive, false);
+      files["df2/ef03"] = await r.read(p.df2.outsideIndividual, size.df2.outsideIndividual, false);
+      files["df2/ef04"] = await r.read(p.df2.renewalStatus, size.df2.renewalStatus, false);
     }
-  } else if (format === "gen2") {
-    await s.send("select", Apdu.selectAid(AID.df1));
-    files["df1/ef01"] = await readSm(s, sm, READ_P1.gen2.df1.cardNumber);
-    files["df1/ef02"] = await readSm(s, sm, READ_P1.gen2.df1.faceItems);
-    files["df1/ef03"] = await readSm(s, sm, READ_P1.gen2.df1.nameAndFace);
-    files["df1/ef04"] = await readSm(s, sm, READ_P1.gen2.df1.addressImage);
-    await readGen2Df2(s, kind, files);
+    await s.send("select", Apdu.selectAid(AID.df3));
+    files["df3/ef01"] = await r.read(p.df3.signature, size.df3.signature, false);
   } else {
-    const chunk = options.tokuteiChunkSize ?? 0x400;
+    const p = READ_P1.gen2;
+    const size = GEN2_EF_SIZE;
     await s.send("select", Apdu.selectAid(AID.df1));
-    const df1 = GEN2_EF_ID.df1;
-    const size = GEN2_EF_SIZE.df1;
-    files["df1/ef01"] = await readSmChunked(s, sm, df1.cardNumber, size.cardNumber, chunk);
-    files["df1/ef02"] = await readSmChunked(s, sm, df1.faceItems, size.faceItems, chunk);
-    files["df1/ef03"] = await readSmChunked(s, sm, df1.nameAndFace, size.nameAndFace, chunk);
-    files["df1/ef04"] = await readSmChunked(s, sm, df1.addressImage, size.addressImage, chunk);
-    await readGen2Df2(s, kind, files);
+    if (format === "gen2") {
+      files["df1/ef01"] = await r.read(p.df1.cardNumber, size.df1.cardNumber, true);
+      files["df1/ef02"] = await r.read(p.df1.faceItems, size.df1.faceItems, true);
+      files["df1/ef03"] = await r.read(p.df1.nameAndFace, size.df1.nameAndFace, true);
+      files["df1/ef04"] = await r.read(p.df1.addressImage, size.df1.addressImage, true);
+    } else {
+      // 特定在留カード: EF-ID で選択し、オフセット指定で分割読出し(個人番号カードの SM 読出し長制限)
+      const chunk = Math.min(options.tokuteiChunkSize ?? 0x400, options.maxReadLength ?? Infinity);
+      const id = GEN2_EF_ID.df1;
+      files["df1/ef01"] = await readSmTokutei(s, sm, id.cardNumber, size.df1.cardNumber, chunk);
+      files["df1/ef02"] = await readSmTokutei(s, sm, id.faceItems, size.df1.faceItems, chunk);
+      files["df1/ef03"] = await readSmTokutei(s, sm, id.nameAndFace, size.df1.nameAndFace, chunk);
+      files["df1/ef04"] = await readSmTokutei(s, sm, id.addressImage, size.df1.addressImage, chunk);
+    }
+    await s.send("select", Apdu.selectAid(AID.df2));
+    if (kind === "residence") {
+      files["df2/ef01"] = await r.read(p.df2.outsideActivity, size.df2.outsideActivity, false);
+      files["df2/ef02"] = await r.read(p.df2.renewalStatus, size.df2.renewalStatus, false);
+    }
+    files["df2/ef03"] = await r.read(p.df2.other, size.df2.other, false);
+    await s.send("select", Apdu.selectAid(AID.df3));
+    files["df3/ef01"] = await r.read(p.df3.signature, size.df3.signature, false);
   }
-  await s.send("select", Apdu.selectAid(AID.df3));
-  files["df3/ef01"] = (await s.send("read", Apdu.readBinary(0x82, 0))).data;
 
   return { format, kind, cardType, files, elapsedMs: now() - started };
 }
@@ -178,12 +195,43 @@ async function setSessionKey(s: Session, options: ReadOptions): Promise<SecureMe
   return createSm("tokutei", kEnc);
 }
 
-async function readSm(s: Session, sm: SecureMessaging, p1: number): Promise<Uint8Array> {
-  const res = await s.send("read", Apdu.readBinarySm(p1, 0));
-  return sm.decrypt(unwrapSmData(res.data));
+/**
+ * 短縮 EF 指定(P1)で EF を読む。maxReadLength 未満に収まらない場合は分割する:
+ * 1 回目は短縮 EF 指定で読み(読んだ EF がカレントになる)、2 回目以降はカレント EF をオフセット指定で読む。
+ */
+class EfReader {
+  constructor(
+    private readonly s: Session,
+    private readonly sm: SecureMessaging,
+    private readonly maxReadLength: number | undefined,
+  ) {}
+
+  async read(p1: number, size: number, secure: boolean): Promise<Uint8Array> {
+    const chunk = this.maxReadLength;
+    if (!chunk || chunk >= size) return this.readOnce(p1, 0, 0, secure);
+    const out = new Uint8Array(size);
+    let offset = 0;
+    while (offset < size) {
+      const le = Math.min(chunk, size - offset);
+      const part =
+        offset === 0
+          ? await this.readOnce(p1, 0, le, secure)
+          : await this.readOnce((offset >> 8) & 0x7f, offset & 0xff, le, secure);
+      if (part.length === 0) break;
+      out.set(part.subarray(0, size - offset), offset);
+      offset += part.length;
+    }
+    return out.subarray(0, Math.min(offset, size));
+  }
+
+  private async readOnce(p1: number, p2: number, le: number, secure: boolean): Promise<Uint8Array> {
+    if (!secure) return (await this.s.send("read", Apdu.readBinary(p1, p2, le))).data;
+    const res = await this.s.send("read", Apdu.readBinarySm(p1, p2, le));
+    return this.sm.decrypt(unwrapSmData(res.data));
+  }
 }
 
-async function readSmChunked(
+async function readSmTokutei(
   s: Session,
   sm: SecureMessaging,
   efId: number,
@@ -202,13 +250,4 @@ async function readSmChunked(
     offset += part.length;
   }
   return out.subarray(0, Math.min(offset, size));
-}
-
-async function readGen2Df2(s: Session, kind: CardKind, files: RawCardRead["files"]): Promise<void> {
-  await s.send("select", Apdu.selectAid(AID.df2));
-  if (kind === "residence") {
-    files["df2/ef01"] = (await s.send("read", Apdu.readBinary(READ_P1.gen2.df2.outsideActivity, 0))).data;
-    files["df2/ef02"] = (await s.send("read", Apdu.readBinary(READ_P1.gen2.df2.renewalStatus, 0))).data;
-  }
-  files["df2/ef03"] = (await s.send("read", Apdu.readBinary(READ_P1.gen2.df2.other, 0))).data;
 }

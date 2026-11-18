@@ -48,6 +48,14 @@ export const READ_P1 = {
   },
 } as const;
 
+/** 旧様式のファイル容量(バイト)。分割読出しの上限に使う */
+export const LEGACY_EF_SIZE = {
+  mf: { commonData: 6, cardType: 3 },
+  df1: { frontImage: 7004, face: 3004 },
+  df2: { address: 342, outsideComprehensive: 122, outsideIndividual: 122, renewalStatus: 3 },
+  df3: { signature: 1464 },
+} as const;
+
 /** 第2世代・特定の DF1 の EF-ID(特定在留カードは EF 選択 + オフセット読出しで分割読出しする) */
 export const GEN2_EF_ID = {
   df1: { cardNumber: 0x0001, faceItems: 0x0002, nameAndFace: 0x0003, addressImage: 0x0004 },
@@ -57,6 +65,7 @@ export const GEN2_EF_ID = {
 
 /** ファイル容量(バイト)。分割読出しの上限に使う */
 export const GEN2_EF_SIZE = {
+  mf: { commonData: 6, cardType: 4 },
   df1: { cardNumber: 14, faceItems: 73, nameAndFace: 5508, addressImage: 2505 },
   df2: { outsideActivity: 22, renewalStatus: 3, other: 207 },
   df3: { signature: 704 },

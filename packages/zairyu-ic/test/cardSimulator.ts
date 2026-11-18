@@ -40,6 +40,8 @@ export interface SimulatorOptions {
   deliveryPrivateKey?: KeyObject;
   /** 特定在留カード: SM で一度に読み出せる最大長 */
   smReadLimit?: number;
+  /** 端末が受けられる応答の最大長を模す(超えると 6700) */
+  maxResponseLength?: number;
 }
 
 export class CardSimulator {
@@ -156,7 +158,10 @@ export class CardSimulator {
         offset = p2;
         le = smCmd ? (a[9]! << 8) | a[10]! : (a[5]! << 8) | a[6]!;
       } else {
-        return err(0x6a86);
+        // カレント EF をオフセット指定で読む
+        ef = this.currentEf;
+        offset = (p1 << 8) | p2;
+        le = smCmd ? (a[9]! << 8) | a[10]! : (a[5]! << 8) | a[6]!;
       }
       if (!ef) return err(0x6a82);
       const data = this.file(this.dir, ef);
@@ -164,7 +169,9 @@ export class CardSimulator {
       const isMf = this.dir === "mf" || this.dir === "ap";
       if (!isMf && !this.authenticated) return err(0x6982);
       if (this.dir === "df1" && !smCmd) return err(0x6982); // DF1 は SM 必須
+      this.currentEf = ef;
       let part = data.subarray(offset, le === 0 ? data.length : offset + le);
+      if (this.o.maxResponseLength && part.length > this.o.maxResponseLength) return err(0x6700);
       if (!smCmd) return ok(part);
       if (tokutei && this.o.smReadLimit) part = part.subarray(0, this.o.smReadLimit);
       const enc = this.sm!.encrypt(part);

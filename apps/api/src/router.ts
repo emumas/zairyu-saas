@@ -1,5 +1,7 @@
+import { TRPCError } from "@trpc/server";
 import { isValidCardNumber, normalizeCardNumberInput } from "@zairyu/shared";
 import { z } from "zod";
+import { verifyIcRead, verifyIcReadInput, verifyIcReadOutput } from "./poc.js";
 import { publicProcedure, router } from "./trpc.js";
 
 export const appRouter = router({
@@ -13,6 +15,19 @@ export const appRouter = router({
       const normalized = normalizeCardNumberInput(input.cardNumber);
       return { normalized, valid: isValidCardNumber(normalized) };
     }),
+
+  poc: router({
+    /**
+     * PoC 用。認証なしのため開発環境でのみ有効にする(ZAIRYU_ENABLE_POC=1)
+     */
+    verifyIcRead: publicProcedure
+      .input(verifyIcReadInput)
+      .output(verifyIcReadOutput)
+      .mutation(({ input }) => {
+        if (process.env.ZAIRYU_ENABLE_POC !== "1") throw new TRPCError({ code: "NOT_FOUND" });
+        return verifyIcRead(input);
+      }),
+  }),
 });
 
 export type AppRouter = typeof appRouter;

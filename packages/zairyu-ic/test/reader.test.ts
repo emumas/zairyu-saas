@@ -16,7 +16,11 @@ const jwk = delivery.publicKey.export({ format: "jwk" });
 const tokuteiDeliveryKey = { modulus: Buffer.from(jwk.n!, "base64url"), exponent: Buffer.from(jwk.e!, "base64url") };
 const rnd = (n: number) => new Uint8Array(randomBytes(n));
 
-function setup(format: CardFormat, kind: CardKind, opts: { signed?: boolean; smReadLimit?: number } = {}) {
+function setup(
+  format: CardFormat,
+  kind: CardKind,
+  opts: { signed?: boolean; smReadLimit?: number; maxResponseLength?: number } = {},
+) {
   const signer = opts.signed === false ? undefined : format === "legacy" ? rsa : ec;
   const files = buildCardFiles({ format, kind, cardNumber: CARD_NUMBER, ...(signer ? { signer } : {}) });
   return new CardSimulator({
@@ -25,6 +29,7 @@ function setup(format: CardFormat, kind: CardKind, opts: { signed?: boolean; smR
     files,
     deliveryPrivateKey: delivery.privateKey,
     ...(opts.smReadLimit ? { smReadLimit: opts.smReadLimit } : {}),
+    ...(opts.maxResponseLength ? { maxResponseLength: opts.maxResponseLength } : {}),
   });
 }
 
@@ -70,6 +75,15 @@ describe.each(cases)("%s / %s", (format, kind) => {
       }
     }
     expect(verifyCardSignature(parsed.signature)).toMatchObject({ status: "valid" });
+  });
+
+  it("応答長に制限がある端末では maxReadLength で分割して読める", async () => {
+    const card = setup(format, kind, { maxResponseLength: 0x200 });
+    const opts = { cardNumber: CARD_NUMBER, randomBytes: rnd, tokuteiDeliveryKey };
+    await expect(readResidenceCard(card.transceive, opts)).rejects.toMatchObject({ sw: 0x6700 });
+    const card2 = setup(format, kind, { maxResponseLength: 0x200 });
+    const raw = await readResidenceCard(card2.transceive, { ...opts, maxReadLength: 0x1e0 });
+    expect(verifyCardSignature(parseCardRead(raw).signature)).toMatchObject({ status: "valid" });
   });
 
   it("番号が違えば認証できない", async () => {

@@ -75,3 +75,20 @@ export function ascii(data: Uint8Array): string {
   for (const b of trimTrailingNulls(data)) s += String.fromCharCode(b);
   return s;
 }
+
+const B64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+/** Base64 エンコード(端末でも使えるよう Buffer/btoa に依存しない) */
+export function toBase64(data: Uint8Array): string {
+  let out = "";
+  for (let i = 0; i < data.length; i += 3) {
+    const a = data[i]!;
+    const b = data[i + 1];
+    const c = data[i + 2];
+    const n = (a << 16) | ((b ?? 0) << 8) | (c ?? 0);
+    out += B64[(n >> 18) & 63]! + B64[(n >> 12) & 63]!;
+    out += b === undefined ? "=" : B64[(n >> 6) & 63]!;
+    out += c === undefined ? "=" : B64[n & 63]!;
+  }
+  return out;
+}
