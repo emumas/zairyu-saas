@@ -15,7 +15,7 @@ import { ActivityIndicator, AppState, Platform, Pressable, ScrollView, StyleShee
 import { api } from "./api";
 import { CardNumberScanner } from "./CardNumberScanner";
 import { randomBytes, tokuteiDeliveryKey } from "./config";
-import { isNfcAvailable, maxReadLengthFor, withIsoDep } from "./nfc";
+import { getLastTrace, isNfcAvailable, maxReadLengthFor, withIsoDep } from "./nfc";
 
 type VerifyResult = Awaited<ReturnType<typeof api.poc.verifyIcRead.mutate>>;
 
@@ -41,6 +41,26 @@ function signatureLabel(s: VerifyResult["signature"]): string {
   return `署名NG: ${s.reason}`;
 }
 
+/** 個人情報を含まない診断情報(エラーの種類・段階・SW・送受信のヘッダ) */
+function diagnose(e: unknown, phase: "nfc" | "api"): string {
+  const lines: string[] = [`段階: ${phase === "nfc" ? "IC 読み取り" : "サーバー検証"}`];
+  if (e instanceof CardReadError) {
+    lines.push(`種類: ${e.name} / step=${e.step} / SW=${e.sw === null ? "-" : e.sw.toString(16).toUpperCase()}`);
+  } else if (e instanceof Error) {
+    lines.push(`種類: ${e.name}`, `内容: ${e.message.slice(0, 200)}`);
+  } else {
+    lines.push(`種類: ${typeof e} / ${String(e).slice(0, 200)}`);
+  }
+  if (phase === "nfc") {
+    const t = getLastTrace();
+    lines.push(`最大送受信長: ${t.maxTransceiveLength ?? "-"}`);
+    for (const x of t.entries) {
+      lines.push(`${x.header} → ${x.error ? `例外 ${x.error}` : `SW ${x.sw ?? "-"} (${x.responseLength}B)`}`);
+    }
+  }
+  return lines.join("\n");
+}
+
 function errorMessage(e: unknown): string {
   if (e instanceof CardNumberMismatchError) return "在留カード番号が一致しません。番号を確認してください。";
   if (e instanceof CardReadError) {
@@ -55,6 +75,7 @@ export function IcPocScreen() {
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [diagnostic, setDiagnostic] = useState<string | null>(null);
   const [result, setResult] = useState<(VerifyResult & Measurement) | null>(null);
   const [history, setHistory] = useState<Measurement[]>([]);
   const [nfcOk, setNfcOk] = useState<boolean | null>(null);
@@ -102,7 +123,9 @@ export function IcPocScreen() {
   async function onRead() {
     setBusy(true);
     setError(null);
+    setDiagnostic(null);
     setResult(null);
+    let phase: "nfc" | "api" = "nfc";
     try {
       const { raw, apduCount } = await withIsoDep(async (transceive, info) => {
         const maxReadLength = maxReadLengthFor(info);
@@ -115,6 +138,7 @@ export function IcPocScreen() {
         });
         return { raw: r, apduCount: info.apduCount() };
       });
+      phase = "api";
       const files: Record<string, string> = {};
       for (const [path, data] of Object.entries(raw.files)) if (data) files[path] = toBase64(data);
       const verified = await api.poc.verifyIcRead.mutate({ format: raw.format, kind: raw.kind, files });
@@ -128,7 +152,8 @@ export function IcPocScreen() {
       setHistory((h) => [m, ...h].slice(0, 20));
       recordOcrOutcome(true);
     } catch (e) {
-      setError(errorMessage(e));
+      setError(phase === "api" ? "サーバーでの検証に失敗しました。API が起動しているか、.env の URL を確認してください。" : errorMessage(e));
+      setDiagnostic(diagnose(e, phase));
       const numberRejected =
         e instanceof CardNumberMismatchError || (e instanceof CardReadError && e.step === "mutual_authenticate");
       if (numberRejected) recordOcrOutcome(false);
@@ -176,6 +201,14 @@ export function IcPocScreen() {
       </Pressable>
       {busy && Platform.OS === "android" && <Text style={styles.hint}>カードを端末の背面にかざしてください</Text>}
       {error && <Text style={styles.ng}>{error}</Text>}
+      {diagnostic && (
+        <View style={styles.card}>
+          <Text style={styles.label}>診断情報(個人情報は含みません)</Text>
+          <Text selectable style={styles.mono}>
+            {diagnostic}
+          </Text>
+        </View>
+      )}
 
       {result && (
         <View style={styles.card}>
