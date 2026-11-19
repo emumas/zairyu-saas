@@ -19,7 +19,7 @@ const rnd = (n: number) => new Uint8Array(randomBytes(n));
 function setup(
   format: CardFormat,
   kind: CardKind,
-  opts: { signed?: boolean; smReadLimit?: number; maxResponseLength?: number } = {},
+  opts: { signed?: boolean; smReadLimit?: number; maxResponseLength?: number; acceptsResidenceApAid?: boolean } = {},
 ) {
   const signer = opts.signed === false ? undefined : format === "legacy" ? rsa : ec;
   const files = buildCardFiles({ format, kind, cardNumber: CARD_NUMBER, ...(signer ? { signer } : {}) });
@@ -30,6 +30,7 @@ function setup(
     deliveryPrivateKey: delivery.privateKey,
     ...(opts.smReadLimit ? { smReadLimit: opts.smReadLimit } : {}),
     ...(opts.maxResponseLength ? { maxResponseLength: opts.maxResponseLength } : {}),
+    ...(opts.acceptsResidenceApAid ? { acceptsResidenceApAid: true } : {}),
   });
 }
 
@@ -83,6 +84,13 @@ describe.each(cases)("%s / %s", (format, kind) => {
     await expect(readResidenceCard(card.transceive, opts)).rejects.toMatchObject({ sw: 0x6700 });
     const card2 = setup(format, kind, { maxResponseLength: 0x200 });
     const raw = await readResidenceCard(card2.transceive, { ...opts, maxReadLength: 0x1e0 });
+    expect(verifyCardSignature(parseCardRead(raw).signature)).toMatchObject({ status: "valid" });
+  });
+
+  it("在留 AP の AID に 9000 を返すカードでもカード種別で様式を判定する", async () => {
+    const card = setup(format, kind, { acceptsResidenceApAid: true });
+    const raw = await readResidenceCard(card.transceive, { cardNumber: CARD_NUMBER, randomBytes: rnd, tokuteiDeliveryKey });
+    expect(raw.format).toBe(format);
     expect(verifyCardSignature(parseCardRead(raw).signature)).toMatchObject({ status: "valid" });
   });
 

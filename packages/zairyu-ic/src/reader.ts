@@ -91,18 +91,30 @@ export async function readResidenceCard(transceive: Transceive, options: ReadOpt
   const started = now();
   const s = new Session(transceive);
 
-  // 1. 様式の判定: 在留 AP が選択できれば特定在留カード、できなければ MF のカード種別で判定
-  const ap = await s.send("detect", Apdu.selectAid(AID.residenceAp), false);
-  if (ap.sw !== SW.OK) await s.send("detect", Apdu.selectMf());
+  // 1. 様式の判定はカード種別(C1)の値で行う。
+  //    特定在留カードは在留 AP を選択しないとカード種別が読めないため、まず在留 AP の選択を試す。
+  //    実機の旧様式カードは在留 AP の AID にも 9000 を返したため、選択の成否では様式を判定しない。
   const files: RawCardRead["files"] = {};
-  files["mf/ef02"] = (await s.send("card_type", Apdu.readBinary(READ_P1.mf.cardType, 0))).data;
-  const cardTypeTlv = findTag(parseTlv(files["mf/ef02"]), TAG.cardType);
-  const cardType = cardTypeTlv ? ascii(cardTypeTlv.value) : "";
-  const typeInfo = (CARD_TYPE as Record<string, { format: CardFormat; kind: CardKind } | undefined>)[cardType];
-  if (!typeInfo) throw new CardReadError("card_type", null, "対応していないカード種別です");
-  if ((typeInfo.format === "tokutei") !== (ap.sw === SW.OK)) {
-    throw new CardReadError("detect", null, "カード種別と AP 構成が一致しません");
+  const ap = await s.send("detect", Apdu.selectAid(AID.residenceAp), false);
+  let typeInfo: { format: CardFormat; kind: CardKind; cardType: string } | null = null;
+  if (ap.sw === SW.OK) {
+    const res = await s.send("card_type", Apdu.readBinary(READ_P1.mf.cardType, 0), false);
+    if (res.sw === SW.OK) {
+      typeInfo = cardTypeOf(res.data);
+      if (typeInfo?.format === "tokutei") files["mf/ef02"] = res.data;
+    }
   }
+  if (typeInfo?.format !== "tokutei") {
+    // 旧様式・第2世代: MF を選び直してカード種別を読む
+    await s.send("detect", Apdu.selectMf());
+    files["mf/ef02"] = (await s.send("card_type", Apdu.readBinary(READ_P1.mf.cardType, 0))).data;
+    typeInfo = cardTypeOf(files["mf/ef02"]);
+    if (typeInfo?.format === "tokutei") {
+      throw new CardReadError("detect", null, "特定在留カードの AP を選択できません");
+    }
+  }
+  if (!typeInfo) throw new CardReadError("card_type", null, "対応していないカード種別です");
+  const cardType = typeInfo.cardType;
   const { format, kind } = typeInfo;
 
   // 2. 認証(セッション鍵の確立 → 在留カード等番号による認証)
@@ -159,6 +171,18 @@ export async function readResidenceCard(transceive: Transceive, options: ReadOpt
   }
 
   return { format, kind, cardType, files, elapsedMs: now() - started };
+}
+
+function cardTypeOf(data: Uint8Array): { format: CardFormat; kind: CardKind; cardType: string } | null {
+  let tlv;
+  try {
+    tlv = findTag(parseTlv(data), TAG.cardType);
+  } catch {
+    return null;
+  }
+  const cardType = tlv ? ascii(tlv.value) : "";
+  const info = (CARD_TYPE as Record<string, { format: CardFormat; kind: CardKind } | undefined>)[cardType];
+  return info ? { ...info, cardType } : null;
 }
 
 async function mutualAuthenticate(s: Session, format: "legacy" | "gen2", options: ReadOptions): Promise<SecureMessaging> {

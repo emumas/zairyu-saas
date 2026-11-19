@@ -40,6 +40,8 @@ export interface SimulatorOptions {
   deliveryPrivateKey?: KeyObject;
   /** 特定在留カード: SM で一度に読み出せる最大長 */
   smReadLimit?: number;
+  /** 旧様式・第2世代が在留 AP の AID の選択に 9000 を返す(実機の旧様式カードで観測) */
+  acceptsResidenceApAid?: boolean;
   /** 端末が受けられる応答の最大長を模す(超えると 6700) */
   maxResponseLength?: number;
 }
@@ -77,6 +79,10 @@ export class CardSimulator {
       if (p1 === 0x04) {
         const aid = a.subarray(5, 5 + a[4]!);
         if (equalBytes(aid, AID.residenceAp)) {
+          if (!tokutei && this.o.acceptsResidenceApAid) {
+            this.dir = "ap";
+            return ok();
+          }
           if (!tokutei) return err(0x6a82);
           this.dir = "ap";
           this.sm = null; // AP 選択でセッション鍵はクリア
