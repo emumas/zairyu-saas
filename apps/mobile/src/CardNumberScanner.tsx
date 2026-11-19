@@ -20,10 +20,15 @@ export function CardNumberScanner({ visible, onClose, onResult, onFailedShot }: 
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
+  const { hasPermission, canRequestPermission, requestPermission } = permission;
   useEffect(() => {
-    if (visible && !permission.hasPermission && permission.canRequestPermission) void permission.requestPermission();
-    if (visible) setMessage(null);
-  }, [visible, permission]);
+    if (!visible) return;
+    setMessage(null);
+    if (!hasPermission && canRequestPermission) {
+      // 再読み込み等でネイティブ側の Promise が破棄されることがあるため、失敗は握りつぶさず表示だけにする
+      requestPermission().catch(() => setMessage("カメラの許可を確認できませんでした。もう一度開いてください。"));
+    }
+  }, [visible, hasPermission, canRequestPermission, requestPermission]);
 
   async function capture() {
     setBusy(true);
@@ -51,7 +56,7 @@ export function CardNumberScanner({ visible, onClose, onResult, onFailedShot }: 
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
       <View style={styles.container}>
-        {permission.hasPermission ? (
+        {hasPermission ? (
           <Camera style={StyleSheet.absoluteFill} device="back" isActive={visible} outputs={[photoOutput]} />
         ) : (
           <Text style={styles.text}>カメラの使用が許可されていません。設定アプリから許可してください。</Text>
@@ -62,7 +67,7 @@ export function CardNumberScanner({ visible, onClose, onResult, onFailedShot }: 
         </View>
         <View style={styles.bottom}>
           {message && <Text style={styles.message}>{message}</Text>}
-          <Pressable style={[styles.shutter, busy && styles.disabled]} disabled={busy || !permission.hasPermission} onPress={capture}>
+          <Pressable style={[styles.shutter, busy && styles.disabled]} disabled={busy || !hasPermission} onPress={capture}>
             {busy ? <ActivityIndicator color="#000" /> : <Text style={styles.shutterText}>撮影</Text>}
           </Pressable>
           <Pressable onPress={onClose} disabled={busy}>
