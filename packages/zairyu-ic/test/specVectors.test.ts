@@ -2,7 +2,7 @@
  * 仕様書の「別添2 読出しシーケンス コマンド例」に載っている値で検証する。
  * カード番号 "AA12345678BB"、RND.IFD / K.IFD は仕様書の例示値。
  */
-import { constants, createCipheriv, generateKeyPairSync, privateDecrypt } from "node:crypto";
+import { constants, createCipheriv, generateKeyPairSync, privateDecrypt, randomBytes } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { concatBytes, hex, padIso, toHex } from "../src/bytes.js";
 import { aesCbcEncrypt, aesEcbEncryptBlock } from "../src/crypto/aes.js";
@@ -44,6 +44,18 @@ describe("旧様式(在留カード等仕様書 Ver1.5 別添2)", () => {
   it("在留カード等番号を SM で暗号化(VERIFY)", () => {
     const sm = createSm("legacy", hex("CE94938E19E3B97DF96EABCEDC1715CC"));
     expect(toHex(sm.encrypt(new TextEncoder().encode(CARD_NUMBER)))).toBe("1AA82973DB959A811F9711D728F0EEF6");
+  });
+
+  it("TDES をランダムな鍵・データで Node(OpenSSL)と突き合わせる", () => {
+    for (let i = 0; i < 50; i++) {
+      const key = new Uint8Array(randomBytes(16));
+      const data = new Uint8Array(randomBytes(8 * (1 + (i % 9))));
+      const c = createCipheriv("des-ede-cbc", key, Buffer.alloc(8));
+      c.setAutoPadding(false);
+      const expected = Buffer.concat([c.update(data), c.final()]);
+      expect(toHex(tdesCbcEncrypt(key, data))).toBe(toHex(expected));
+      expect(toHex(tdesCbcDecrypt(key, expected))).toBe(toHex(data));
+    }
   });
 
   it("TDES / Retail MAC を Node(OpenSSL)と突き合わせる", () => {

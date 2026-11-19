@@ -35,10 +35,10 @@ const FORMAT_LABEL: Record<CardFormat, string> = {
 function signatureLabel(s: VerifyResult["signature"]): string {
   if (s.status === "valid") {
     const issuer = s.issuerTrusted === null ? "発行者未確認" : s.issuerTrusted ? "発行者OK" : "発行者NG";
-    return `署名OK(${issuer})`;
+    return `署名OK(${issuer}、対象=${s.matched}${s.hashFormat ? `、${s.hashFormat}` : ""})`;
   }
   if (s.status === "absent") return "署名なし(年少者カード)";
-  return `署名NG: ${s.reason}`;
+  return `署名NG: ${s.reason}${s.detail ? `(${s.detail})` : ""}`;
 }
 
 /** 個人情報を含まない診断情報(エラーの種類・段階・SW・送受信のヘッダ) */
@@ -225,6 +225,12 @@ export function IcPocScreen() {
             k="画像(バイト)"
             v={`券面 ${result.images.front} / 顔 ${result.images.face} / 氏名 ${result.images.name} / 住居地 ${result.images.address}`}
           />
+          <Text style={styles.label}>EF 構造(診断用)</Text>
+          <Text selectable style={styles.mono}>
+            {Object.entries(result.structure)
+              .map(([k, v]) => `${k}: ${v}`)
+              .join("\n")}
+          </Text>
           <Pressable onPress={() => setResult(null)}>
             <Text style={styles.link}>結果を消去</Text>
           </Pressable>

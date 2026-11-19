@@ -31,17 +31,25 @@ describe("旧様式 RSA", () => {
       status: "valid",
       issuerTrusted: null,
       certificateValidAt: true,
+      matched: "spec",
+      hashFormat: "raw",
     });
   });
 
-  it("DigestInfo 付きの署名は仕様と異なるため unexpected_format", () => {
-    expect(verifyCardSignature(rsaParts(sign("sha256", data, rsa.key)))).toEqual({ status: "invalid", reason: "unexpected_format" });
+  it("DigestInfo 付きの署名も検証でき、形式を返す", () => {
+    expect(verifyCardSignature(rsaParts(sign("sha256", data, rsa.key)))).toMatchObject({ status: "valid", hashFormat: "digestInfo" });
+  });
+
+  it("仕様どおりの対象で一致しなければ別解釈を試し、一致したものを返す", () => {
+    const alt = new TextEncoder().encode("exact-data");
+    const parts = { ...rsaParts(rsaRawSign(rsa.key, alt)), alternatives: [{ label: "x", data: data }, { label: "exact", data: alt }] };
+    expect(verifyCardSignature(parts)).toMatchObject({ status: "valid", matched: "exact" });
   });
 
   it("データが改ざんされていれば digest_mismatch", () => {
     const tampered = Uint8Array.from(data);
     tampered[0]! ^= 1;
-    expect(verifyCardSignature(rsaParts(rsaRawSign(rsa.key, data), tampered))).toEqual({ status: "invalid", reason: "digest_mismatch" });
+    expect(verifyCardSignature(rsaParts(rsaRawSign(rsa.key, data), tampered))).toMatchObject({ status: "invalid", reason: "digest_mismatch" });
   });
 
   it("別の鍵の署名は decrypt_failed", () => {
@@ -51,7 +59,7 @@ describe("旧様式 RSA", () => {
 
   it("ハッシュ以外が署名されていれば unexpected_format", () => {
     const sig = privateEncrypt({ key: rsa.key, padding: constants.RSA_PKCS1_PADDING }, Buffer.alloc(20, 1));
-    expect(verifyCardSignature(rsaParts(sig))).toEqual({ status: "invalid", reason: "unexpected_format" });
+    expect(verifyCardSignature(rsaParts(sig))).toMatchObject({ status: "invalid", reason: "unexpected_format", detail: expect.stringContaining("recovered=20B") });
   });
 });
 

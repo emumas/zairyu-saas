@@ -34,8 +34,12 @@ export type SignatureVerification =
       /** 証明書が信頼する発行者で検証できたか。null は発行者未設定で未確認 */
       issuerTrusted: boolean | null;
       certificateValidAt: boolean;
+      /** 一致した署名対象データの解釈("spec" は仕様書どおり) */
+      matched: string;
+      /** RSA: 復号結果の形式 */
+      hashFormat?: "raw" | "digestInfo";
     }
-  | { status: "invalid"; reason: SignatureFailureReason }
+  | { status: "invalid"; reason: SignatureFailureReason; detail?: string }
   /** 年少者のカード等で署名が記録されていない */
   | { status: "absent" };
 
@@ -57,40 +61,71 @@ export function verifyCardSignature(
     return { status: "invalid", reason: "certificate_invalid" };
   }
   const key = cert.publicKey;
-  const result =
-    signature.algorithm === "rsa-pkcs1v15-sha256"
-      ? verifyRsa(key, signature.signedData, signature.checkCode)
-      : verifyEcdsa(key, signature.signedData, signature.checkCode);
-  if (result) return { status: "invalid", reason: result };
+  const candidates = [{ label: "spec", data: signature.signedData }, ...(signature.alternatives ?? [])];
+  let matched: string | null = null;
+  let hashFormat: "raw" | "digestInfo" | undefined;
+  if (signature.algorithm === "rsa-pkcs1v15-sha256") {
+    const r = recoverRsaHash(key, signature.checkCode);
+    if ("reason" in r) return { status: "invalid", ...r };
+    hashFormat = r.format;
+    for (const c of candidates) {
+      if (timingSafeEqual(createHash("sha256").update(c.data).digest(), r.hash)) {
+        matched = c.label;
+        break;
+      }
+    }
+    if (!matched) return { status: "invalid", reason: "digest_mismatch", detail: `hash=${r.format}` };
+  } else {
+    if (key.asymmetricKeyType !== "ec" || key.asymmetricKeyDetails?.namedCurve !== "secp384r1") {
+      return { status: "invalid", reason: "key_type_mismatch" };
+    }
+    if (signature.checkCode.length !== 96) {
+      return { status: "invalid", reason: "signature_invalid", detail: `checkCode=${signature.checkCode.length}B` };
+    }
+    for (const c of candidates) {
+      if (cryptoVerify("sha256", c.data, { key, dsaEncoding: "ieee-p1363" }, signature.checkCode)) {
+        matched = c.label;
+        break;
+      }
+    }
+    if (!matched) return { status: "invalid", reason: "signature_invalid" };
+  }
 
   const issuers = options.trustedIssuers ?? [];
   const issuerTrusted =
     issuers.length === 0 ? null : issuers.some((i) => cert.checkIssued(i) && cert.verify(i.publicKey));
   const at = (options.at ?? new Date()).getTime();
   const certificateValidAt = at >= Date.parse(cert.validFrom) && at <= Date.parse(cert.validTo);
-  return { status: "valid", issuerTrusted, certificateValidAt };
+  return { status: "valid", issuerTrusted, certificateValidAt, matched, ...(hashFormat ? { hashFormat } : {}) };
 }
 
-function verifyRsa(key: KeyObject, data: Uint8Array, checkCode: Uint8Array): SignatureFailureReason | null {
-  if (key.asymmetricKeyType !== "rsa") return "key_type_mismatch";
+/** DigestInfo(SHA-256)の DER プレフィックス(RFC 8017 9.2 注記) */
+const SHA256_DIGEST_INFO_PREFIX = Buffer.from("3031300d060960864801650304020105000420", "hex");
+
+/**
+ * チェックコードを公開鍵で復号し、ハッシュ値を取り出す。
+ * 仕様書(図3-4)はパディング‖ハッシュ値(DigestInfo なし)だが、DigestInfo 付きも受け付けて形式を返す
+ */
+function recoverRsaHash(
+  key: KeyObject,
+  checkCode: Uint8Array,
+): { hash: Buffer; format: "raw" | "digestInfo" } | { reason: SignatureFailureReason; detail?: string } {
+  if (key.asymmetricKeyType !== "rsa") return { reason: "key_type_mismatch" };
   let recovered: Buffer;
   try {
     recovered = publicDecrypt({ key, padding: constants.RSA_PKCS1_PADDING }, checkCode);
   } catch {
-    return "decrypt_failed";
+    return { reason: "decrypt_failed", detail: `checkCode=${checkCode.length}B` };
   }
-  if (recovered.length !== 32) return "unexpected_format";
-  const digest = createHash("sha256").update(data).digest();
-  return timingSafeEqual(digest, recovered) ? null : "digest_mismatch";
-}
-
-function verifyEcdsa(key: KeyObject, data: Uint8Array, checkCode: Uint8Array): SignatureFailureReason | null {
-  if (key.asymmetricKeyType !== "ec" || key.asymmetricKeyDetails?.namedCurve !== "secp384r1") {
-    return "key_type_mismatch";
+  if (recovered.length === 32) return { hash: recovered, format: "raw" };
+  if (recovered.length === 51 && recovered.subarray(0, 19).equals(SHA256_DIGEST_INFO_PREFIX)) {
+    return { hash: recovered.subarray(19), format: "digestInfo" };
   }
-  if (checkCode.length !== 96) return "signature_invalid";
-  const ok = cryptoVerify("sha256", data, { key, dsaEncoding: "ieee-p1363" }, checkCode);
-  return ok ? null : "signature_invalid";
+  // ハッシュ値以外の形式。診断用に長さと先頭 19 バイト(DigestInfo 等の構造部分)だけ返す
+  return {
+    reason: "unexpected_format",
+    detail: `recovered=${recovered.length}B head=${recovered.subarray(0, 19).toString("hex").toUpperCase()}`,
+  };
 }
 
 /**

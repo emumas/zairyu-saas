@@ -1,7 +1,7 @@
 /**
  * DES / 2-key TDES(EDE)と Retail MAC(ISO/IEC 9797-1 MAC Algorithm 3)。
  * 旧様式在留カードのセキュアメッセージング用。端末(React Native)で動かすため純 TS で実装する。
- * 速度より読みやすさ優先(読み出しは 10KB 程度)。
+ * 端末(Hermes)での速度のため、置換と S-box は起動時に表へ展開してから 32 ビット演算で処理する。
  */
 import { padIso } from "../bytes.js";
 
@@ -14,8 +14,6 @@ const SHIFTS = [1, 1, 2, 2, 2, 2, 2, 2, 1, 2, 2, 2, 2, 2, 2, 1];
 const IP = [58,50,42,34,26,18,10,2,60,52,44,36,28,20,12,4,62,54,46,38,30,22,14,6,64,56,48,40,32,24,16,8,57,49,41,33,25,17,9,1,59,51,43,35,27,19,11,3,61,53,45,37,29,21,13,5,63,55,47,39,31,23,15,7];
 // prettier-ignore
 const FP = [40,8,48,16,56,24,64,32,39,7,47,15,55,23,63,31,38,6,46,14,54,22,62,30,37,5,45,13,53,21,61,29,36,4,44,12,52,20,60,28,35,3,43,11,51,19,59,27,34,2,42,10,50,18,58,26,33,1,41,9,49,17,57,25];
-// prettier-ignore
-const E = [32,1,2,3,4,5,4,5,6,7,8,9,8,9,10,11,12,13,12,13,14,15,16,17,16,17,18,19,20,21,20,21,22,23,24,25,24,25,26,27,28,29,28,29,30,31,32,1];
 // prettier-ignore
 const P = [16,7,20,21,29,12,28,17,1,15,23,26,5,18,31,10,2,8,24,14,32,27,3,9,19,13,30,6,22,11,4,25];
 // prettier-ignore
@@ -30,17 +28,11 @@ const S = [
   [13,2,8,4,6,15,11,1,10,9,3,14,5,0,12,7,1,15,13,8,10,3,7,4,12,5,6,11,0,14,9,2,7,11,4,1,9,12,14,2,0,6,10,13,15,3,5,8,2,1,14,7,4,10,8,13,15,12,9,0,3,5,6,11],
 ];
 
-type Bits = Uint8Array; // 1 要素 = 1 ビット
+type Bits = Uint8Array; // 1 要素 = 1 ビット(鍵スケジュールと表の生成でのみ使う)
 
 function toBits(bytes: Uint8Array): Bits {
   const out = new Uint8Array(bytes.length * 8);
   for (let i = 0; i < out.length; i++) out[i] = (bytes[i >> 3]! >> (7 - (i & 7))) & 1;
-  return out;
-}
-
-function fromBits(bits: Bits): Uint8Array {
-  const out = new Uint8Array(bits.length / 8);
-  for (let i = 0; i < bits.length; i++) out[i >> 3]! |= bits[i]! << (7 - (i & 7));
   return out;
 }
 
@@ -50,63 +42,135 @@ function permute(bits: Bits, table: readonly number[]): Bits {
   return out;
 }
 
-function rotl(bits: Bits, n: number): Bits {
+function rotl28(bits: Bits, n: number): Bits {
   const out = new Uint8Array(bits.length);
   for (let i = 0; i < bits.length; i++) out[i] = bits[(i + n) % bits.length]!;
   return out;
 }
 
-function subkeys(key: Uint8Array): Bits[] {
+/** 64 ビット置換をバイト単位の表引き(8 x 256 x 2 ワード)に展開する */
+function buildPermTable(table: readonly number[]): Uint32Array {
+  const t = new Uint32Array(8 * 256 * 2);
+  for (let pos = 0; pos < 8; pos++) {
+    for (let v = 0; v < 256; v++) {
+      let hi = 0;
+      let lo = 0;
+      for (let i = 0; i < 64; i++) {
+        const src = table[i]! - 1;
+        if ((src >> 3) !== pos) continue;
+        if ((v >> (7 - (src & 7))) & 1) {
+          if (i < 32) hi |= 1 << (31 - i);
+          else lo |= 1 << (63 - i);
+        }
+      }
+      t[(pos * 256 + v) * 2] = hi >>> 0;
+      t[(pos * 256 + v) * 2 + 1] = lo >>> 0;
+    }
+  }
+  return t;
+}
+
+/** S-box の出力に P 置換まで適用した表(8 x 64) */
+function buildSpTable(): Uint32Array {
+  const t = new Uint32Array(8 * 64);
+  for (let s = 0; s < 8; s++) {
+    for (let v = 0; v < 64; v++) {
+      const row = ((v >> 4) & 2) | (v & 1);
+      const col = (v >> 1) & 15;
+      const out = S[s]![row * 16 + col]!;
+      let word = 0;
+      for (let j = 0; j < 4; j++) {
+        if ((out >> (3 - j)) & 1) {
+          const bitPos = s * 4 + j + 1; // P 置換前の位置(1 始まり)
+          const dst = P.indexOf(bitPos); // P 置換後の位置(0 始まり)
+          word |= 1 << (31 - dst);
+        }
+      }
+      t[s * 64 + v] = word >>> 0;
+    }
+  }
+  return t;
+}
+
+const IP_T = buildPermTable(IP);
+const FP_T = buildPermTable(FP);
+const SP = buildSpTable();
+
+function perm64(t: Uint32Array, hi: number, lo: number): [number, number] {
+  let oh = 0;
+  let ol = 0;
+  const bytes = [hi >>> 24, (hi >>> 16) & 255, (hi >>> 8) & 255, hi & 255, lo >>> 24, (lo >>> 16) & 255, (lo >>> 8) & 255, lo & 255];
+  for (let pos = 0; pos < 8; pos++) {
+    const i = (pos * 256 + bytes[pos]!) * 2;
+    oh |= t[i]!;
+    ol |= t[i + 1]!;
+  }
+  return [oh >>> 0, ol >>> 0];
+}
+
+/** 鍵スケジュール: 16 ラウンド x 8 個の 6 ビット値 */
+function subkeys(key: Uint8Array): Uint8Array {
   if (key.length !== 8) throw new Error("DES 鍵は 8 バイトです");
   const k = permute(toBits(key), PC1);
   let c = k.subarray(0, 28) as Bits;
   let d = k.subarray(28) as Bits;
-  const keys: Bits[] = [];
-  for (const s of SHIFTS) {
-    c = rotl(c, s);
-    d = rotl(d, s);
+  const out = new Uint8Array(16 * 8);
+  SHIFTS.forEach((shift, round) => {
+    c = rotl28(c, shift);
+    d = rotl28(d, shift);
     const cd = new Uint8Array(56);
     cd.set(c);
     cd.set(d, 28);
-    keys.push(permute(cd, PC2));
-  }
-  return keys;
+    const k48 = permute(cd, PC2);
+    for (let s = 0; s < 8; s++) {
+      let v = 0;
+      for (let j = 0; j < 6; j++) v = (v << 1) | k48[s * 6 + j]!;
+      out[round * 8 + s] = v;
+    }
+  });
+  return out;
 }
 
-function feistel(r: Bits, k: Bits): Bits {
-  const x = permute(r, E);
-  for (let i = 0; i < 48; i++) x[i]! ^= k[i]!;
-  const out = new Uint8Array(32);
+const rotl = (x: number, n: number) => ((x << n) | (x >>> (32 - n))) >>> 0;
+
+function feistel(r: number, keys: Uint8Array, round: number): number {
+  // E 拡張: 6 ビット組 s は R のビット 4s..4s+5(1 始まり、0 は 32 に巡回)
+  let f = 0;
   for (let s = 0; s < 8; s++) {
-    const b = x.subarray(s * 6, s * 6 + 6);
-    const row = (b[0]! << 1) | b[5]!;
-    const col = (b[1]! << 3) | (b[2]! << 2) | (b[3]! << 1) | b[4]!;
-    const v = S[s]![row * 16 + col]!;
-    for (let j = 0; j < 4; j++) out[s * 4 + j] = (v >> (3 - j)) & 1;
+    const chunk = (rotl(r, (4 * s + 31) % 32) >>> 26) & 63;
+    f |= SP[s * 64 + (chunk ^ keys[round * 8 + s]!)]!;
   }
-  return permute(out, P);
+  return f >>> 0;
 }
 
-function desBlock(block: Uint8Array, keys: Bits[], decrypt: boolean): Uint8Array {
-  const ip = permute(toBits(block), IP);
-  let l = ip.subarray(0, 32) as Bits;
-  let r = ip.subarray(32) as Bits;
+function desWords(hi: number, lo: number, keys: Uint8Array, decrypt: boolean): [number, number] {
+  let [l, r] = perm64(IP_T, hi, lo);
   for (let i = 0; i < 16; i++) {
-    const k = keys[decrypt ? 15 - i : i]!;
-    const f = feistel(r, k);
-    const nr = new Uint8Array(32);
-    for (let j = 0; j < 32; j++) nr[j] = l[j]! ^ f[j]!;
+    const nr = (l ^ feistel(r, keys, decrypt ? 15 - i : i)) >>> 0;
     l = r;
     r = nr;
   }
-  const rl = new Uint8Array(64);
-  rl.set(r);
-  rl.set(l, 32);
-  return fromBits(permute(rl, FP));
+  return perm64(FP_T, r, l);
+}
+
+const readU32 = (b: Uint8Array, o: number) => ((b[o]! << 24) | (b[o + 1]! << 16) | (b[o + 2]! << 8) | b[o + 3]!) >>> 0;
+const writeU32 = (b: Uint8Array, o: number, v: number) => {
+  b[o] = v >>> 24;
+  b[o + 1] = (v >>> 16) & 255;
+  b[o + 2] = (v >>> 8) & 255;
+  b[o + 3] = v & 255;
+};
+
+function desBlock(block: Uint8Array, keys: Uint8Array, decrypt: boolean): Uint8Array {
+  const [hi, lo] = desWords(readU32(block, 0), readU32(block, 4), keys, decrypt);
+  const out = new Uint8Array(8);
+  writeU32(out, 0, hi);
+  writeU32(out, 4, lo);
+  return out;
 }
 
 export class Des {
-  private readonly keys: Bits[];
+  private readonly keys: Uint8Array;
   constructor(key: Uint8Array) {
     this.keys = subkeys(key);
   }

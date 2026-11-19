@@ -14,7 +14,7 @@ import {
   type CardFormat,
   type CardKind,
 } from "./spec.js";
-import { parseTlv, type Tlv } from "./tlv.js";
+import { encodeTlv, parseTlv, type Tlv } from "./tlv.js";
 
 export class CardParseError extends Error {
   constructor(message: string) {
@@ -71,8 +71,13 @@ export interface SignatureParts {
   algorithm: "rsa-pkcs1v15-sha256" | "ecdsa-p384-sha256";
   checkCode: Uint8Array;
   certificate: Uint8Array;
-  /** 署名対象データ(連結済み) */
+  /** 署名対象データ(仕様書の解釈どおりに連結したもの) */
   signedData: Uint8Array;
+  /**
+   * 仕様書の記述があいまいな箇所の別解釈(PoC で実カードと照合するため)。
+   * signedData で一致しなかった場合に順に試し、一致した label を検証結果に返す
+   */
+  alternatives?: { label: string; data: Uint8Array }[];
 }
 
 export interface ParsedCard {
@@ -163,6 +168,12 @@ export function parseCardRead(raw: Pick<RawCardRead, "format" | "kind" | "files"
               checkCode,
               certificate,
               signedData: concatBytes(padNulls(front, LEGACY_FRONT_IMAGE_LEN), padNulls(face, FACE_LEN)),
+              alternatives: [
+                // TLV の長さ = 実データ長のカードがある(実機で券面 3398 / 顔 2205 バイトを観測)
+                { label: "exact", data: concatBytes(front, face) },
+                { label: "ef-raw", data: concatBytes(f["df1/ef01"] ?? new Uint8Array(0), f["df1/ef02"] ?? new Uint8Array(0)) },
+                { label: "tlv", data: concatBytes(encodeTlv(TAG.frontImage, front), encodeTlv(TAG.face, face)) },
+              ],
             }
           : null,
     };
@@ -223,7 +234,40 @@ export function parseCardRead(raw: Pick<RawCardRead, "format" | "kind" | "files"
               padNulls(face, FACE_LEN),
               padNulls(name, GEN2_NAME_IMAGE_LEN),
             ),
+            alternatives: [
+              {
+                label: "exact",
+                data: concatBytes(
+                  ...GEN2_FACE_ITEMS.map((it) => items.get(it.tag) ?? new Uint8Array(0)),
+                  face,
+                  name,
+                ),
+              },
+              { label: "file-order", data: concatBytes(f["df1/ef02"] ?? new Uint8Array(0), f["df1/ef03"] ?? new Uint8Array(0)) },
+            ],
           }
         : null,
   };
+}
+
+/**
+ * 診断用: 各 EF の TLV 構造(タグと長さ、末尾の 0x00 埋めの長さ)を返す。値は含めない
+ */
+export function describeFiles(files: RawCardRead["files"]): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [path, data] of Object.entries(files)) {
+    if (!data) continue;
+    let desc: string;
+    try {
+      const tlvs = parseTlv(data);
+      desc = tlvs.map((t) => `${t.tag.toString(16).toUpperCase()}:${t.value.length}`).join(" ");
+      const last = tlvs.at(-1);
+      const trailing = last ? data.length - last.end : data.length;
+      if (trailing > 0) desc += ` +${trailing}`;
+    } catch {
+      desc = "TLV 解析不可";
+    }
+    out[path] = `${data.length}B ${desc}`;
+  }
+  return out;
 }

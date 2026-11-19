@@ -6,7 +6,7 @@
  */
 import { X509Certificate } from "node:crypto";
 import { readFileSync } from "node:fs";
-import { parseCardRead, type EfPath } from "@zairyu/zairyu-ic";
+import { describeFiles, parseCardRead, type EfPath } from "@zairyu/zairyu-ic";
 import { verifyCardSignature } from "@zairyu/zairyu-ic/verify";
 import { z } from "zod";
 
@@ -28,14 +28,22 @@ export const verifyIcReadInput = z.object({
 
 export const verifyIcReadOutput = z.object({
   signature: z.discriminatedUnion("status", [
-    z.object({ status: z.literal("valid"), issuerTrusted: z.boolean().nullable(), certificateValidAt: z.boolean() }),
-    z.object({ status: z.literal("invalid"), reason: z.string() }),
+    z.object({
+      status: z.literal("valid"),
+      issuerTrusted: z.boolean().nullable(),
+      certificateValidAt: z.boolean(),
+      matched: z.string(),
+      hashFormat: z.enum(["raw", "digestInfo"]).optional(),
+    }),
+    z.object({ status: z.literal("invalid"), reason: z.string(), detail: z.string().optional() }),
     z.object({ status: z.literal("absent") }),
   ]),
   cardNumber: z.string().nullable(),
   faceItems: z.record(z.string(), z.string().nullable()).nullable(),
   back: z.record(z.string(), z.union([z.string(), z.boolean(), z.null()])),
   images: z.object({ front: z.number(), face: z.number(), name: z.number(), address: z.number() }),
+  /** 診断用: 各 EF の TLV 構造(タグと長さのみ) */
+  structure: z.record(z.string(), z.string()),
 });
 
 let trustedIssuers: X509Certificate[] | undefined;
@@ -69,5 +77,6 @@ export function verifyIcRead(input: z.infer<typeof verifyIcReadInput>): z.infer<
       name: parsed.images.name?.length ?? 0,
       address: parsed.images.address?.length ?? 0,
     },
+    structure: describeFiles(files),
   };
 }
