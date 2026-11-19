@@ -10,7 +10,9 @@
     "build": "turbo run build",
     "test": "turbo run test",
     "typecheck": "turbo run typecheck",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "db:generate": "pnpm --filter @zairyu/db db:generate",
+    "db:migrate": "pnpm --filter @zairyu/db db:migrate"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

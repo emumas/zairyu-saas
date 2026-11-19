@@ -132,6 +132,13 @@
 | billing_periods | period(YYYY-MM), peak_count, amount, stripe_invoice_id, status | |
 | audit_logs | actor_id, action, target_type, target_id, ip, at | カード画像の閲覧も記録 |
 
+実装時の追加(`packages/db`):
+- `verifications.result` に `unverifiable`(年少者カード等で署名がなく IC 署名検証ができない)を追加
+- `residence_cards` に `card_kind`(在留カード/特別永住者証明書)、`needs_review`、`issued_at`、`pending_application_since`、`outside_activity_until` を追加
+- `platform_operators`(運営者アカウント)を追加。運営者はテナントに属さない
+- `work_hours.hours` は浮動小数点を避けて `minutes`(整数)にした
+- 追記専用テーブルの削除は保存期間切れ削除ジョブ専用ロール(`zairyu_purge`)だけに許可し、1-21 と両立させた
+
 ## 8. API設計(tRPC)
 
 アプリとWebで同じルーターを共有。Stripe Webhook のみ REST。全手続きでテナントと拠点の範囲をミドルウェアで強制。

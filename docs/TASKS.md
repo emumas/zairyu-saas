@@ -26,7 +26,8 @@
 ## フェーズ1: MVP
 
 ### 基盤
-- [ ] **1-1 DBスキーマ**: `DESIGN.md` 7章の全テーブルを Drizzle で定義。`tenant_id` と RLS ポリシー、`verifications`/`audit_logs` の UPDATE/DELETE 禁止
+- [x] **1-1 DBスキーマ**: `DESIGN.md` 7章の全テーブルを Drizzle で定義。`tenant_id` と RLS ポリシー、`verifications`/`audit_logs` の UPDATE/DELETE 禁止
+  - 進捗: 完了(`packages/db`)。RLS・ロール別権限・追記専用を実 PostgreSQL のテストで確認(CI でも実行)。設計からの追加は `packages/db/README.md` と DESIGN.md 7章の注記
 - [ ] **1-2 認証**: メール+パスワード(argon2)、TOTP、リフレッシュトークン、アプリの生体認証再ロック
 - [ ] **1-3 権限ミドルウェア**: テナント固定、ロール判定、拠点範囲の強制。権限マトリクスの単体テスト
 - [ ] **1-4 暗号化**: Key Vault のテナント別鍵でカード番号・画像を暗号化。HMAC検索列。Blob の署名付きURL発行
