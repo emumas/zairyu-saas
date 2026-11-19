@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { appRouter } from "./router.js";
 import { createCallerFactory } from "./trpc.js";
 
-const caller = createCallerFactory(appRouter)({ requestId: "test" });
+const caller = createCallerFactory(appRouter)({ requestId: "test", services: null, accessToken: null, ip: null });
 const a = (s: string) => new TextEncoder().encode(s);
 const b64 = (u: Uint8Array) => Buffer.from(u).toString("base64");
 

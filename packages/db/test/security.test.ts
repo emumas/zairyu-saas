@@ -1,12 +1,12 @@
 /**
  * 実際の PostgreSQL でテナント分離・ロール別権限・追記専用を確かめる。
  * TEST_DATABASE_URL(スーパーユーザーまたはロール作成権限のあるユーザー)が無ければスキップする。
- * 指定した DB の public スキーマは作り直される(テスト専用の DB を指定すること)。
+ * 同じサーバーに <DB名>_db を作って使う(public スキーマは毎回作り直す)。
  */
 import { eq, sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createDb, lookupUserForLogin, withPlatform, withPurge, withTenant, type Db } from "../src/client.js";
-import { runMigrations } from "../src/migrate.js";
+import { prepareTestDatabase } from "../src/testing.js";
 import { auditLogs, persons, residenceCards, sites, tenants, users, verifications } from "../src/schema.js";
 
 const url = process.env.TEST_DATABASE_URL;
@@ -31,14 +31,8 @@ describe.skipIf(!url)("DB セキュリティ", () => {
   }
 
   beforeAll(async () => {
-    const admin = createDb(url!, { max: 1 });
-    await admin.db.execute(sql`DROP SCHEMA IF EXISTS drizzle CASCADE`);
-    await admin.db.execute(sql`DROP SCHEMA public CASCADE`);
-    await admin.db.execute(sql`CREATE SCHEMA public`);
-    await admin.pool.end();
-    await runMigrations(url!);
-
-    const c = createDb(url!, { max: 4 });
+    const testUrl = await prepareTestDatabase(url!, "db");
+    const c = createDb(testUrl, { max: 4 });
     db = c.db;
     end = () => c.pool.end();
 
@@ -132,7 +126,7 @@ describe.skipIf(!url)("DB セキュリティ", () => {
         WHERE n.nspname = 'public' AND c.relkind = 'r'
           AND (EXISTS (SELECT 1 FROM pg_attribute a WHERE a.attrelid = c.oid AND a.attname = 'tenant_id' AND NOT a.attisdropped)
                OR c.relname = 'tenants')`);
-      expect(res.rows.length).toBeGreaterThanOrEqual(14);
+      expect(res.rows.length).toBeGreaterThanOrEqual(15);
       for (const r of res.rows) expect({ table: r.relname, rls: r.rls, force: r.force }).toEqual({ table: r.relname, rls: true, force: true });
     });
   });

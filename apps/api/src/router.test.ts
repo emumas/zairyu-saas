@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { appRouter } from "./router.js";
 import { createCallerFactory } from "./trpc.js";
 
-const caller = createCallerFactory(appRouter)({ requestId: "test" });
+const caller = createCallerFactory(appRouter)({ requestId: "test", services: null, accessToken: null, ip: null });
 
 describe("appRouter", () => {
   it("health", async () => {

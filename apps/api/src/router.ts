@@ -2,9 +2,14 @@ import { TRPCError } from "@trpc/server";
 import { isValidCardNumber, normalizeCardNumberInput } from "@zairyu/shared";
 import { z } from "zod";
 import { verifyIcRead, verifyIcReadInput, verifyIcReadOutput } from "./poc.js";
+import { authRouter } from "./routers/auth.js";
+import { meRouter } from "./routers/me.js";
 import { publicProcedure, router } from "./trpc.js";
 
 export const appRouter = router({
+  auth: authRouter,
+  me: meRouter,
+
   health: publicProcedure.output(z.object({ status: z.literal("ok") })).query(() => ({ status: "ok" as const })),
 
   /** PoC 用: 手入力されたカード番号の形式チェック */

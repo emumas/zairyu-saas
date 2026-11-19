@@ -9,6 +9,7 @@
  */
 import { sql } from "drizzle-orm";
 import {
+  bigint,
   bigserial,
   boolean,
   check,
@@ -145,6 +146,11 @@ export const users = pgTable(
     status: userStatus("status").notNull().default("invited"),
     totpSecretEnc: bytea("totp_secret_enc"),
     totpEnabled: boolean("totp_enabled").notNull().default(false),
+    /** 最後に受け付けた TOTP のタイムステップ(同じコードの再利用を防ぐ) */
+    totpLastStep: bigint("totp_last_step", { mode: "number" }),
+    /** 連続したログイン失敗の回数とロック解除時刻 */
+    failedLoginCount: integer("failed_login_count").notNull().default(0),
+    lockedUntil: timestamp("locked_until", { withTimezone: true }),
     lastLoginAt: timestamp("last_login_at", { withTimezone: true }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
@@ -164,6 +170,30 @@ export const userSites = pgTable(
       .references(() => sites.id, { onDelete: "cascade" }),
   },
   (t) => [primaryKey({ columns: [t.userId, t.siteId] })],
+);
+
+/**
+ * リフレッシュトークン(ハッシュのみ保存)。ローテーションし、同じ family で使用済みのものが
+ * 再利用されたら盗用とみなして family ごと失効させる
+ */
+export const refreshTokens = pgTable(
+  "refresh_tokens",
+  {
+    id: id(),
+    tenantId: tenantId(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    /** SHA-256(トークン) */
+    tokenHash: bytea("token_hash").notNull(),
+    familyId: uuid("family_id").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    usedAt: timestamp("used_at", { withTimezone: true }),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    deviceName: text("device_name"),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex("refresh_tokens_hash_uq").on(t.tokenHash), index("refresh_tokens_family_idx").on(t.familyId)],
 );
 
 // ---------------------------------------------------------------- 登録者とカード
