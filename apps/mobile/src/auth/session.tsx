@@ -139,7 +139,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         }
         // 端末に画面ロックが設定されていない場合は生体認証を求められない(案内のみ)
         const token = await doRefresh();
-        if (!token) return { ok: false, message: "もう一度ログインしてください" };
+        // ログインが無効になった場合は doRefresh がログイン画面に戻す。残るのは通信できないとき
+        if (!token) return { ok: false, message: "サーバーに接続できません。API の起動と接続を確認してください" };
         try {
           setState({ status: "signedIn", me: await api.me.get.query() });
           return hasSecurity ? { ok: true } : { ok: true, message: "端末に画面ロックを設定することをおすすめします" };
