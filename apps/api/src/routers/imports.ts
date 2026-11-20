@@ -6,9 +6,10 @@
  * 結果に氏名などの値は含めない(呼び出し側が CSV を持っている)。監査ログにも値は残さない
  */
 import { createPerson, findPersonsByEmployeeCodes, listSites, updatePerson, type Tx } from "@zairyu/db";
-import { personImportInput, validateImportRow, type PersonImportRow } from "@zairyu/shared";
+import { personImportInput, RESTRICTED_MESSAGE, validateImportRow, type PersonImportRow } from "@zairyu/shared";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
+import { tenantRestriction } from "../billingGuard.js";
 import { permissionProcedure, router } from "../trpc.js";
 
 type Field = "siteId" | "name" | "nationality" | "birthDate";
@@ -26,7 +27,7 @@ const rowResult = z.object({
   errors: z.array(z.string()),
 });
 
-async function plan(tx: Tx, rows: readonly PersonImportRow[]): Promise<Planned[]> {
+async function plan(tx: Tx, rows: readonly PersonImportRow[], canCreate: boolean): Promise<Planned[]> {
   const sites = new Map((await listSites(tx)).filter((s) => !s.archivedAt).map((s) => [s.name, s.id]));
   const existing = new Map((await findPersonsByEmployeeCodes(tx, [...new Set(rows.map((r) => r.employeeCode.trim()))])).map((p) => [p.employeeCode, p]));
   const seen = new Map<string, number>();
@@ -43,7 +44,11 @@ async function plan(tx: Tx, rows: readonly PersonImportRow[]): Promise<Planned[]
     if (errors.length > 0 || !("value" in v) || !siteId) return { line: r.line, action: "error", errors };
 
     const cur = existing.get(v.value.employeeCode);
-    if (!cur) return { line: r.line, action: "create", value: { ...v.value, siteId } };
+    if (!cur) {
+      // 未払いで新規登録を止めている間も、既存の登録者の更新はできる
+      if (!canCreate) return { line: r.line, action: "error", errors: [RESTRICTED_MESSAGE] };
+      return { line: r.line, action: "create", value: { ...v.value, siteId } };
+    }
     if (cur.status === "archived") return { line: r.line, action: "error", errors: ["この社員番号の登録者はアーカイブ済みです"] };
     // 空欄の任意項目は変更しない
     const changes: Partial<Record<Field, string>> = {};
@@ -69,7 +74,8 @@ export const importsRouter = router({
     // 保存しないが、行数が多く URL に載らないため mutation にする(既存の登録者との突き合わせなので監査ログに残す)
     .mutation(({ ctx, input }) =>
       ctx.tenantTx(async (tx) => {
-        const planned = await plan(tx, input.rows);
+        const canCreate = (await tenantRestriction(tx, ctx.services.now())).state !== "restricted";
+        const planned = await plan(tx, input.rows, canCreate);
         await ctx.audit(tx, { action: "person.import_preview", detail: { rows: planned.length } });
         return { rows: planned.map(present) };
       }),
@@ -80,8 +86,8 @@ export const importsRouter = router({
     .output(z.object({ created: z.number(), updated: z.number(), unchanged: z.number(), skipped: z.number() }))
     .mutation(({ ctx, input }) =>
       ctx.tenantTx(async (tx) => {
-        // TODO(1-18): 未払いの猶予期間を過ぎたテナントは新規登録を止める
-        const planned = await plan(tx, input.rows);
+        const canCreate = (await tenantRestriction(tx, ctx.services.now())).state !== "restricted";
+        const planned = await plan(tx, input.rows, canCreate);
         const skipped = planned.filter((p) => p.action === "error").length;
         if (skipped > 0 && !input.skipErrors) {
           throw new TRPCError({ code: "BAD_REQUEST", message: `エラーの行が ${skipped} 行あります。直すか、エラーの行を除いて取り込んでください` });

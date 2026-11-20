@@ -1,4 +1,4 @@
-import { BrowserRouter, Navigate, NavLink, Route, Routes } from "react-router";
+import { BrowserRouter, Link, Navigate, NavLink, Route, Routes } from "react-router";
 import { AlertsPage } from "./pages/AlertsPage";
 import { BillingPage } from "./pages/BillingPage";
 import { DashboardPage } from "./pages/DashboardPage";
@@ -11,8 +11,26 @@ import { ReportsPage } from "./pages/ReportsPage";
 import { SitesPage } from "./pages/SitesPage";
 import { UsersPage } from "./pages/UsersPage";
 import { PlatformApp } from "./platform/PlatformApp";
-import { SessionProvider, useSession } from "./session";
+import { SessionProvider, useSession, type Me } from "./session";
+import { fmtDateTime } from "./ui";
 import { USER_ROLE_LABEL } from "@zairyu/shared";
+
+/** 未払い時のお知らせ(1-18)。猶予中は案内だけ、猶予後は新しい登録者の追加だけが止まる */
+function BillingBanner({ billing, canManage }: { billing: Me["billing"]; canManage: boolean }) {
+  if (billing.state === "ok") return null;
+  const link = canManage ? <Link to="/billing">契約・請求を確認する</Link> : <>テナント管理者にお問い合わせください。</>;
+  return billing.state === "grace" ? (
+    <p className="msg msg-warn banner">
+      お支払いが確認できていません。
+      {billing.graceEndsAt ? `${fmtDateTime(billing.graceEndsAt)} を過ぎると、` : "このままでは、"}
+      新しい登録者を追加できなくなります(閲覧と期限アラートは続きます)。{link}
+    </p>
+  ) : (
+    <p className="msg msg-danger banner">
+      お支払いが確認できないため、新しい登録者の追加を停止しています。閲覧・カードの更新・期限アラートは引き続き使えます。{link}
+    </p>
+  );
+}
 
 function Shell() {
   const session = useSession();
@@ -47,6 +65,7 @@ function Shell() {
         </div>
       </nav>
       <main>
+        <BillingBanner billing={me.billing} canManage={session.can("billing.manage")} />
         <Routes>
           <Route path="/" element={<DashboardPage />} />
           <Route path="/persons" element={<PersonsPage />} />

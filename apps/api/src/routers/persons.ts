@@ -26,6 +26,7 @@ import {
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { assertSiteAccess } from "../authz/guards.js";
+import { assertCanAddPersons } from "../billingGuard.js";
 import { siteScope, type Actor, type Role } from "../authz/permissions.js";
 import { permissionProcedure, router } from "../trpc.js";
 
@@ -145,7 +146,7 @@ export const personsRouter = router({
     .output(z.object({ id: z.string() }))
     .mutation(({ ctx, input }) =>
       ctx.tenantTx(async (tx) => {
-        // TODO(1-18): 未払いの猶予期間を過ぎたテナントは新規登録を止める
+        await assertCanAddPersons(tx, ctx.services.now());
         await assertUsableSite(tx, ctx.actor, input.siteId);
         const id = await withDuplicateCheck(createPerson(tx, input));
         await ctx.audit(tx, { action: "person.create", targetType: "person", targetId: id });
@@ -194,6 +195,8 @@ export const personsRouter = router({
       ctx.tenantTx(async (tx) => {
         const current = await loadForWrite(tx, ctx.actor, input.id);
         if (current.status !== "retired") throw new TRPCError({ code: "BAD_REQUEST", message: "退職した登録者だけ復職にできます" });
+        // 復職は課金対象の人数を増やすので、新規登録と同じく未払い時は止める
+        await assertCanAddPersons(tx, ctx.services.now());
         await setPersonStatus(tx, input.id, "active", { retiredAt: null });
         await ctx.audit(tx, { action: "person.reactivate", targetType: "person", targetId: input.id });
         return { id: input.id };

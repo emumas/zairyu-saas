@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { calculateCharge, isLastDayOfMonth, periodOf, pricingTiersSchema, resolvePricing, type Pricing } from "./billing.js";
+import { billingRestriction, calculateCharge, isLastDayOfMonth, PAST_DUE_GRACE_DAYS, periodOf, pricingTiersSchema, resolvePricing, RESTRICTED_MESSAGE, type Pricing } from "./billing.js";
 
 const tiered: Pricing = {
   baseFee: 10_000,
@@ -114,4 +114,25 @@ describe("月の扱い", () => {
     expect(isLastDayOfMonth(d)).toBe(expected);
   });
   it("periodOf", () => expect(periodOf("2026-11-20")).toBe("2026-11"));
+});
+
+describe("billingRestriction(未払い時の制御)", () => {
+  const since = new Date("2026-03-01T00:00:00Z");
+  const day = 86_400_000;
+  it("未払いでなければ通常", () => {
+    expect(billingRestriction("active", null, since.getTime())).toEqual({ state: "ok" });
+    expect(billingRestriction("trial", since, since.getTime())).toEqual({ state: "ok" });
+  });
+  it("未払いから 14 日間は猶予、過ぎたら新規登録を止める", () => {
+    expect(billingRestriction("past_due", since, since.getTime() + 13 * day)).toEqual({ state: "grace", graceEndsAt: "2026-03-15T00:00:00.000Z" });
+    expect(billingRestriction("past_due", since, since.getTime() + 14 * day - 1)).toMatchObject({ state: "grace" });
+    expect(billingRestriction("past_due", since, since.getTime() + 14 * day)).toEqual({ state: "restricted", since: "2026-03-15T00:00:00.000Z" });
+    expect(PAST_DUE_GRACE_DAYS).toBe(14);
+  });
+  it("起点が無ければ止めない(猶予中として案内だけ)", () => {
+    expect(billingRestriction("past_due", null, since.getTime())).toEqual({ state: "grace", graceEndsAt: null });
+  });
+  it("案内文に料金や購入の言葉を入れない(アプリにも出すため)", () => {
+    expect(RESTRICTED_MESSAGE).not.toMatch(/円|料金|購入|支払|プラン/);
+  });
 });

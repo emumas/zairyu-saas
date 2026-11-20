@@ -96,3 +96,5 @@ dd { margin: 0; }
 .num { text-align: right; font-variant-numeric: tabular-nums; }
 .bar { height: 10px; border-radius: 3px; background: #b6d4f0; min-width: 2px; }
 .bar-peak { background: var(--primary); }
+.banner { border: 1px solid currentColor; border-radius: 8px; padding: 10px 14px; margin: 0 0 16px; background: #fffbea; }
+.banner.msg-danger { background: #fff0f0; }

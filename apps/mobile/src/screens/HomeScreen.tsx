@@ -1,5 +1,5 @@
 /** ホーム: 期限区分の件数(ダッシュボード)と登録者の検索 */
-import { EXPIRY_BUCKET_LABEL, type ExpiryBucket } from "@zairyu/shared";
+import { EXPIRY_BUCKET_LABEL, RESTRICTED_MESSAGE, type ExpiryBucket } from "@zairyu/shared";
 import { useCallback, useEffect, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { api, messageOf } from "../api";
@@ -33,6 +33,8 @@ export function HomeScreen({
   onOpenAlerts: () => void;
 }) {
   const session = useSession();
+  // 未払い時の制御(1-18)。アプリには料金・支払いの案内を出さない(App Store 3.1.3。契約は Web だけ)
+  const billing = session.state.status === "signedIn" ? session.state.me.billing : null;
   const me = session.state.status === "signedIn" ? session.state.me : null;
   const [summary, setSummary] = useState<Summary | null>(null);
   const [q, setQ] = useState("");
@@ -88,7 +90,8 @@ export function HomeScreen({
         })}
       </View>
       {session.can("alerts.read") && <Button label="アラート(未対応)を見る" kind="secondary" onPress={onOpenAlerts} />}
-      {session.can("persons.write") && <Button label="登録者を追加" kind="secondary" onPress={onCreatePerson} />}
+      {billing?.state === "restricted" && <Message text={RESTRICTED_MESSAGE} tone="warn" />}
+      {session.can("persons.write") && billing?.state !== "restricted" && <Button label="登録者を追加" kind="secondary" onPress={onCreatePerson} />}
       <Field label={filter ? `${filter.label}の登録者を検索` : "登録者を検索"} value={q} onChangeText={setQ} placeholder="氏名・社員番号" autoCapitalize="none" />
       <Message text={error} />
       <Text style={{ color: color.sub }}>{total} 件</Text>

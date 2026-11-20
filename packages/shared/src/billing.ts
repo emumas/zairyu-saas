@@ -140,3 +140,30 @@ export const TENANT_STATUS_LABEL: Record<(typeof TENANT_STATUSES)[number], strin
   past_due: "未払い",
   suspended: "停止",
 };
+
+// ---------------------------------------------------------------- 未払い時の制御(1-18)
+
+/** 支払い失敗から通常どおり使える日数(DESIGN.md 6章の案) */
+export const PAST_DUE_GRACE_DAYS = 14;
+
+export type BillingRestriction =
+  /** 通常 */
+  | { state: "ok" }
+  /** 未払いだが猶予期間中(通常どおり使える。画面でお知らせする) */
+  | { state: "grace"; graceEndsAt: string | null }
+  /** 猶予期間を過ぎた: 新しい登録者の追加(登録・CSV の新規・復職)だけを止める。閲覧・期限アラート・カードの更新は止めない */
+  | { state: "restricted"; since: string };
+
+/**
+ * 契約状態から、新規登録を止めるかを決める。
+ * 未払いの起点が無い(手動で未払いにした古いデータなど)ときは猶予中として扱い、黙って止めない
+ */
+export function billingRestriction(status: string, pastDueSince: Date | null, nowMs: number): BillingRestriction {
+  if (status !== "past_due") return { state: "ok" };
+  if (!pastDueSince) return { state: "grace", graceEndsAt: null };
+  const ends = pastDueSince.getTime() + PAST_DUE_GRACE_DAYS * 86_400_000;
+  return nowMs < ends ? { state: "grace", graceEndsAt: new Date(ends).toISOString() } : { state: "restricted", since: new Date(ends).toISOString() };
+}
+
+/** 新規登録を止めたときのメッセージ(アプリにも出すので、料金・購入の案内は入れない) */
+export const RESTRICTED_MESSAGE = "ご契約の確認が必要なため、新しい登録者を追加できません。テナント管理者にお問い合わせください(閲覧と期限アラートは引き続き使えます)";
