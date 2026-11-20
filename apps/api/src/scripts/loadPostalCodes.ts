@@ -12,6 +12,9 @@ import { unzipSync } from "fflate";
 /* eslint-disable no-console -- 運用スクリプトの案内 */
 /** 取得先(順に試す)。日本郵便のサイトの構成が変わったら、ダウンロードページで確かめて直す */
 const SOURCE_URLS = [
+  // 2026 年時点の場所(Shift_JIS 版。読み仮名は使わないので大書き・小書きのどちらでもよい)
+  "https://www.post.japanpost.jp/service/search/zipcode/download/oogaki/zip/ken_all.zip",
+  // 以前の場所(予備)
   "https://www.post.japanpost.jp/zipcode/dl/utf/zip/utf_ken_all.zip",
   "https://www.post.japanpost.jp/zipcode/dl/kogaki/zip/ken_all.zip",
 ];
