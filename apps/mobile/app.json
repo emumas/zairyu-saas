@@ -50,7 +50,14 @@
           "includeNdefEntitlement": false
         }
       ],
-      "expo-dev-client"
+      "expo-dev-client",
+      [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "在留カード管理のロック解除に Face ID を使用します"
+        }
+      ],
+      "expo-secure-store"
     ]
   }
 }

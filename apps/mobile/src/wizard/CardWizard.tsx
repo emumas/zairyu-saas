@@ -1,0 +1,333 @@
+/**
+ * カード登録ウィザード(1-7、DESIGN.md 4章)
+ *   1. 表面撮影(端末内 OCR で番号)→ 2. 番号確認 → 3. IC 読取 → 4. 照合結果の確認 → 5. 裏面撮影 → 6. 保存
+ * - 撮影画像・IC のデータはこの画面のメモリにだけ置き、保存後・中断時に破棄する(一時ファイルは撮影直後に削除)
+ * - サーバーは保存時にも IC を検証し直す
+ */
+import {
+  isValidCardNumber,
+  normalizeCardNumberInput,
+  WORK_RESTRICTION_LABEL,
+  WORK_RESTRICTIONS,
+  type CardManualFields,
+  type IcReadPayload,
+} from "@zairyu/shared";
+import { CardNumberMismatchError, CardReadError, readResidenceCard, toBase64, type EfPath } from "@zairyu/zairyu-ic";
+import { useState } from "react";
+import { Switch, Text, View } from "react-native";
+import { api, messageOf } from "../api";
+import { randomBytes, tokuteiDeliveryKey } from "../config";
+import { maxReadLengthFor, withIsoDep } from "../nfc";
+import { compressForUpload, deleteFile, recognizeCardNumber } from "../photo";
+import { FORMAT_LABEL } from "../screens/format";
+import { Button, Card, Choice, color, Field, Message, Row, Screen } from "../ui/kit";
+import { CameraCapture } from "../ui/CameraCapture";
+
+type Photo = { contentType: "image/jpeg"; data: string };
+type Verify = Awaited<ReturnType<typeof api.cards.verifyIcRead.mutate>>;
+type Step = "front" | "number" | "ic" | "confirm" | "back" | "done";
+type IcFailure = "unreadable" | "unsupported_device" | "other";
+
+const DIFF_LABEL: Record<string, string> = {
+  cardNumber: "在留カード番号",
+  expiryDate: "在留期間の満了日",
+  cardValidUntil: "カードの有効期限",
+  statusOfResidence: "在留資格",
+  workRestriction: "就労制限",
+  pendingApplication: "更新申請中",
+};
+
+const IC_FAILURE: { value: IcFailure; label: string }[] = [
+  { value: "unreadable", label: "読み取れない(カードの破損など)" },
+  { value: "unsupported_device", label: "この端末では読み取れない" },
+  { value: "other", label: "その他" },
+];
+
+function icErrorMessage(e: unknown): string {
+  if (e instanceof CardNumberMismatchError) return "在留カード番号が一致しません。番号を確認してください。";
+  if (e instanceof CardReadError) {
+    if (e.step === "mutual_authenticate") return "カードとの認証に失敗しました。番号が正しいか確認してください。";
+    if (e.step === "set_session_key") return "特定在留カードは現在読み取れません(配送鍵が未設定)。";
+    return "読み取りに失敗しました。カードを端末の背面に当て、動かさずにもう一度お試しください。";
+  }
+  return "読み取りに失敗しました。もう一度お試しください。";
+}
+
+export function CardWizard({ personId, personName, onClose, onDone }: { personId: string; personName: string; onClose: () => void; onDone: () => void }) {
+  const [step, setStep] = useState<Step>("front");
+  const [camera, setCamera] = useState<"front" | "back" | null>(null);
+  const [front, setFront] = useState<Photo | null>(null);
+  const [back, setBack] = useState<Photo | null>(null);
+  const [candidates, setCandidates] = useState<string[]>([]);
+  const [numberInput, setNumberInput] = useState("");
+  const [ic, setIc] = useState<IcReadPayload | null>(null);
+  const [icFailure, setIcFailure] = useState<IcFailure | null>(null);
+  const [verify, setVerify] = useState<Verify | null>(null);
+  const [manual, setManual] = useState<CardManualFields>({});
+  const [diffReason, setDiffReason] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [result, setResult] = useState<{ icVerified: boolean; needsReview: boolean } | null>(null);
+
+  const cardNumber = normalizeCardNumberInput(numberInput);
+  const numberOk = isValidCardNumber(cardNumber);
+  const hasIcText = verify?.format === "gen2" || verify?.format === "tokutei";
+
+  async function onFrontCaptured(path: string) {
+    try {
+      const found = await recognizeCardNumber(path).catch(() => []);
+      setFront(await compressForUpload(path));
+      setCandidates(found);
+      if (found[0]) setNumberInput(found[0]);
+    } finally {
+      deleteFile(path);
+    }
+    setCamera(null);
+    setStep("number");
+  }
+
+  async function onBackCaptured(path: string) {
+    try {
+      setBack(await compressForUpload(path));
+    } finally {
+      deleteFile(path);
+    }
+    setCamera(null);
+  }
+
+  async function readIc() {
+    setBusy(true);
+    setError(null);
+    try {
+      const raw = await withIsoDep(async (transceive, info) => {
+        const maxReadLength = maxReadLengthFor(info);
+        const deliveryKey = tokuteiDeliveryKey();
+        return readResidenceCard(transceive, {
+          cardNumber,
+          randomBytes,
+          ...(maxReadLength ? { maxReadLength } : {}),
+          ...(deliveryKey ? { tokuteiDeliveryKey: deliveryKey } : {}),
+        });
+      });
+      const files: Partial<Record<EfPath, string>> = {};
+      for (const [path, data] of Object.entries(raw.files)) if (data) files[path as EfPath] = toBase64(data);
+      const payload: IcReadPayload = { format: raw.format, kind: raw.kind, files };
+      setIc(payload);
+      setIcFailure(null);
+      setVerify(await api.cards.verifyIcRead.mutate({ personId, cardNumber, ic: payload, manual: {} }));
+      setStep("confirm");
+    } catch (e) {
+      setError(e instanceof CardReadError ? icErrorMessage(e) : messageOf(e, icErrorMessage(e)));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /** 入力した値で照合し直す(第2世代は IC の値と比べる) */
+  async function recheck() {
+    if (!ic) return;
+    setBusy(true);
+    setError(null);
+    try {
+      setVerify(await api.cards.verifyIcRead.mutate({ personId, cardNumber, ic, manual }));
+    } catch (e) {
+      setError(messageOf(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function save() {
+    setBusy(true);
+    setError(null);
+    try {
+      const r = await api.cards.register.mutate({
+        personId,
+        cardNumber,
+        ic,
+        ...(ic ? {} : { icFailureReason: icFailure ?? "other" }),
+        manual,
+        photos: { ...(front ? { front } : {}), ...(back ? { back } : {}) },
+        ...(diffReason.trim() ? { diffReason: diffReason.trim() } : {}),
+      });
+      // 送信したデータを破棄する(CLAUDE.md ルール4)
+      setFront(null);
+      setBack(null);
+      setIc(null);
+      setResult(r);
+      setStep("done");
+    } catch (e) {
+      setError(messageOf(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const needsReason = (verify?.diffs.length ?? 0) > 0;
+  const manualNeeded = !hasIcText; // 旧様式・IC なしは満了日などを入力する
+  const canSave = numberOk && (!needsReason || diffReason.trim().length > 0) && (!manualNeeded || !!manual.expiryDate || verify?.kind === "special_permanent");
+
+  return (
+    <Screen title={`カード登録: ${personName}`} onBack={step === "done" ? undefined : onClose}>
+      <CameraCapture
+        visible={camera !== null}
+        title={camera === "back" ? "裏面を撮影" : "表面を撮影"}
+        onClose={() => setCamera(null)}
+        onCaptured={camera === "back" ? onBackCaptured : onFrontCaptured}
+      />
+
+      {step === "front" && (
+        <Card>
+          <Text style={{ fontWeight: "700" }}>1. 表面を撮影</Text>
+          <Text>在留カードの表面を撮影します。番号を端末内で読み取ります(画像は外部の AI に送りません)。</Text>
+          <Button label="表面を撮影" onPress={() => setCamera("front")} />
+          <Button label="撮影せずに番号を入力" kind="secondary" onPress={() => setStep("number")} />
+        </Card>
+      )}
+
+      {step === "number" && (
+        <Card>
+          <Text style={{ fontWeight: "700" }}>2. 在留カード番号の確認</Text>
+          <Text>券面の番号と同じか確認してください。違う場合は直してください。</Text>
+          <Field
+            label="在留カード番号"
+            value={numberInput}
+            onChangeText={setNumberInput}
+            autoCapitalize="characters"
+            autoCorrect={false}
+            maxLength={20}
+            error={numberInput && !numberOk ? "英字2文字+数字8桁+英字2文字で入力してください" : null}
+          />
+          {candidates.length > 1 && (
+            <View style={{ gap: 4 }}>
+              <Text style={{ color: color.sub }}>他の候補</Text>
+              {candidates.slice(1).map((c) => (
+                <Text key={c} style={{ color: color.primary }} onPress={() => setNumberInput(c)}>
+                  {c}
+                </Text>
+              ))}
+            </View>
+          )}
+          <Button label="次へ(IC 読み取り)" disabled={!numberOk} onPress={() => setStep("ic")} />
+          <Button label="撮り直す" kind="secondary" onPress={() => setCamera("front")} />
+        </Card>
+      )}
+
+      {step === "ic" && (
+        <Card>
+          <Text style={{ fontWeight: "700" }}>3. IC の読み取り</Text>
+          <Text>ボタンを押してから、カードを端末の背面(iPhone は上部)に当て、読み取りが終わるまで動かさないでください(5 秒ほど)。金属の机の上では読めないことがあります。</Text>
+          <Button label="IC を読み取る" busy={busy} onPress={readIc} />
+          <Message text={error} />
+          <Text style={{ color: color.sub, marginTop: 8 }}>IC が読めない場合</Text>
+          <Choice options={IC_FAILURE} value={icFailure} onChange={setIcFailure} />
+          <Button
+            label="IC なしで続ける(IC 未検証として登録)"
+            kind="secondary"
+            disabled={!icFailure}
+            onPress={() => {
+              setIc(null);
+              setVerify(null);
+              setStep("confirm");
+            }}
+          />
+        </Card>
+      )}
+
+      {step === "confirm" && (
+        <>
+          <Card>
+            <Text style={{ fontWeight: "700" }}>4. 照合結果の確認</Text>
+            {verify ? (
+              <>
+                <Row k="様式" v={FORMAT_LABEL[verify.format]} />
+                <Row
+                  k="電子署名"
+                  v={verify.signature.status === "valid" ? "OK(真正)" : verify.signature.status === "absent" ? "なし(年少者のカード)" : "NG"}
+                  tone={verify.signature.status === "valid" ? "ok" : verify.signature.status === "absent" ? "warn" : "danger"}
+                />
+                {verify.needsReview && (
+                  <Message text="署名の検証に失敗しました。偽造の疑いがあります。「要確認」として登録し、入管局・労働局に相談してください。" />
+                )}
+                {hasIcText && (
+                  <>
+                    <Row k="在留期間満了日" v={verify.fields.expiryDate ?? "—"} />
+                    <Row k="カード有効期限" v={verify.fields.cardValidUntil ?? "—"} />
+                    <Row k="在留資格(コード)" v={verify.fields.statusOfResidence ?? "—"} />
+                    <Row k="就労制限" v={verify.fields.workRestriction ? WORK_RESTRICTION_LABEL[verify.fields.workRestriction as keyof typeof WORK_RESTRICTION_LABEL] : "—"} />
+                    <Row k="更新申請中" v={verify.fields.pendingApplication ? "はい" : "いいえ"} />
+                  </>
+                )}
+              </>
+            ) : (
+              <Message text="IC を読み取っていません。券面を見て入力してください(IC 未検証として登録されます)。" tone="warn" />
+            )}
+          </Card>
+
+          {manualNeeded && (
+            <Card>
+              <Text style={{ fontWeight: "700" }}>券面の記載事項を入力</Text>
+              <Text style={{ color: color.sub }}>旧様式のカードは IC に文字情報がないため、券面を見て入力します。</Text>
+              <Field
+                label="在留期間の満了日(YYYY-MM-DD)"
+                value={manual.expiryDate ?? ""}
+                onChangeText={(v) => setManual({ ...manual, expiryDate: v || null })}
+                placeholder="2029-06-20"
+                keyboardType="numbers-and-punctuation"
+              />
+              <Field label="在留資格" value={manual.statusOfResidence ?? ""} onChangeText={(v) => setManual({ ...manual, statusOfResidence: v || null })} placeholder="技術・人文知識・国際業務" />
+              <Text style={{ fontWeight: "600" }}>就労制限の有無</Text>
+              <Choice
+                options={WORK_RESTRICTIONS.map((w) => ({ value: w, label: WORK_RESTRICTION_LABEL[w] }))}
+                value={manual.workRestriction ?? null}
+                onChange={(w) => setManual({ ...manual, workRestriction: w })}
+              />
+              {!verify && (
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                  <Switch value={manual.pendingApplication ?? false} onValueChange={(v) => setManual({ ...manual, pendingApplication: v })} />
+                  <Text>裏面に「在留期間更新等許可申請中」の記載がある</Text>
+                </View>
+              )}
+            </Card>
+          )}
+
+          {verify && verify.diffs.length > 0 && (
+            <Card>
+              <Text style={{ fontWeight: "700", color: color.danger }}>券面と IC が一致しません</Text>
+              {verify.diffs.map((d) => (
+                <Text key={d.field}>
+                  {DIFF_LABEL[d.field] ?? d.field}
+                  {d.field === "cardNumber" ? "" : `: IC「${String(d.ic)}」/ 入力「${String(d.input)}」`}
+                </Text>
+              ))}
+              <Field label="理由(必須)" value={diffReason} onChangeText={setDiffReason} placeholder="例: 券面の読み間違い" multiline />
+            </Card>
+          )}
+          <Message text={error} />
+          {verify && manualNeeded && <Button label="入力内容で照合し直す" kind="secondary" busy={busy} onPress={recheck} />}
+          <Button label="次へ(裏面撮影)" disabled={!canSave} onPress={() => setStep("back")} />
+        </>
+      )}
+
+      {step === "back" && (
+        <Card>
+          <Text style={{ fontWeight: "700" }}>5. 裏面を撮影</Text>
+          <Text>追記欄・資格外活動許可欄を確認するため、裏面を撮影します。</Text>
+          <Button label={back ? "裏面を撮り直す" : "裏面を撮影"} kind={back ? "secondary" : "primary"} onPress={() => setCamera("back")} />
+          {back && <Message text="裏面を撮影しました" tone="ok" />}
+          <Message text={error} />
+          <Button label="保存する" busy={busy} disabled={!canSave} onPress={save} />
+        </Card>
+      )}
+
+      {step === "done" && result && (
+        <Card>
+          <Text style={{ fontWeight: "700" }}>登録しました</Text>
+          <Row k="IC 検証" v={result.icVerified ? "検証済み" : "未検証"} tone={result.icVerified ? "ok" : "warn"} />
+          {result.needsReview && <Message text="「要確認(偽造の疑い)」として登録しました。" />}
+          <Button label="登録者の画面に戻る" onPress={onDone} />
+        </Card>
+      )}
+    </Screen>
+  );
+}

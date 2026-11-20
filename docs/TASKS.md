@@ -29,7 +29,7 @@
 - [x] **1-1 DBスキーマ**: `DESIGN.md` 7章の全テーブルを Drizzle で定義。`tenant_id` と RLS ポリシー、`verifications`/`audit_logs` の UPDATE/DELETE 禁止
   - 進捗: 完了(`packages/db`)。RLS・ロール別権限・追記専用を実 PostgreSQL のテストで確認(CI でも実行)。設計からの追加は `packages/db/README.md` と DESIGN.md 7章の注記
 - [ ] **1-2 認証**: メール+パスワード(argon2)、TOTP、リフレッシュトークン、アプリの生体認証再ロック
-  - 進捗: サーバー側は完了(`apps/api/src/auth`、`routers/auth.ts`)。argon2id、ログイン失敗 10 回で 15 分ロック、管理者の TOTP 必須(初回に設定)とコード再利用防止、リフレッシュトークンのローテーションと再利用検知、IP 単位のレート制限、監査ログ。実 PostgreSQL の結合テストあり。**残り: アプリ側(ログイン画面、トークンの安全な保存、生体認証での再ロック)**。TOTP 秘密鍵の暗号化は暫定でローカル鍵(1-4 で Key Vault に置き換え)。レート制限はメモリ上(複数インスタンス化の前に共有ストアへ)
+  - 進捗: サーバー側は完了(`apps/api/src/auth`、`routers/auth.ts`)。argon2id、ログイン失敗 10 回で 15 分ロック、管理者の TOTP 必須(初回に設定)とコード再利用防止、リフレッシュトークンのローテーションと再利用検知、IP 単位のレート制限、監査ログ。実 PostgreSQL の結合テストあり。アプリ側も実装(`apps/mobile/src/auth`: ログイン・TOTP 設定、リフレッシュトークンを SecureStore に保存、起動時と 30 秒以上離れたあとに生体認証で再ロック。実機は未確認)。TOTP 秘密鍵の暗号化は暫定でローカル鍵(1-4 で Key Vault に置き換え)。レート制限はメモリ上(複数インスタンス化の前に共有ストアへ)
 - [x] **1-3 権限ミドルウェア**: テナント固定、ロール判定、拠点範囲の強制。権限マトリクスの単体テスト
   - 進捗: 完了(`apps/api/src/authz`、`trpc.ts`)。テナントはアクセストークンからのみ取得し `withTenant` で RLS と二重に固定。ロール・利用停止・契約停止は毎リクエスト DB から引き直す。業務 API は `permissionProcedure("権限")` を使い、拠点は `assertSiteAccess` / `siteScope` で絞る
 - [x] **1-4 暗号化**: Key Vault のテナント別鍵でカード番号・画像を暗号化。HMAC検索列。Blob の署名付きURL発行
@@ -41,7 +41,7 @@
 - [x] **1-6 persons ルーター**: 一覧(検索・絞り込み・ページング)、作成、更新、退職、アーカイブ
   - 進捗: 完了(`apps/api/src/routers/persons.ts`、`packages/db/src/repos/persons.ts`、入力スキーマは `packages/shared`)。復職を追加。拠点範囲の強制、閲覧者には生年月日・国籍を返さない、社員番号の重複は CONFLICT。期限区分での絞り込みは 1-11 で追加、未払い時の新規登録停止は 1-18
 - [ ] **1-7 カード登録ウィザード(アプリ)**: 表面撮影 → 番号確認 → IC読取 → サーバーで署名検証と照合 → 裏面撮影 → 保存。例外(IC読めない/署名失敗/差分あり)の分岐
-  - 進捗: サーバー側は完了(`apps/api/src/routers/cards.ts`、`cards/evaluate.ts`)。`cards.verifyIcRead`(照合結果。保存しない)、`cards.register`(サーバーで再検証して保存)、`cards.listForPerson`。署名失敗は要確認、差分は理由必須、IC 読取不可は理由必須で IC 未検証、他の登録者と同じ番号は CONFLICT。発行者証明書が未入手の間は署名一致だけで検証済みとする。**残り: アプリのウィザード画面**、要確認時のテナント管理者への即時通知(1-13)、登録失敗時に残った Blob の掃除
+  - 進捗: サーバー側は完了(`apps/api/src/routers/cards.ts`、`cards/evaluate.ts`)。`cards.verifyIcRead`(照合結果。保存しない)、`cards.register`(サーバーで再検証して保存)、`cards.listForPerson`。署名失敗は要確認、差分は理由必須、IC 読取不可は理由必須で IC 未検証、他の登録者と同じ番号は CONFLICT。発行者証明書が未入手の間は署名一致だけで検証済みとする。アプリのウィザード画面も実装(`apps/mobile/src/wizard/CardWizard.tsx`。表面撮影・OCR → 番号確認 → IC 読取 → 照合結果(旧様式は券面の項目を入力、差分は理由入力)→ 裏面撮影 → 保存。実機は未確認)。残り: 要確認時のテナント管理者への即時通知(1-13)、登録失敗時に残った Blob の掃除
 - [ ] **1-8 IC再検証**
 - [ ] **1-9 失効照会(半自動)**: アプリ内ブラウザで照会ページを開き、番号と満了日を表示、結果を記録。交付当日は翌日再照会アラート。スクレイピングはしない
 - [ ] **1-10 CSV一括取込(Web)**: プレビューとエラー行表示

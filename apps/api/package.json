@@ -8,7 +8,9 @@
     "build": "tsc -p tsconfig.build.json",
     "start": "node dist/server.js",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "dev:init-env": "tsx src/scripts/initEnv.ts",
+    "dev:setup": "tsx --env-file-if-exists=.env src/scripts/devSetup.ts"
   },
   "dependencies": {
     "@node-rs/argon2": "^2.2.2",

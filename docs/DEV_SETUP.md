@@ -1,0 +1,64 @@
+# 開発環境の準備(Windows + Android 実機)
+
+ログイン・カード登録を試すには、PC に PostgreSQL が必要です(フェーズ0 の PoC 画面だけなら不要)。
+
+## 1. PostgreSQL を入れる(初回だけ)
+
+1. https://www.postgresql.org/download/windows/ から PostgreSQL 16 以降のインストーラーを入れる
+   - 途中で決める `postgres` ユーザーのパスワードを控える。ポートは 5432 のまま
+   - Stack Builder は不要(チェックを外してよい)
+2. スタートメニューの「SQL Shell (psql)」を開き、Enter を 4 回(既定値)→ パスワードを入力して、次を実行する
+
+   ```sql
+   CREATE DATABASE zairyu;
+   ```
+
+## 2. API の設定ファイルを作る(初回だけ)
+
+`zairyu-saas` フォルダで実行します。`<パスワード>` は 1 で決めたもの、`<IP>` は `ipconfig` で調べた PC の IPv4 アドレスです。
+
+```powershell
+pnpm --filter api dev:init-env -- --database-url "postgres://postgres:<パスワード>@localhost:5432/zairyu" --public-url "http://<IP>:3000"
+```
+
+`apps\api\.env` ができます。中の鍵はこの PC 専用です(コミットしない)。
+
+## 3. DB を作り、管理者ユーザーを作る(初回と、DB の変更があったとき)
+
+```powershell
+pnpm --filter api dev:setup -- --email "自分のメールアドレス" --password "12文字以上のパスワード"
+```
+
+テナント「開発用テナント」・拠点「本社」・テナント管理者ができます。2 回目以降はマイグレーションだけが適用されます。
+
+## 4. 起動する(毎回)
+
+**ウィンドウ①(API)**
+
+```powershell
+cd apps\api
+pnpm dev
+```
+
+`.env` を読むので、`$env:...` の指定は不要です。
+
+**ウィンドウ②(Metro)**
+
+```powershell
+cd apps\mobile
+pnpm start -- --clear
+```
+
+ネイティブのモジュールが増えたときは、代わりに `pnpm android` でアプリを作り直します(2026-11-20 のログイン・カード登録の追加で必要)。
+
+## 5. アプリでログインする
+
+1. メールアドレスとパスワードでログイン
+2. 管理者は初回に「認証アプリの設定」が出る。Google Authenticator などを入れておき、「認証アプリに追加」(同じ端末)または表示されたキーを手で入力 → 表示された 6 桁を入力
+3. 以後は、アプリを開くたび(30 秒以上離れたあと)に指紋・顔認証でロックを解除する
+
+## 6. カードを登録する
+
+1. ホームの「登録者を追加」で登録者を作る(社員番号・氏名・拠点)
+2. 登録者を選ぶ → 「カードを登録」
+3. 表面撮影 → 番号確認 → IC 読み取り → 照合結果(旧様式は満了日などを入力)→ 裏面撮影 → 保存
