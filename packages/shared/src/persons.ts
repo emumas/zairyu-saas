@@ -18,10 +18,44 @@ export const employeeCodeSchema = z
 /** 国籍・地域(ISO 3166-1 alpha-3 相当の英大文字 3 文字) */
 export const nationalitySchema = z.string().regex(/^[A-Z]{3}$/, "国籍は英大文字 3 文字(例: VNM)で入力してください");
 
+/** ひらがなをカタカナに、全角空白を半角にそろえる */
+export function toKatakana(s: string): string {
+  return s
+    .replace(/[\u3041-\u3096]/g, (c) => String.fromCharCode(c.charCodeAt(0) + 0x60))
+    .replace(/[\u3000\s]+/g, " ")
+    .trim();
+}
+
+/** 氏名の読み(カタカナ。ひらがなで入力してもカタカナにする) */
+export const nameKanaSchema = z
+  .string()
+  .transform(toKatakana)
+  .pipe(
+    z
+      .string()
+      .max(200)
+      .regex(/^[\u30A0-\u30FF ・ー]*$/, "フリガナはカタカナ(またはひらがな)で入力してください"),
+  )
+  .transform((s) => s || null);
+
+/** 電話番号(全角数字は半角に。数字・ハイフン・先頭の + だけ) */
+export const phoneSchema = z
+  .string()
+  .transform((s) => s.replace(/[０-９]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xfee0)).replace(/[－ー−]/g, "-").replace(/[\s()()]/g, ""))
+  .pipe(
+    z
+      .string()
+      .max(20)
+      .regex(/^(\+?[0-9][0-9-]{5,19})?$/, "電話番号は数字とハイフンで入力してください"),
+  )
+  .transform((s) => s || null);
+
 export const personCreateInput = z.object({
   siteId: z.uuid(),
   employeeCode: employeeCodeSchema,
   name: personNameSchema,
+  nameKana: nameKanaSchema.nullish(),
+  phone: phoneSchema.nullish(),
   nationality: nationalitySchema.nullish(),
   birthDate: dateString.nullish(),
 });
@@ -32,13 +66,15 @@ export const personUpdateInput = z.object({
   siteId: z.uuid().optional(),
   employeeCode: employeeCodeSchema.optional(),
   name: personNameSchema.optional(),
+  nameKana: nameKanaSchema.nullish(),
+  phone: phoneSchema.nullish(),
   nationality: nationalitySchema.nullish(),
   birthDate: dateString.nullish(),
 });
 export type PersonUpdateInput = z.infer<typeof personUpdateInput>;
 
 export const personListInput = z.object({
-  /** 氏名の部分一致または社員番号の前方一致 */
+  /** 氏名・フリガナの部分一致(ひらがなでも可)または社員番号の前方一致 */
   q: z.string().trim().max(100).optional(),
   siteId: z.uuid().optional(),
   /** 既定は在籍中と退職(アーカイブを除く)。期限区分・目印で絞り込むときの既定は在籍中のみ */

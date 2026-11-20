@@ -143,10 +143,11 @@ export function CardDetailsScreen({ personId, personName, onClose, onSaved }: { 
   return (
     <Screen title={`記載事項: ${personName}`} onBack={onClose}>
       <Card>
-        <Text style={{ fontWeight: "700" }}>保存済みの写真から読み取る</Text>
+        <Text style={{ fontWeight: "700" }}>保存済みの写真から読み取る(任意)</Text>
         <Text style={{ color: color.sub }}>
           登録時に撮影した表面{backImage ? "・裏面" : ""}の写真を端末内で読み取ります(外部には送りません。写真の閲覧として記録が残ります)。
           {!frontImage && !backImage ? "このカードには撮影した写真がありません。" : ""}
+          読み取れなかった項目や写真が無い場合は、下の欄に直接入力して保存できます。
         </Text>
         <Button label={readDone ? "もう一度読み取る" : "写真を読み取る"} busy={reading} disabled={!frontImage && !backImage} onPress={() => void readPhotos()} />
         {readDone && <Message text="読み取った値を入力欄に入れました。券面の写真と見比べて、違っていれば直してから保存してください。" tone="ok" />}

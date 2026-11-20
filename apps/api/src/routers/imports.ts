@@ -12,17 +12,21 @@ import { z } from "zod";
 import { tenantRestriction } from "../billingGuard.js";
 import { permissionProcedure, router } from "../trpc.js";
 
-type Field = "siteId" | "name" | "nationality" | "birthDate";
+type Field = "siteId" | "name" | "nameKana" | "phone" | "nationality" | "birthDate";
 type Planned =
   | { line: number; action: "error"; errors: string[] }
   | { line: number; action: "unchanged" }
-  | { line: number; action: "create"; value: { siteId: string; employeeCode: string; name: string; nationality: string | null; birthDate: string | null } }
+  | {
+      line: number;
+      action: "create";
+      value: { siteId: string; employeeCode: string; name: string; nameKana: string | null; phone: string | null; nationality: string | null; birthDate: string | null };
+    }
   | { line: number; action: "update"; id: string; changes: Partial<Record<Field, string>> };
 
 const rowResult = z.object({
   line: z.number(),
   action: z.enum(["create", "update", "unchanged", "error"]),
-  /** 更新する項目名(siteId / name / nationality / birthDate) */
+  /** 更新する項目名(siteId / name / nameKana / phone / nationality / birthDate) */
   fields: z.array(z.string()),
   errors: z.array(z.string()),
 });
@@ -56,6 +60,8 @@ async function plan(tx: Tx, rows: readonly PersonImportRow[], canCreate: boolean
     if (cur.name !== v.value.name) changes.name = v.value.name;
     if (v.value.nationality !== null && cur.nationality !== v.value.nationality) changes.nationality = v.value.nationality;
     if (v.value.birthDate !== null && cur.birthDate !== v.value.birthDate) changes.birthDate = v.value.birthDate;
+    if (v.value.nameKana !== null && cur.nameKana !== v.value.nameKana) changes.nameKana = v.value.nameKana;
+    if (v.value.phone !== null && cur.phone !== v.value.phone) changes.phone = v.value.phone;
     return Object.keys(changes).length === 0 ? { line: r.line, action: "unchanged" } : { line: r.line, action: "update", id: cur.id, changes };
   });
 }

@@ -1,7 +1,7 @@
 /**
  * 登録者(1-6)。
  * - 拠点管理者・閲覧者は担当拠点の登録者だけを扱える(範囲外は NOT_FOUND)
- * - 閲覧者には生年月日・国籍を返さない(期限と就労可否の閲覧のみ。DESIGN.md 5章)
+ * - 閲覧者には生年月日・国籍・電話番号を返さない(期限と就労可否の閲覧のみ。DESIGN.md 5章)
  * - 変更はすべて監査ログに記録する(項目名のみ。値は残さない)
  */
 import {
@@ -53,6 +53,9 @@ const personOutput = z.object({
   siteName: z.string(),
   employeeCode: z.string(),
   name: z.string(),
+  nameKana: z.string().nullable(),
+  /** 閲覧者には null */
+  phone: z.string().nullable(),
   /** 閲覧者には null */
   nationality: z.string().nullable(),
   /** 閲覧者には null */
@@ -82,6 +85,8 @@ function present(row: PersonRow, role: Role, today: string): z.infer<typeof pers
     siteName: row.siteName,
     employeeCode: row.employeeCode,
     name: row.name,
+    nameKana: row.nameKana,
+    phone: hidePersonal ? null : row.phone,
     nationality: hidePersonal ? null : row.nationality,
     birthDate: hidePersonal ? null : row.birthDate,
     status: row.status,

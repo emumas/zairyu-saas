@@ -42,7 +42,7 @@ export function PersonsPage() {
       <h1>登録者</h1>
       <Card>
         <div className="row">
-          <input placeholder="氏名・社員番号で検索" value={q} onChange={(e) => { setQ(e.target.value); setOffset(0); }} />
+          <input placeholder="氏名・フリガナ・社員番号で検索" value={q} onChange={(e) => { setQ(e.target.value); setOffset(0); }} />
           <select
             value={bucket ?? flag ?? ""}
             onChange={(e) => {
@@ -104,6 +104,7 @@ export function PersonsPage() {
               <td>{p.employeeCode}</td>
               <td>
                 <Link to={`/persons/${p.id}`}>{p.name}</Link>
+                {p.nameKana && <div className="sub">{p.nameKana}</div>}
               </td>
               <td>{p.siteName}</td>
               <td className={`b-${p.expiry.bucket}`}>

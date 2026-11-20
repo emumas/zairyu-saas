@@ -9,7 +9,7 @@ import { CardImage, IMAGE_KIND_LABEL } from "../ui/CardImage";
 import { Button, Card, color, Message, Row, Screen } from "../ui/kit";
 import { bucketTone, FORMAT_LABEL, METHOD_LABEL, RESULT_LABEL } from "./format";
 
-type Person = Awaited<ReturnType<typeof api.persons.get.query>>;
+export type Person = Awaited<ReturnType<typeof api.persons.get.query>>;
 type Cards = Awaited<ReturnType<typeof api.cards.listForPerson.query>>;
 
 export function PersonScreen({
@@ -19,6 +19,7 @@ export function PersonScreen({
   onRevocationCheck,
   onReverify,
   onEditDetails,
+  onEditPerson,
 }: {
   personId: string;
   onBack: () => void;
@@ -26,6 +27,7 @@ export function PersonScreen({
   onRevocationCheck: (cardId: string, personName: string) => void;
   onReverify: (cardId: string, personName: string) => void;
   onEditDetails: (personName: string) => void;
+  onEditPerson: (person: Person) => void;
 }) {
   const session = useSession();
   const [person, setPerson] = useState<Person | null>(null);
@@ -100,11 +102,16 @@ export function PersonScreen({
   return (
     <Screen title={person.name} onBack={onBack}>
       <Card>
+        {person.nameKana && <Row k="フリガナ" v={person.nameKana} />}
         <Row k="社員番号" v={person.employeeCode} />
         <Row k="拠点" v={person.siteName} />
         <Row k="状態" v={{ active: "在籍", retired: `退職(${person.retiredAt ?? ""})`, archived: "アーカイブ" }[person.status]} />
         {person.nationality && <Row k="国籍・地域" v={person.nationality} />}
         {person.birthDate && <Row k="生年月日" v={person.birthDate} />}
+        {person.phone && <Row k="電話番号" v={person.phone} />}
+        {session.can("persons.write") && person.status !== "archived" && (
+          <Button label="登録者の情報を編集" kind="secondary" onPress={() => onEditPerson(person)} />
+        )}
       </Card>
 
       <Text style={{ fontWeight: "700", fontSize: 16 }}>現在のカード</Text>
@@ -149,7 +156,7 @@ export function PersonScreen({
             <Row k="在留期間満了日" v={cur.expiryDate ?? "—"} />
             <Row k="カードの有効期限" v={cur.cardValidUntil ?? "—"} />
             {session.can("cards.write") && person.status === "active" && (
-              <Button label="保存済みの写真から読み取る・直す" kind="secondary" onPress={() => onEditDetails(person.name)} />
+              <Button label="記載事項を入力・直す(写真から読み取りも可)" kind="secondary" onPress={() => onEditDetails(person.name)} />
             )}
           </Card>
         );

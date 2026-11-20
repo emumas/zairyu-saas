@@ -283,6 +283,10 @@ export const persons = pgTable(
       .references(() => sites.id),
     employeeCode: text("employee_code").notNull(),
     name: text("name").notNull(),
+    /** 氏名の読み(カタカナ。検索にも使う) */
+    nameKana: text("name_kana"),
+    /** 電話番号(カードには無いので手入力。閲覧者には見せない) */
+    phone: text("phone"),
     nationality: text("nationality"),
     birthDate: date("birth_date"),
     /** 課金対象の判定に使う(active のみ数える) */

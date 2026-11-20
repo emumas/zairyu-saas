@@ -61,8 +61,8 @@ describe("rowsFromCsv", () => {
     const r = rowsFromCsv(parseCsv("拠点名,氏名,従業員番号,メモ\n本社,A B,E1,x\n,,,\n大阪,C,E2,\n"));
     expect(r).toEqual({
       rows: [
-        { line: 2, employeeCode: "E1", name: "A B", siteName: "本社", nationality: "", birthDate: "" },
-        { line: 4, employeeCode: "E2", name: "C", siteName: "大阪", nationality: "", birthDate: "" },
+        { line: 2, employeeCode: "E1", name: "A B", siteName: "本社", nationality: "", birthDate: "", nameKana: "", phone: "" },
+        { line: 4, employeeCode: "E2", name: "C", siteName: "大阪", nationality: "", birthDate: "", nameKana: "", phone: "" },
       ],
     });
   });
@@ -78,10 +78,18 @@ describe("rowsFromCsv", () => {
   });
 });
 
+describe("フリガナ・電話番号の列", () => {
+  it("見出しの別名を受け付け、ひらがなはカタカナにそろえる", () => {
+    const r = rowsFromCsv(parseCsv("社員番号,氏名,ふりがな,拠点,電話\nE1,A,えー,本社,０９０－１１１１－２２２２\n"));
+    expect(r).toMatchObject({ rows: [{ nameKana: "えー", phone: "０９０－１１１１－２２２２" }] });
+    if ("rows" in r) expect(validateImportRow(r.rows[0]!)).toMatchObject({ value: { nameKana: "エー", phone: "090-1111-2222" } });
+  });
+});
+
 describe("validateImportRow", () => {
   const base = { line: 2, employeeCode: "E1", name: "NGUYEN  VAN A", siteName: "本社", nationality: "vnm", birthDate: "1995/4/1" };
   it("正規化する(国籍は大文字、日付は YYYY-MM-DD、氏名の連続空白は 1 つ)", () => {
-    expect(validateImportRow(base)).toEqual({ value: { employeeCode: "E1", name: "NGUYEN VAN A", siteName: "本社", nationality: "VNM", birthDate: "1995-04-01" } });
+    expect(validateImportRow(base)).toEqual({ value: { employeeCode: "E1", name: "NGUYEN VAN A", siteName: "本社", nationality: "VNM", birthDate: "1995-04-01", nameKana: null, phone: null } });
   });
   it("任意項目の空欄は null", () => {
     expect(validateImportRow({ ...base, nationality: "", birthDate: "" })).toMatchObject({ value: { nationality: null, birthDate: null } });

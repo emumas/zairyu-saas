@@ -77,6 +77,21 @@ describe.skipIf(!url)("登録者 API と監査ログ", () => {
       expect(await viewer.persons.get({ id })).toMatchObject({ nationality: null, birthDate: null, employeeCode: "T002" });
     });
 
+    it("フリガナ(ひらがなはカタカナに)・電話番号。閲覧者には電話番号を見せない。フリガナで検索できる", async () => {
+      const { id } = await admin.persons.create({ siteId: tokyo, employeeCode: "K001", name: "SANTOS MARIA", nameKana: "さんとす まりあ", phone: "０９０－１２３４－５６７８" });
+      expect(await admin.persons.get({ id })).toMatchObject({ nameKana: "サントス マリア", phone: "090-1234-5678" });
+      expect(await viewer.persons.get({ id })).toMatchObject({ nameKana: "サントス マリア", phone: null });
+      expect((await admin.persons.list({ q: "さんとす" })).items.map((p) => p.id)).toEqual([id]);
+      expect((await admin.persons.list({ q: "マリア" })).items.map((p) => p.id)).toEqual([id]);
+      await admin.persons.update({ id, phone: "", nameKana: "サントス" });
+      expect(await admin.persons.get({ id })).toMatchObject({ nameKana: "サントス", phone: null });
+      expect(await codeOf(admin.persons.update({ id, nameKana: "Santos" }))).toBe("BAD_REQUEST");
+      expect(await codeOf(admin.persons.update({ id, phone: "090-abc" }))).toBe("BAD_REQUEST");
+      const logs = await auditOf(id);
+      expect(logs.find((l) => l.action === "person.update")?.detail).toEqual({ fields: ["nameKana", "phone"] });
+      expect(JSON.stringify(logs)).not.toContain("090");
+    });
+
     it("他テナントの登録者は見えない", async () => {
       const { id } = await admin.persons.create({ siteId: tokyo, employeeCode: "T004", name: "a" });
       const other = await h.callerAs(otherTenant, u.other);

@@ -2,7 +2,7 @@
  * 登録者のリポジトリ。拠点の範囲(scope)は呼び出し側(権限ミドルウェア)が決め、ここで必ず SQL に反映する。
  * テナントの絞り込みは RLS が行う(withTenant のトランザクションで呼ぶこと)。
  */
-import type { ExpiryBucket } from "@zairyu/shared";
+import { toKatakana, type ExpiryBucket } from "@zairyu/shared";
 import { and, asc, count, eq, ilike, inArray, or, sql, type SQL } from "drizzle-orm";
 import type { Tx } from "../client.js";
 import { persons, residenceCards, sites } from "../schema.js";
@@ -35,6 +35,8 @@ const summaryColumns = (today: string) => ({
   siteName: sites.name,
   employeeCode: persons.employeeCode,
   name: persons.name,
+  nameKana: persons.nameKana,
+  phone: persons.phone,
   nationality: persons.nationality,
   birthDate: persons.birthDate,
   status: persons.status,
@@ -85,7 +87,8 @@ export async function listPersons(tx: Tx, q: PersonListQuery) {
   if (q.needsReview) conds.push(needsReviewSql);
   if (q.q) {
     const e = escapeLike(q.q);
-    conds.push(or(ilike(persons.name, `%${e}%`), ilike(persons.employeeCode, `${e}%`)));
+    const kana = escapeLike(toKatakana(q.q));
+    conds.push(or(ilike(persons.name, `%${e}%`), kana ? ilike(persons.nameKana, `%${kana}%`) : undefined, ilike(persons.employeeCode, `${e}%`)));
   }
   const where = and(...conds);
   const order =
@@ -120,7 +123,15 @@ export async function getPerson(tx: Tx, id: string, scope: SiteScope, today: str
 
 export async function createPerson(
   tx: Tx,
-  input: { siteId: string; employeeCode: string; name: string; nationality?: string | null | undefined; birthDate?: string | null | undefined },
+  input: {
+    siteId: string;
+    employeeCode: string;
+    name: string;
+    nameKana?: string | null | undefined;
+    phone?: string | null | undefined;
+    nationality?: string | null | undefined;
+    birthDate?: string | null | undefined;
+  },
 ) {
   const [row] = await tx
     .insert(persons)
@@ -128,6 +139,8 @@ export async function createPerson(
       siteId: input.siteId,
       employeeCode: input.employeeCode,
       name: input.name,
+      nameKana: input.nameKana ?? null,
+      phone: input.phone ?? null,
       nationality: input.nationality ?? null,
       birthDate: input.birthDate ?? null,
     })
@@ -143,7 +156,7 @@ export async function findPersonSite(tx: Tx, id: string): Promise<{ siteId: stri
 export async function updatePerson(
   tx: Tx,
   id: string,
-  patch: Partial<{ siteId: string; employeeCode: string; name: string; nationality: string | null; birthDate: string | null }>,
+  patch: Partial<{ siteId: string; employeeCode: string; name: string; nameKana: string | null; phone: string | null; nationality: string | null; birthDate: string | null }>,
 ): Promise<void> {
   await tx
     .update(persons)
@@ -208,6 +221,8 @@ export async function findPersonsByEmployeeCodes(tx: Tx, codes: readonly string[
       siteId: persons.siteId,
       employeeCode: persons.employeeCode,
       name: persons.name,
+      nameKana: persons.nameKana,
+      phone: persons.phone,
       nationality: persons.nationality,
       birthDate: persons.birthDate,
       status: persons.status,
