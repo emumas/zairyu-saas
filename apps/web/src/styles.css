@@ -93,3 +93,6 @@ dd { margin: 0; }
   .print-table thead { display: table-header-group; }
   .print-table tr { break-inside: avoid; }
 }
+.num { text-align: right; font-variant-numeric: tabular-nums; }
+.bar { height: 10px; border-radius: 3px; background: #b6d4f0; min-width: 2px; }
+.bar-peak { background: var(--primary); }

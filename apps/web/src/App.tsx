@@ -1,5 +1,6 @@
 import { BrowserRouter, Navigate, NavLink, Route, Routes } from "react-router";
 import { AlertsPage } from "./pages/AlertsPage";
+import { BillingPage } from "./pages/BillingPage";
 import { DashboardPage } from "./pages/DashboardPage";
 import { ImportPage } from "./pages/ImportPage";
 import { InvitePage } from "./pages/InvitePage";
@@ -33,6 +34,7 @@ function Shell() {
             <span className="nav-head">組織</span>
             <NavLink to="/org/sites">拠点</NavLink>
             <NavLink to="/org/users">ユーザー</NavLink>
+            {session.can("billing.manage") && <NavLink to="/billing">契約・請求</NavLink>}
           </>
         )}
         <div className="nav-foot">
@@ -53,6 +55,7 @@ function Shell() {
           {session.can("reports.export") && <Route path="/reports" element={<ReportsPage />} />}
           {session.can("org.manage") && <Route path="/org/sites" element={<SitesPage />} />}
           {session.can("org.manage") && <Route path="/org/users" element={<UsersPage />} />}
+          {session.can("billing.manage") && <Route path="/billing" element={<BillingPage />} />}
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>

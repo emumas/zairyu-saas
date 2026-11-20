@@ -1,7 +1,8 @@
 /**
  * 開発用: マイグレーションを流し、テナント・拠点・管理者ユーザーを作る(既にあれば作らない)。
  *   pnpm --filter api dev:setup -- --email you@example.com --password '12文字以上のパスワード'
- * 管理者は初回ログインで TOTP(認証アプリ)の設定を求められる
+ * 管理者は初回ログインで TOTP(認証アプリ)の設定を求められる。
+ * 料金を試せるよう、プランが無ければ開発用の段階制プランを付ける(運営者コンソール 1-19 ができるまでの代わり)
  */
 import { createDb, runMigrations, schema, withPlatform, withTenant } from "@zairyu/db";
 import { eq } from "drizzle-orm";
@@ -33,6 +34,30 @@ try {
     tenantId = await withPlatform(db, async (tx) => (await tx.insert(schema.tenants).values({ name: TENANT, status: "active" }).returning())[0]!.id);
     console.log(`テナント「${TENANT}」を作成しました`);
   }
+  await withPlatform(db, async (tx) => {
+    const [tenant] = await tx.select().from(schema.tenants).where(eq(schema.tenants.id, tenantId));
+    if (tenant?.planId) return;
+    const PLAN = "開発用プラン(段階制)";
+    let [plan] = await tx.select().from(schema.plans).where(eq(schema.plans.name, PLAN));
+    plan ??= (
+      await tx
+        .insert(schema.plans)
+        .values({
+          name: PLAN,
+          baseFee: 10_000,
+          billingMode: "tiered",
+          tiersJson: [
+            { upTo: 100, unitPrice: 300 },
+            { upTo: 500, unitPrice: 250 },
+            { upTo: 1000, unitPrice: 200 },
+            { upTo: null, unitPrice: 150 },
+          ],
+        })
+        .returning()
+    )[0]!;
+    await tx.update(schema.tenants).set({ planId: plan.id }).where(eq(schema.tenants.id, tenantId));
+    console.log(`プラン「${PLAN}」を付けました`);
+  });
   await withTenant(db, tenantId, async (tx) => {
     const sites = await tx.select().from(schema.sites);
     if (sites.length === 0) {
