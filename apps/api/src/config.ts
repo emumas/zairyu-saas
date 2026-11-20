@@ -14,6 +14,8 @@ const schema = z.object({
   AUTH_SECRET_BOX_KEY: base64Key32,
   /** TOTP の発行者名(認証アプリに表示) */
   AUTH_TOTP_ISSUER: z.string().default("在留カード管理"),
+  /** Web 管理画面の URL(招待リンクに使う) */
+  WEB_BASE_URL: z.string().default("http://localhost:5173"),
   /** 端末から見た API の URL(画像 URL の組み立てに使う) */
   PUBLIC_BASE_URL: z.string().default("http://localhost:3000"),
 });
@@ -24,6 +26,9 @@ export interface Config {
   secretBoxKey: Buffer;
   totpIssuer: string;
   publicBaseUrl: string;
+  webBaseUrl: string;
+  /** 招待リンクの有効期間 */
+  invitationTtlSec: number;
   /** 画像 URL の有効期間 */
   imageUrlTtlSec: number;
   accessTokenTtlSec: number;
@@ -50,6 +55,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     secretBoxKey: Buffer.from(e.AUTH_SECRET_BOX_KEY, "base64"),
     totpIssuer: e.AUTH_TOTP_ISSUER,
     publicBaseUrl: e.PUBLIC_BASE_URL.replace(/\/$/, ""),
+    webBaseUrl: e.WEB_BASE_URL.replace(/\/$/, ""),
+    invitationTtlSec: 72 * 60 * 60,
     imageUrlTtlSec: 120,
     accessTokenTtlSec: 15 * 60,
     refreshTokenTtlSec: 30 * 24 * 60 * 60,

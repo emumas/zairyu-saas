@@ -12,7 +12,8 @@ import { randomUUID } from "node:crypto";
 import { and, eq, isNull } from "drizzle-orm";
 import type { Config } from "../config.js";
 import type { Role } from "../authz/permissions.js";
-import { verifyPassword } from "./password.js";
+import { findInvitation, markInvitationUsed, updateUser } from "@zairyu/db";
+import { hashPassword, PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH, verifyPassword } from "./password.js";
 import type { SecretBox } from "./secretBox.js";
 import { generateTotpSecret, otpauthUri, base32Encode, verifyTotp } from "./totp.js";
 import { newRefreshToken, parseRefreshToken, signToken, verifyToken } from "./tokens.js";
@@ -196,6 +197,30 @@ export class AuthService {
         .set({ revokedAt: new Date(this.now()) })
         .where(and(eq(refreshTokens.familyId, row.familyId), isNull(refreshTokens.revokedAt)));
       await this.audit(tx, row.userId, "auth.logout", meta);
+    });
+  }
+
+  /**
+   * 招待を受けてパスワードを設定する(1-15)。トークンは "<テナントID>.<乱数>"。
+   * 管理者ロールは、このあと通常のログインで確認コード(TOTP)を設定する
+   */
+  async acceptInvitation(token: string, password: string, meta: RequestMeta): Promise<{ email: string }> {
+    if (password.length < PASSWORD_MIN_LENGTH || password.length > PASSWORD_MAX_LENGTH) {
+      throw new TRPCError({ code: "BAD_REQUEST", message: `パスワードは ${PASSWORD_MIN_LENGTH} 文字以上にしてください` });
+    }
+    const invalid = () => new TRPCError({ code: "BAD_REQUEST", message: "招待リンクが無効か、有効期限が切れています。管理者に再招待を依頼してください" });
+    const parsed = parseRefreshToken(token);
+    if (!parsed) throw invalid();
+    const passwordHash = await hashPassword(password);
+    return withTenant(this.db, parsed.tenantId, async (tx) => {
+      const inv = await findInvitation(tx, parsed.hash);
+      if (!inv || inv.usedAt || inv.expiresAt.getTime() <= this.now()) throw invalid();
+      const user = await this.loadUser(tx, inv.userId);
+      if (!user || user.status !== "invited") throw invalid();
+      if (!(await markInvitationUsed(tx, inv.id, new Date(this.now())))) throw invalid();
+      await updateUser(tx, user.id, { passwordHash, status: "active" });
+      await this.audit(tx, user.id, "auth.invitation_accepted", meta);
+      return { email: user.email };
     });
   }
 

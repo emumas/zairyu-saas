@@ -41,6 +41,8 @@ describe.skipIf(!url)("認証と権限(結合)", () => {
     maxFailedLogins: 10,
     lockoutSec: 900,
     publicBaseUrl: "https://api.example.com",
+    webBaseUrl: "https://web.example.com",
+    invitationTtlSec: 72 * 3600,
     imageUrlTtlSec: 120,
   };
 

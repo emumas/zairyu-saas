@@ -206,6 +206,26 @@ export const userSites = pgTable(
 );
 
 /**
+ * ユーザーの招待(1-15)。トークンは "<テナントID>.<乱数>" で、DB には SHA-256 だけを保存する
+ */
+export const userInvitations = pgTable(
+  "user_invitations",
+  {
+    id: id(),
+    tenantId: tenantId(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    tokenHash: bytea("token_hash").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    usedAt: timestamp("used_at", { withTimezone: true }),
+    createdBy: uuid("created_by").references(() => users.id),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex("user_invitations_hash_uq").on(t.tokenHash)],
+);
+
+/**
  * リフレッシュトークン(ハッシュのみ保存)。ローテーションし、同じ family で使用済みのものが
  * 再利用されたら盗用とみなして family ごと失効させる
  */

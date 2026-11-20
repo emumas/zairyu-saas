@@ -18,6 +18,8 @@ export const testConfig = (): Config => ({
   secretBoxKey: randomBytes(32),
   totpIssuer: "t",
   publicBaseUrl: "https://api.example.com",
+  webBaseUrl: "https://web.example.com",
+  invitationTtlSec: 72 * 3600,
   imageUrlTtlSec: 120,
   accessTokenTtlSec: 900,
   refreshTokenTtlSec: 3600,

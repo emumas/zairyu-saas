@@ -52,3 +52,21 @@ export const personListInput = z.object({
   offset: z.number().int().min(0).max(100_000).default(0),
 });
 export type PersonListInput = z.infer<typeof personListInput>;
+
+// ---------------------------------------------------------------- 組織(1-15)
+
+export const USER_ROLES = ["tenant_admin", "site_admin", "viewer"] as const;
+export const USER_ROLE_LABEL: Record<(typeof USER_ROLES)[number], string> = {
+  tenant_admin: "テナント管理者",
+  site_admin: "拠点管理者",
+  viewer: "閲覧者",
+};
+
+export const siteNameInput = z.string().trim().min(1, "拠点名を入力してください").max(100);
+
+export const inviteUserInput = z.object({
+  email: z.email("メールアドレスの形式が正しくありません").trim().toLowerCase().max(254),
+  role: z.enum(USER_ROLES),
+  /** 拠点管理者・閲覧者の担当拠点(テナント管理者は全拠点のため不要) */
+  siteIds: z.array(z.uuid()).max(200).default([]),
+});

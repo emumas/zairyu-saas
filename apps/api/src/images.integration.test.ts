@@ -35,6 +35,8 @@ describe.skipIf(!url)("カード画像の配信", () => {
     secretBoxKey: randomBytes(32),
     totpIssuer: "t",
     publicBaseUrl: "https://api.example.com",
+    webBaseUrl: "https://web.example.com",
+    invitationTtlSec: 72 * 3600,
     imageUrlTtlSec: 120,
     accessTokenTtlSec: 900,
     refreshTokenTtlSec: 3600,

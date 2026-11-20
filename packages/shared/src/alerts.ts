@@ -33,7 +33,7 @@ export interface NotificationPayload {
   title: string;
   body: string;
   /** 通知の種類(アプリでの表示切り替え用) */
-  kind: "expiry_digest" | "needs_review" | "revoked" | "recheck_revocation";
+  kind: "expiry_digest" | "needs_review" | "revoked" | "recheck_revocation" | "invite";
 }
 
 /** 期限アラートのまとめ通知(受け取る人ごとに件数を数える) */
@@ -72,5 +72,14 @@ export function recheckRevocationNotice(): NotificationPayload {
     kind: "recheck_revocation",
     title: "失効情報の再照会のお願い",
     body: "昨日の失効情報照会で結果が出なかったカード(交付当日の可能性)があります。アプリから再照会してください。",
+  };
+}
+
+/** 招待のメール(リンクはパスワード設定用。他の人に転送しないよう書き添える) */
+export function inviteNotice(url: string, expiresAt: string): NotificationPayload {
+  return {
+    kind: "invite",
+    title: "在留カード管理への招待",
+    body: `在留カード管理の利用に招待されました。次のリンクからパスワードを設定してください(${expiresAt} まで有効。他の人に転送しないでください)。\n${url}`,
   };
 }

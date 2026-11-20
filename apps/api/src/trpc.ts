@@ -30,6 +30,13 @@ export interface Context {
   /** Authorization: Bearer のトークン */
   accessToken: string | null;
   ip: string | null;
+  /** Web 管理画面からのリクエスト(リフレッシュトークンを HttpOnly Cookie で扱う)。アプリ・テストでは無い */
+  web?: WebContext | null | undefined;
+}
+
+export interface WebContext {
+  cookies: Record<string, string>;
+  setCookie(name: string, value: string, options: { maxAgeSec: number; path: string }): void;
 }
 
 const t = initTRPC.context<Context>().create();

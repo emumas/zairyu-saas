@@ -1,10 +1,11 @@
 import { randomUUID } from "node:crypto";
-import { createServer } from "node:http";
+import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { createHTTPHandler } from "@trpc/server/adapters/standalone";
 import { loadConfig } from "./config.js";
 import { serveImage } from "./images.js";
 import { appRouter } from "./router.js";
 import { createServices } from "./services.js";
+import type { WebContext } from "./trpc.js";
 
 const port = Number(process.env.PORT ?? 3000);
 const config = loadConfig();
@@ -15,12 +16,39 @@ const trpc = createHTTPHandler({
   // カード登録で撮影画像(表裏 各 3MB まで、base64)を受け取るため
   maxBodySize: 12 * 1024 * 1024,
   router: appRouter,
-  createContext: ({ req }) => {
+  createContext: ({ req, res }) => {
     const header = req.headers.authorization;
     const accessToken = header?.startsWith("Bearer ") ? header.slice(7) : null;
-    return { requestId: randomUUID(), services, accessToken, ip: req.socket.remoteAddress ?? null };
+    return { requestId: randomUUID(), services, accessToken, ip: req.socket.remoteAddress ?? null, web: webContext(req, res) };
   },
 });
+
+/** 本番(HTTPS)では Cookie に Secure を付ける */
+const secureCookies = process.env.NODE_ENV === "production" || process.env.SECURE_COOKIES === "1";
+
+/**
+ * Web 管理画面からのリクエストか。独自ヘッダーはブラウザが他サイトのフォームからは付けられないため、
+ * Cookie を使う手続きの CSRF 対策を兼ねる(Cookie は SameSite=Strict)
+ */
+function webContext(req: IncomingMessage, res: ServerResponse): WebContext | null {
+  if (req.headers["x-zairyu-client"] !== "web") return null;
+  const cookies = Object.fromEntries(
+    (req.headers.cookie ?? "")
+      .split(";")
+      .map((c) => c.trim().split("="))
+      .filter((kv): kv is [string, string] => kv.length === 2 && !!kv[0])
+      .map(([k, v]) => [k, decodeURIComponent(v)]),
+  );
+  return {
+    cookies,
+    setCookie(name, value, { maxAgeSec, path }) {
+      const parts = [`${name}=${encodeURIComponent(value)}`, `Path=${path}`, `Max-Age=${maxAgeSec}`, "HttpOnly", "SameSite=Strict"];
+      if (secureCookies) parts.push("Secure");
+      const prev = res.getHeader("Set-Cookie");
+      res.setHeader("Set-Cookie", [...(Array.isArray(prev) ? prev : prev ? [String(prev)] : []), parts.join("; ")]);
+    },
+  };
+}
 
 const IMAGE_PATH = /^\/files\/images\/([A-Za-z0-9_.-]{20,2000})$/;
 
