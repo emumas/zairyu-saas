@@ -1,6 +1,6 @@
 /** 共通の画面部品(最小限) */
 import type { ReactNode } from "react";
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View, type TextInputProps } from "react-native";
+import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, type TextInputProps, View } from "react-native";
 
 export const color = {
   primary: "#0b5cad",
@@ -14,9 +14,29 @@ export const color = {
   muted: "#f6f8fa",
 };
 
-export function Screen({ children, title, onBack, right }: { children: ReactNode; title?: string; onBack?: () => void; right?: ReactNode }) {
+export function Screen({
+  children,
+  title,
+  onBack,
+  right,
+  refreshing,
+  onRefresh,
+}: {
+  children: ReactNode;
+  title?: string;
+  onBack?: () => void;
+  right?: ReactNode;
+  /** 引っ張って更新 */
+  refreshing?: boolean;
+  onRefresh?: () => void;
+}) {
   return (
-    <ScrollView style={{ backgroundColor: color.bg }} contentContainerStyle={s.screen} keyboardShouldPersistTaps="handled">
+    <ScrollView
+      style={{ backgroundColor: color.bg }}
+      contentContainerStyle={s.screen}
+      keyboardShouldPersistTaps="handled"
+      refreshControl={onRefresh ? <RefreshControl refreshing={!!refreshing} onRefresh={onRefresh} /> : undefined}
+    >
       {(title || onBack) && (
         <View style={s.header}>
           {onBack && (

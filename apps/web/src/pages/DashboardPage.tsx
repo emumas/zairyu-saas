@@ -2,6 +2,7 @@ import { EXPIRY_BUCKET_LABEL, type ExpiryBucket } from "@zairyu/shared";
 import { useEffect, useState } from "react";
 import { Link } from "react-router";
 import { api, messageOf } from "../api";
+import { useSession } from "../session";
 import { Card, Message } from "../ui";
 
 type Summary = Awaited<ReturnType<typeof api.dashboard.summary.query>>;
@@ -17,24 +18,46 @@ const TILES: { key: ExpiryBucket | "icUnverified" | "needsReview"; label: string
 ];
 
 export function DashboardPage() {
+  const session = useSession();
+  const sites = session.me?.sites ?? [];
+  const [siteId, setSiteId] = useState("");
   const [s, setS] = useState<Summary | null>(null);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
-    api.dashboard.summary.query({}).then(setS, (e) => setError(messageOf(e)));
-  }, []);
+    api.dashboard.summary.query(siteId ? { siteId } : {}).then(setS, (e) => setError(messageOf(e)));
+  }, [siteId]);
+  const siteQuery = siteId ? `&siteId=${siteId}` : "";
   const count = (k: (typeof TILES)[number]["key"]) => (s ? (k === "icUnverified" || k === "needsReview" ? s[k] : s.buckets[k]) : null);
   return (
     <>
       <h1>ダッシュボード</h1>
       <Message text={error} />
-      <p className="sub">在籍 {s?.total ?? "-"} 人 ・ 基準日 {s?.today ?? "-"}(日本時間)</p>
+      <div className="row">
+        <p className="sub">在籍 {s?.total ?? "-"} 人 ・ 基準日 {s?.today ?? "-"}(日本時間)</p>
+        {sites.length > 1 && (
+          <select value={siteId} onChange={(e) => setSiteId(e.target.value)} style={{ marginLeft: "auto" }}>
+            <option value="">全拠点</option>
+            {sites.map((x) => (
+              <option key={x.id} value={x.id}>
+                {x.name}
+              </option>
+            ))}
+          </select>
+        )}
+      </div>
       <div className="tiles">
         {TILES.map((t) => (
-          <Link key={t.key} to={`/persons?${t.query}`} className={`tile ${count(t.key) ? `tile-${t.tone}` : ""}`}>
+          <Link key={t.key} to={`/persons?${t.query}${siteQuery}`} className={`tile ${count(t.key) ? `tile-${t.tone}` : ""}`}>
             <strong>{count(t.key) ?? "-"}</strong>
             <span>{t.label}</span>
           </Link>
         ))}
+        {s && s.openAlerts !== null && (
+          <Link to="/alerts" className={`tile ${s.openAlerts ? "tile-danger" : ""}`}>
+            <strong>{s.openAlerts}</strong>
+            <span>未対応のアラート</span>
+          </Link>
+        )}
       </div>
       <Card title="使い方">
         <p>件数を押すと、該当する登録者の一覧に移ります。カードの登録・IC の読み取りはスマホアプリで行います。</p>

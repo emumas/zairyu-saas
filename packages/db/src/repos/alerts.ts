@@ -148,6 +148,22 @@ export async function listAlerts(tx: Tx, scope: SiteScope, q: { open: boolean; l
     .offset(q.offset);
 }
 
+/** 未対応のアラートの件数(ダッシュボード用。siteId を指定すればその拠点だけ) */
+export async function countOpenAlerts(tx: Tx, scope: SiteScope, siteId?: string): Promise<number> {
+  const [row] = await tx
+    .select({ n: sql<number>`count(*)::int` })
+    .from(alerts)
+    .innerJoin(persons, eq(persons.id, alerts.personId))
+    .where(
+      and(
+        isNull(alerts.acknowledgedAt),
+        scope === null ? undefined : scope.length === 0 ? sql`false` : inArray(persons.siteId, [...scope]),
+        siteId ? eq(persons.siteId, siteId) : undefined,
+      ),
+    );
+  return row?.n ?? 0;
+}
+
 export async function findAlertSite(tx: Tx, id: string): Promise<{ siteId: string; acknowledgedAt: Date | null } | null> {
   const [row] = await tx
     .select({ siteId: persons.siteId, acknowledgedAt: alerts.acknowledgedAt })

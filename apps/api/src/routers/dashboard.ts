@@ -1,9 +1,9 @@
 /** ダッシュボード(1-12 の API 部分): 期限区分ごとの件数。一覧は persons.list の expiryBuckets で取る */
-import { countByExpiry } from "@zairyu/db";
+import { countByExpiry, countOpenAlerts } from "@zairyu/db";
 import { EXPIRY_BUCKETS, jstDate } from "@zairyu/shared";
 import { z } from "zod";
 import { assertSiteAccess } from "../authz/guards.js";
-import { siteScope } from "../authz/permissions.js";
+import { can, siteScope } from "../authz/permissions.js";
 import { permissionProcedure, router } from "../trpc.js";
 
 export const dashboardRouter = router({
@@ -18,6 +18,8 @@ export const dashboardRouter = router({
         buckets: z.record(z.enum(EXPIRY_BUCKETS), z.number()),
         icUnverified: z.number(),
         needsReview: z.number(),
+        /** 未対応のアラート(アラートを見る権限が無ければ null) */
+        openAlerts: z.number().nullable(),
       }),
     )
     .query(({ ctx, input }) =>
@@ -26,7 +28,8 @@ export const dashboardRouter = router({
         const today = jstDate(ctx.services.now());
         const r = await countByExpiry(tx, siteScope(ctx.actor), today, input.siteId);
         const buckets = Object.fromEntries(EXPIRY_BUCKETS.map((b) => [b, r.buckets[b] ?? 0])) as Record<(typeof EXPIRY_BUCKETS)[number], number>;
-        return { today, total: r.total, buckets, icUnverified: r.icUnverified, needsReview: r.needsReview };
+        const openAlerts = can(ctx.actor.role, "alerts.read") ? await countOpenAlerts(tx, siteScope(ctx.actor), input.siteId) : null;
+        return { today, total: r.total, buckets, icUnverified: r.icUnverified, needsReview: r.needsReview, openAlerts };
       }),
     ),
 });

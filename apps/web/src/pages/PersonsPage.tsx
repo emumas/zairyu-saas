@@ -2,6 +2,7 @@ import { EXPIRY_BUCKET_LABEL, EXPIRY_BUCKETS, type ExpiryBucket } from "@zairyu/
 import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router";
 import { api, messageOf } from "../api";
+import { useSession } from "../session";
 import { Button, Card, Message } from "../ui";
 
 type List = Awaited<ReturnType<typeof api.persons.list.query>>;
@@ -11,6 +12,8 @@ export function PersonsPage() {
   const [params, setParams] = useSearchParams();
   const bucket = params.get("bucket") as ExpiryBucket | null;
   const flag = params.get("flag");
+  const siteId = params.get("siteId");
+  const sites = useSession().me?.sites ?? [];
   const [q, setQ] = useState(params.get("q") ?? "");
   const [offset, setOffset] = useState(0);
   const [list, setList] = useState<List | null>(null);
@@ -22,6 +25,7 @@ export function PersonsPage() {
         .query({
           ...(q.trim() ? { q: q.trim() } : {}),
           ...(bucket ? { expiryBuckets: [bucket] } : {}),
+          ...(siteId ? { siteId } : {}),
           ...(flag === "icUnverified" ? { icUnverified: true } : {}),
           ...(flag === "needsReview" ? { needsReview: true } : {}),
           sort: bucket || flag ? "expiryDate" : "employeeCode",
@@ -31,7 +35,7 @@ export function PersonsPage() {
         .then(setList, (e) => setError(messageOf(e)));
     }, 250);
     return () => clearTimeout(t);
-  }, [q, bucket, flag, offset]);
+  }, [q, bucket, flag, siteId, offset]);
 
   return (
     <>
@@ -44,6 +48,7 @@ export function PersonsPage() {
             onChange={(e) => {
               const v = e.target.value;
               const next = new URLSearchParams();
+              if (siteId) next.set("siteId", siteId);
               if (EXPIRY_BUCKETS.includes(v as ExpiryBucket)) next.set("bucket", v);
               else if (v) next.set("flag", v);
               setParams(next);
@@ -59,6 +64,25 @@ export function PersonsPage() {
             <option value="icUnverified">IC未検証</option>
             <option value="needsReview">要確認</option>
           </select>
+          {sites.length > 1 && (
+            <select
+              value={siteId ?? ""}
+              onChange={(e) => {
+                const next = new URLSearchParams(params);
+                if (e.target.value) next.set("siteId", e.target.value);
+                else next.delete("siteId");
+                setParams(next);
+                setOffset(0);
+              }}
+            >
+              <option value="">全拠点</option>
+              {sites.map((x) => (
+                <option key={x.id} value={x.id}>
+                  {x.name}
+                </option>
+              ))}
+            </select>
+          )}
         </div>
       </Card>
       <Message text={error} />

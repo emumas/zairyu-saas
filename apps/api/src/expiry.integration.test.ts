@@ -115,7 +115,27 @@ describe.skipIf(!url)("期限区分", () => {
       expect(s.today).toBe("2026-04-01");
       expect(s.total).toBe(6);
       expect(s.buckets).toMatchObject({ expired: 1, within30: 1, within90: 1, pending: 1, ok: 1, noCard: 1, noExpiry: 0 });
-      expect(s).toMatchObject({ icUnverified: 1, needsReview: 1 });
+      expect(s).toMatchObject({ icUnverified: 1, needsReview: 1, openAlerts: 0 });
+    });
+
+    it("未対応のアラートの件数(拠点の範囲と拠点指定で絞る。閲覧者には null)", async () => {
+      const admin = await h.callerAs(sub, await h.createUser(sub, "dash-admin3@example.com", "tenant_admin"));
+      const siteAdminY = await h.callerAs(sub, await h.createUser(sub, "dash-site-y@example.com", "site_admin", [siteY]));
+      const list = await admin.persons.list({ statuses: ["active"], limit: 100 });
+      const inX = list.items.find((p) => p.siteId === siteX)!;
+      const inY = list.items.find((p) => p.siteId === siteY)!;
+      await withTenant(h.db, sub, (tx) =>
+        tx.insert(schema.alerts).values([
+          { personId: inX.id, type: "expired", dueDate: "2026-03-31" },
+          { personId: inY.id, type: "expiry_30", dueDate: "2026-04-30" },
+          { personId: inY.id, type: "expiry_90", dueDate: "2026-06-30", acknowledgedAt: new Date() },
+        ]),
+      );
+      expect((await admin.dashboard.summary()).openAlerts).toBe(2);
+      expect((await admin.dashboard.summary({ siteId: siteX })).openAlerts).toBe(1);
+      expect((await siteAdminY.dashboard.summary()).openAlerts).toBe(1);
+      const viewer = await h.callerAs(sub, await h.createUser(sub, "dash-viewer2@example.com", "viewer", [siteY]));
+      expect((await viewer.dashboard.summary()).openAlerts).toBeNull();
     });
 
     it("拠点の範囲で件数が絞られる(閲覧者も見られる)", async () => {
