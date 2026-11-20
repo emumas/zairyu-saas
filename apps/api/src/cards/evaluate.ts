@@ -20,6 +20,18 @@ export interface CardFields {
   outsideActivity: string | null;
   outsideActivityUntil: string | null;
   pendingApplication: boolean | null;
+  /** カード記載の生年月日・性別(M / F)・国籍・地域 */
+  birthDate: string | null;
+  sex: string | null;
+  nationality: string | null;
+}
+
+/** IC の性別の値を M / F にそろえる(仕様のコード値と文字の両方に備える) */
+function normalizeSex(v: string | null): string | null {
+  if (v === null) return null;
+  if (v === "M" || v === "1") return "M";
+  if (v === "F" || v === "2") return "F";
+  return null;
 }
 
 const EMPTY: CardFields = {
@@ -33,6 +45,9 @@ const EMPTY: CardFields = {
   outsideActivity: null,
   outsideActivityUntil: null,
   pendingApplication: null,
+  birthDate: null,
+  sex: null,
+  nationality: null,
 };
 
 export interface IcImage {
@@ -50,6 +65,8 @@ export interface IcEvaluation {
   /** IC に記録された番号(第2世代・特定のみ) */
   cardNumber: string | null;
   images: IcImage[];
+  /** 裏面に追記された住居地(旧様式は IC に文字で記録される。無ければ null) */
+  backAddress: { address: string; writtenAt: string | null } | null;
 }
 
 export function evaluateIc(payload: IcReadPayload): IcEvaluation {
@@ -83,6 +100,9 @@ export function evaluateIc(payload: IcReadPayload): IcEvaluation {
       outsideActivity: parsed.back.outsideActivityComprehensive,
       outsideActivityUntil: parsed.back.outsideActivityComprehensiveUntil,
       pendingApplication: parsed.back.renewalApplying,
+      birthDate: f.birthDate,
+      sex: normalizeSex(f.sex),
+      nationality: f.nationality,
     };
   }
 
@@ -92,11 +112,13 @@ export function evaluateIc(payload: IcReadPayload): IcEvaluation {
   if (parsed.images.name) images.push({ kind: "ic_name", contentType: "image/tiff", data: parsed.images.name });
   if (parsed.images.address) images.push({ kind: "ic_address", contentType: "image/tiff", data: parsed.images.address });
 
-  return { format: parsed.format, kind: parsed.kind, signature, fields, cardNumber: parsed.cardNumber, images };
+  const backAddress =
+    parsed.back.format === "legacy" && parsed.back.address?.trim() ? { address: parsed.back.address.trim(), writtenAt: parsed.back.addressWrittenAt } : null;
+  return { format: parsed.format, kind: parsed.kind, signature, fields, cardNumber: parsed.cardNumber, images, backAddress };
 }
 
 export interface FieldDiff {
-  field: "cardNumber" | "expiryDate" | "cardValidUntil" | "statusOfResidence" | "workRestriction" | "pendingApplication";
+  field: "cardNumber" | "expiryDate" | "cardValidUntil" | "statusOfResidence" | "workRestriction" | "pendingApplication" | "birthDate";
   /** カード番号の差分は値を返さない(個人情報) */
   ic: string | boolean | null;
   input: string | boolean | null;
@@ -107,7 +129,7 @@ export function diffFields(ic: IcEvaluation | null, inputCardNumber: string, man
   if (!ic) return [];
   const diffs: FieldDiff[] = [];
   if (ic.cardNumber !== null && ic.cardNumber !== inputCardNumber) diffs.push({ field: "cardNumber", ic: null, input: null });
-  const keys = ["expiryDate", "cardValidUntil", "statusOfResidence", "workRestriction", "pendingApplication"] as const;
+  const keys = ["expiryDate", "cardValidUntil", "statusOfResidence", "workRestriction", "pendingApplication", "birthDate"] as const;
   for (const k of keys) {
     const a = ic.fields[k];
     const b = manual[k];
@@ -126,6 +148,9 @@ export function mergeFields(ic: IcEvaluation | null, manual: CardManualFields): 
     statusOfResidence: base.statusOfResidence ?? manual.statusOfResidence ?? null,
     workRestriction: base.workRestriction ?? manual.workRestriction ?? null,
     pendingApplication: base.pendingApplication ?? manual.pendingApplication ?? null,
+    birthDate: base.birthDate ?? manual.birthDate ?? null,
+    sex: base.sex ?? manual.sex ?? null,
+    nationality: base.nationality ?? manual.nationality ?? null,
   };
 }
 

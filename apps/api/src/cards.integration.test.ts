@@ -258,6 +258,83 @@ describe.skipIf(!url)("カード登録", () => {
     });
   });
 
+  describe("住居地とカード記載事項", () => {
+    it("旧様式: 裏面に住居地の追記があれば、端末の読み取りより IC の値を採用する", async () => {
+      const personId = await newPerson("ADDR1");
+      const verify = await tokyoAdmin.cards.verifyIcRead({ personId, cardNumber: "AD12345678CD", ic: icPayload({ format: "legacy", kind: "residence", signer: rsa, cardNumber: "AD12345678CD", backAddress: { address: "埼玉県さいたま市浦和区高砂3-15-1", writtenAt: "20251005" } }), manual: {} });
+      expect(verify.icBackAddress).toEqual({ address: "埼玉県さいたま市浦和区高砂3-15-1", writtenAt: "2025-10-05" });
+      await tokyoAdmin.cards.register({
+        personId,
+        cardNumber: "AD12345678CD",
+        ic: icPayload({ format: "legacy", kind: "residence", signer: rsa, cardNumber: "AD12345678CD", backAddress: { address: "埼玉県さいたま市浦和区高砂3-15-1", writtenAt: "20251005" } }),
+        manual: { expiryDate: "2029-06-20", address: "東京都新宿区西新宿2-8-1", addressSource: "front_photo", birthDate: "1995-04-01", sex: "M", nationality: "ベトナム" },
+      });
+      const [card] = await tokyoAdmin.cards.listForPerson({ personId });
+      expect(card).toMatchObject({
+        address: "埼玉県さいたま市浦和区高砂3-15-1",
+        addressSource: "ic_back",
+        addressWrittenAt: "2025-10-05",
+        birthDate: "1995-04-01",
+        sex: "M",
+        nationality: "ベトナム",
+        cardNumberMasked: "AD******78CD",
+      });
+      // 暗号化して保存している(平文で DB に残らない)
+      const [row] = await withTenant(h.db, tenant, (tx) => tx.select().from(schema.residenceCards).where(eq(schema.residenceCards.id, card!.id)));
+      expect(row!.addressEnc!.toString("utf8")).not.toContain("さいたま");
+      // 監査ログには出どころだけ
+      const logs = await withTenant(h.db, tenant, (tx) => tx.select().from(schema.auditLogs).where(eq(schema.auditLogs.targetId, card!.id)));
+      expect(JSON.stringify(logs)).not.toContain("さいたま");
+      expect(logs.find((l) => l.action === "card.register")?.detail).toMatchObject({ addressSource: "ic_back" });
+      // 登録者の生年月日は空欄だったのでカードの値で埋まる(国籍はコードでないので埋めない)
+      expect((await admin.persons.get({ id: personId })).birthDate).toBe("1995-04-01");
+    });
+
+    it("裏面の追記が無ければ、端末の読み取り(裏面 > 表面)の値を使う", async () => {
+      const personId = await newPerson("ADDR2");
+      const n = "AE12345678CD";
+      await tokyoAdmin.cards.register({
+        personId,
+        cardNumber: n,
+        ic: icPayload({ format: "legacy", kind: "residence", signer: rsa, cardNumber: n, backAddress: null }),
+        manual: { expiryDate: "2029-06-20", address: "神奈川県横浜市中区本町1-1", addressSource: "back_photo" },
+      });
+      expect((await tokyoAdmin.cards.listForPerson({ personId }))[0]).toMatchObject({ address: "神奈川県横浜市中区本町1-1", addressSource: "back_photo", addressWrittenAt: null });
+    });
+
+    it("第2世代: 生年月日・性別・国籍は IC の値", async () => {
+      const personId = await newPerson("ADDR3");
+      const n = "AF12345678CD";
+      await tokyoAdmin.cards.register({ personId, cardNumber: n, ic: icPayload({ format: "gen2", kind: "residence", signer: ec, cardNumber: n }), manual: {} });
+      const [card] = await tokyoAdmin.cards.listForPerson({ personId });
+      expect(card!.birthDate).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+      expect(card!.nationality).toMatch(/^[A-Z]{3}$/);
+    });
+
+    it("番号の全桁表示は監査ログに残る。閲覧者・担当外は見られない", async () => {
+      const personId = await newPerson("ADDR4");
+      const n = "AG12345678CD";
+      await tokyoAdmin.cards.register({ personId, cardNumber: n, ic: icPayload({ format: "gen2", kind: "residence", signer: ec, cardNumber: n }), manual: {} });
+      const [card] = await tokyoAdmin.cards.listForPerson({ personId });
+      expect(await tokyoAdmin.cards.revealCardNumber({ cardId: card!.id })).toEqual({ cardNumber: n });
+      const logs = await withTenant(h.db, tenant, (tx) => tx.select().from(schema.auditLogs).where(eq(schema.auditLogs.action, "card.reveal_number")));
+      expect(logs.some((l) => l.targetId === card!.id && (l.detail as { purpose: string }).purpose === "view")).toBe(true);
+      expect(await codeOf(viewer.cards.revealCardNumber({ cardId: card!.id }))).toBe("FORBIDDEN");
+      expect(await codeOf(osakaAdmin.cards.revealCardNumber({ cardId: card!.id }))).toBe("NOT_FOUND");
+      expect(await codeOf(viewer.cards.listForPerson({ personId }))).toBe("FORBIDDEN");
+    });
+
+    it("再検証で裏面に新しい住居地が追記されていれば更新する(変更の記録に値は残さない)", async () => {
+      const personId = await newPerson("ADDR5");
+      const n = "AH12345678CD";
+      await tokyoAdmin.cards.register({ personId, cardNumber: n, ic: icPayload({ format: "legacy", kind: "residence", signer: rsa, cardNumber: n, backAddress: null }), manual: { expiryDate: "2029-06-20", address: "東京都新宿区1-1", addressSource: "front_photo" } });
+      const [card] = await tokyoAdmin.cards.listForPerson({ personId });
+      const r = await tokyoAdmin.cards.reverifyIc({ cardId: card!.id, ic: icPayload({ format: "legacy", kind: "residence", signer: rsa, cardNumber: n, backAddress: { address: "千葉県千葉市中央区1-1", writtenAt: "20260301" } }) });
+      expect(r.changes).toContainEqual({ field: "address", before: null, after: null });
+      expect((await tokyoAdmin.cards.listForPerson({ personId }))[0]).toMatchObject({ address: "千葉県千葉市中央区1-1", addressSource: "ic_back", addressWrittenAt: "2026-03-01" });
+    });
+  });
+
   it("権限と拠点の範囲", async () => {
     const personId = await newPerson("P001");
     const ic = icPayload({ format: "gen2", kind: "residence", signer: ec });

@@ -312,6 +312,16 @@ export const residenceCards = pgTable(
     cardNumberEnc: bytea("card_number_enc").notNull(),
     /** カード番号の検索用 HMAC */
     cardNumberHmac: bytea("card_number_hmac").notNull(),
+    /** カード記載の生年月日・性別(M / F)・国籍・地域(第2世代は IC の値、旧様式は券面の読み取り・入力) */
+    birthDate: date("birth_date"),
+    sex: text("sex"),
+    nationality: text("nationality"),
+    /** 住居地(テナントの鍵で暗号化。検索しない) */
+    addressEnc: bytea("address_enc"),
+    /** 住居地の出どころ: ic_back(IC の裏面追記)/ back_photo / front_photo / manual */
+    addressSource: text("address_source"),
+    /** 裏面に住居地が記載された日(IC の裏面追記の日付) */
+    addressWrittenAt: date("address_written_at"),
     statusOfResidence: text("status_of_residence"),
     periodOfStay: text("period_of_stay"),
     permissionType: text("permission_type"),

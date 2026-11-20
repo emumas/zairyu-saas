@@ -2,7 +2,7 @@
  * 撮影画像の処理。カメラロールには保存しない。一時ファイルは処理後すぐ消す(CLAUDE.md ルール4)
  */
 import TextRecognition, { TextRecognitionScript } from "@react-native-ml-kit/text-recognition";
-import { extractCardNumberCandidates } from "@zairyu/shared";
+import { extractCardNumberCandidates, frontFieldsFromOcr, latestAddressFromBackOcr, type FrontOcrFields, type OcrLine } from "@zairyu/shared";
 import { File } from "expo-file-system";
 import { manipulateAsync, SaveFormat } from "expo-image-manipulator";
 
@@ -21,6 +21,31 @@ export function deleteFile(pathOrUrl: string): void {
 export async function recognizeCardNumber(pathOrUrl: string): Promise<string[]> {
   const result = await TextRecognition.recognize(toFileUrl(pathOrUrl), TextRecognitionScript.LATIN);
   return extractCardNumberCandidates(result.blocks.flatMap((b) => b.lines.map((l) => l.text)).join("\n"));
+}
+
+/** 日本語の認識(住居地・在留資格など)。行の位置(上端)も返す */
+async function japaneseLines(pathOrUrl: string): Promise<OcrLine[]> {
+  const result = await TextRecognition.recognize(toFileUrl(pathOrUrl), TextRecognitionScript.JAPANESE);
+  return result.blocks.flatMap((b) => b.lines.map((l) => ({ text: l.text, top: l.frame?.top })));
+}
+
+/**
+ * 表面の端末内 OCR: 番号の候補(英数字の認識)と、記載事項の候補(日本語の認識)。
+ * 全文は保持せず、取り出した候補だけを返す
+ */
+export async function recognizeFront(pathOrUrl: string): Promise<{ numbers: string[]; fields: FrontOcrFields | null }> {
+  const numbers = await recognizeCardNumber(pathOrUrl).catch(() => []);
+  const fields = await japaneseLines(pathOrUrl)
+    .then(frontFieldsFromOcr)
+    .catch(() => null);
+  return { numbers, fields };
+}
+
+/** 裏面の端末内 OCR: 住居地記載欄のいちばん新しい記載 */
+export async function recognizeBackAddress(pathOrUrl: string): Promise<string | null> {
+  return japaneseLines(pathOrUrl)
+    .then(latestAddressFromBackOcr)
+    .catch(() => null);
 }
 
 /** 送信用に縮小した JPEG(base64)。長辺 1600px・品質 0.7(数百 KB 程度) */

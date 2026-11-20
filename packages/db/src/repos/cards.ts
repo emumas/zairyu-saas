@@ -69,12 +69,21 @@ export async function listCardsForPerson(tx: Tx, personId: string) {
       cardKind: residenceCards.cardKind,
       statusOfResidence: residenceCards.statusOfResidence,
       periodOfStay: residenceCards.periodOfStay,
+      permissionType: residenceCards.permissionType,
+      permittedAt: residenceCards.permittedAt,
       expiryDate: residenceCards.expiryDate,
       cardValidUntil: residenceCards.cardValidUntil,
       workRestriction: residenceCards.workRestriction,
       outsideActivity: residenceCards.outsideActivity,
       outsideActivityUntil: residenceCards.outsideActivityUntil,
       pendingApplication: residenceCards.pendingApplication,
+      birthDate: residenceCards.birthDate,
+      sex: residenceCards.sex,
+      nationality: residenceCards.nationality,
+      cardNumberEnc: residenceCards.cardNumberEnc,
+      addressEnc: residenceCards.addressEnc,
+      addressSource: residenceCards.addressSource,
+      addressWrittenAt: residenceCards.addressWrittenAt,
       icVerified: residenceCards.icVerified,
       needsReview: residenceCards.needsReview,
       isCurrent: residenceCards.isCurrent,
@@ -117,6 +126,8 @@ export async function getCardWithSite(tx: Tx, cardId: string) {
       siteId: persons.siteId,
       cardFormat: residenceCards.cardFormat,
       cardNumberEnc: residenceCards.cardNumberEnc,
+      addressEnc: residenceCards.addressEnc,
+      addressWrittenAt: residenceCards.addressWrittenAt,
       expiryDate: residenceCards.expiryDate,
       cardValidUntil: residenceCards.cardValidUntil,
       isCurrent: residenceCards.isCurrent,
@@ -134,7 +145,15 @@ export async function markCardNeedsReview(tx: Tx, cardId: string): Promise<void>
 export type CardPatch = Partial<
   Pick<
     typeof residenceCards.$inferInsert,
-    "pendingApplication" | "pendingApplicationSince" | "outsideActivity" | "outsideActivityUntil" | "icVerified" | "needsReview"
+    | "pendingApplication"
+    | "pendingApplicationSince"
+    | "outsideActivity"
+    | "outsideActivityUntil"
+    | "icVerified"
+    | "needsReview"
+    | "addressEnc"
+    | "addressSource"
+    | "addressWrittenAt"
   >
 >;
 

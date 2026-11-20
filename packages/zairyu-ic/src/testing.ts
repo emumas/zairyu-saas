@@ -29,6 +29,8 @@ export interface FixtureOptions {
   renewalApplying?: boolean;
   /** 画像の中身(省略するとダミーのバイト列)。表示用の変換を試すときに本物の TIFF / JPEG2000 を入れる */
   images?: { front?: Uint8Array; face?: Uint8Array; name?: Uint8Array };
+  /** 旧様式: 裏面に追記された住居地(null で追記なし。省略すると東京都千代田区霞が関1-1-1) */
+  backAddress?: { address: string; writtenAt: string } | null;
 }
 
 export function buildCardFiles(o: FixtureOptions): Partial<Record<EfPath, Uint8Array>> {
@@ -41,11 +43,14 @@ export function buildCardFiles(o: FixtureOptions): Partial<Record<EfPath, Uint8A
     // 実カードの形: TLV の長さは実データ長、EF の残り(7004 / 3004 バイトまで)は 0x00
     files["df1/ef01"] = padNulls(encodeTlv(0xd0, o.images?.front ?? fill(5000, 1)), 7004);
     files["df1/ef02"] = padNulls(encodeTlv(0xd1, o.images?.face ?? fill(2800, 2)), 3004);
-    files["df2/ef01"] = concatBytes(
-      encodeTlv(0xd2, ascii("20240310")),
-      encodeTlv(0xd3, ascii("131016")),
-      encodeTlv(0xd4, padNulls(ascii("東京都千代田区霞が関1-1-1"), 320)),
-    );
+    const back = o.backAddress === undefined ? { address: "東京都千代田区霞が関1-1-1", writtenAt: "20240310" } : o.backAddress;
+    files["df2/ef01"] = back
+      ? concatBytes(
+          encodeTlv(0xd2, ascii(back.writtenAt)),
+          encodeTlv(0xd3, ascii("131016")),
+          encodeTlv(0xd4, padNulls(new TextEncoder().encode(back.address), 320)),
+        )
+      : concatBytes(encodeTlv(0xd2, new Uint8Array(0)), encodeTlv(0xd3, new Uint8Array(0)), encodeTlv(0xd4, new Uint8Array(320)));
     if (o.kind === "residence") {
       files["df2/ef02"] = encodeTlv(0xd5, padNulls(ascii("許可:原則週28時間以内"), 120));
       files["df2/ef03"] = new Uint8Array(122); // 「無」に書き換えた場合はすべて 0x00

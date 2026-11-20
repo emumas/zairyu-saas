@@ -11,6 +11,7 @@ import {
   enqueueNotifications,
   findOtherPersonWithCard,
   getCardState,
+  fillPersonFromCard,
   getCardWithSite,
   updateCard,
   type CardPatch,
@@ -23,7 +24,7 @@ import {
   type Tx,
 } from "@zairyu/db";
 import { cardRegisterInput, cardVerifyInput, icReadPayload, jstDate, needsReviewNotice } from "@zairyu/shared";
-import { cardNumberHmac, decryptCardNumber, encryptCardNumber, putEncryptedBlob } from "@zairyu/vault";
+import { cardNumberHmac, decryptAddress, decryptCardNumber, encryptAddress, encryptCardNumber, putEncryptedBlob } from "@zairyu/vault";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { assertSiteAccess } from "../authz/guards.js";
@@ -66,10 +67,13 @@ const fieldsOutput = z.object({
   outsideActivity: z.string().nullable(),
   outsideActivityUntil: z.string().nullable(),
   pendingApplication: z.boolean().nullable(),
+  birthDate: z.string().nullable(),
+  sex: z.string().nullable(),
+  nationality: z.string().nullable(),
 });
 
 const diffOutput = z.object({
-  field: z.enum(["cardNumber", "expiryDate", "cardValidUntil", "statusOfResidence", "workRestriction", "pendingApplication"]),
+  field: z.enum(["cardNumber", "expiryDate", "cardValidUntil", "statusOfResidence", "workRestriction", "pendingApplication", "birthDate"]),
   ic: z.union([z.string(), z.boolean()]).nullable(),
   input: z.union([z.string(), z.boolean()]).nullable(),
 });
@@ -80,6 +84,11 @@ async function loadCurrentCardForWrite(tx: Tx, actor: Actor, cardId: string) {
   assertSiteAccess(actor, card.siteId);
   if (!card.isCurrent) throw new TRPCError({ code: "BAD_REQUEST", message: "現在のカードだけ再検証できます" });
   return card;
+}
+
+/** AB12345678CD → AB******78CD(全桁は revealCardNumber で表示し、監査ログに残す) */
+export function maskCardNumber(n: string): string {
+  return n.length === 12 ? `${n.slice(0, 2)}******${n.slice(8)}` : "*".repeat(n.length);
 }
 
 /** 再検証で IC から更新する項目(カードの交付後に IC へ追記されるもの) */
@@ -101,7 +110,7 @@ export const cardsRouter = router({
 
   /**
    * IC 再検証(1-8): 登録済みのカードの IC を読み直して署名を検証し、確認履歴に追記する。
-   * 交付後に IC へ追記される項目(更新申請中・資格外活動)が変わっていればカードに反映する
+   * 交付後に IC へ追記される項目(更新申請中・資格外活動・裏面の住居地)が変わっていればカードに反映する
    */
   reverifyIc: permissionProcedure("cards.write")
     .input(z.object({ cardId: z.uuid(), ic: icReadPayload, deviceId: z.string().max(100).optional() }))
@@ -136,6 +145,17 @@ export const cardsRouter = router({
           }
           if (patch.pendingApplication === true) patch.pendingApplicationSince = jstDate(ctx.services.now());
           if (patch.pendingApplication === false) patch.pendingApplicationSince = null;
+          // 裏面に新しい住居地が追記されていれば、そちらに更新する(変更の記録には値を残さない)
+          if (ic.backAddress) {
+            const keyring = requireVault(ctx.services).keyring;
+            const before = card.addressEnc ? await decryptAddress(keyring, ctx.actor.tenantId, card.addressEnc) : null;
+            if (before !== ic.backAddress.address || card.addressWrittenAt !== ic.backAddress.writtenAt) {
+              patch.addressEnc = await encryptAddress(keyring, ctx.actor.tenantId, ic.backAddress.address);
+              patch.addressSource = "ic_back";
+              patch.addressWrittenAt = ic.backAddress.writtenAt;
+              changes.push({ field: "address", before: null, after: null });
+            }
+          }
         }
         if (judged.icVerified) patch.icVerified = true;
         if (judged.needsReview) {
@@ -181,6 +201,8 @@ export const cardsRouter = router({
         diffs: z.array(diffOutput),
         /** IC 内の画像(表示用に変換済み)。撮影した券面と見比べる */
         icImages: z.array(z.object({ kind: z.string(), contentType: z.string(), data: z.string(), width: z.number(), height: z.number() })),
+        /** 裏面に追記された住居地(旧様式の IC。あれば保存時にこちらを採用する) */
+        icBackAddress: z.object({ address: z.string(), writtenAt: z.string().nullable() }).nullable(),
       }),
     )
     .mutation(({ ctx, input }) =>
@@ -216,6 +238,7 @@ export const cardsRouter = router({
           fields: mergeFields(ic, input.manual),
           diffs: diffFields(ic, input.cardNumber, input.manual),
           icImages: icImages.flat(),
+          icBackAddress: ic.backAddress,
         };
       }),
     ),
@@ -249,9 +272,16 @@ export const cardsRouter = router({
         throw new TRPCError({ code: "BAD_REQUEST", message: "永住者には在留期間の満了日がありません。券面の日付は「カードの有効期限」として入力してください" });
       }
       const judged = ic ? judgeSignature(ic.signature) : { icVerified: false, needsReview: false, result: null };
-      const [numberEnc, numberHmac] = await Promise.all([
+      // 住居地: 裏面に新しい住所(IC の裏面追記)があればそちらを採用し、無ければ端末の読み取り・入力を使う
+      const address = ic?.backAddress
+        ? { address: ic.backAddress.address, source: "ic_back" as const, writtenAt: ic.backAddress.writtenAt }
+        : input.manual.address
+          ? { address: input.manual.address, source: input.manual.addressSource ?? "manual", writtenAt: null }
+          : null;
+      const [numberEnc, numberHmac, addressEnc] = await Promise.all([
         encryptCardNumber(vault.keyring, tenantId, input.cardNumber),
         cardNumberHmac(vault.keyring, tenantId, input.cardNumber),
+        address ? encryptAddress(vault.keyring, tenantId, address.address) : Promise.resolve(null),
       ]);
       const images = [
         ...(ic?.images ?? []),
@@ -261,7 +291,7 @@ export const cardsRouter = router({
       const stored = await Promise.all(
         images.map(async (img) => ({ ...img, blobKey: await putEncryptedBlob(vault.blobs, vault.keyring, tenantId, img.data) })),
       );
-      // TODO(1-21): 登録に失敗した場合に残った Blob を掃除するジョブ
+      // 登録に失敗した場合に残った Blob は、削除ジョブ(worker purge)が 24 時間後以降に掃除する
 
       return ctx.tenantTx(async (tx) => {
         const person = await loadActivePerson(tx, ctx.actor, input.personId);
@@ -274,12 +304,17 @@ export const cardsRouter = router({
           cardKind: ic?.kind ?? "residence",
           cardNumberEnc: numberEnc,
           cardNumberHmac: numberHmac,
+          addressEnc,
+          addressSource: address?.source ?? null,
+          addressWrittenAt: address?.writtenAt ?? null,
           ...fields,
           pendingApplication: fields.pendingApplication ?? false,
           pendingApplicationSince: fields.pendingApplication ? today : null,
           icVerified: judged.icVerified,
           needsReview: judged.needsReview,
         });
+        const filled = await fillPersonFromCard(tx, input.personId, { birthDate: fields.birthDate, nationality: fields.nationality });
+        if (filled.length > 0) await ctx.audit(tx, { action: "person.update", targetType: "person", targetId: input.personId, detail: { via: "card_register", fields: filled } });
         for (const img of stored) {
           await insertCardImage(tx, { cardId, kind: img.kind, blobKey: img.blobKey, contentType: img.contentType });
         }
@@ -307,7 +342,7 @@ export const cardsRouter = router({
           action: "card.register",
           targetType: "residence_card",
           targetId: cardId,
-          detail: { personId: input.personId, format: ic?.format ?? null, icVerified: judged.icVerified, needsReview: judged.needsReview, images: stored.map((i) => i.kind) },
+          detail: { personId: input.personId, format: ic?.format ?? null, icVerified: judged.icVerified, needsReview: judged.needsReview, images: stored.map((i) => i.kind), addressSource: address?.source ?? null },
         });
         // 署名検証に失敗(偽造の疑い)したら、アラートを作って管理者へ即時通知する(送信はワーカーが数分以内に行う)
         if (judged.needsReview) {
@@ -333,6 +368,12 @@ export const cardsRouter = router({
           needsReview: z.boolean(),
           isCurrent: z.boolean(),
           createdAt: z.date(),
+          /** 在留カード番号(中ほどを伏せた表示。全桁は revealCardNumber で、監査ログに残る) */
+          cardNumberMasked: z.string(),
+          /** 住居地(復号済み)。出どころ: ic_back / back_photo / front_photo / manual */
+          address: z.string().nullable(),
+          addressSource: z.string().nullable(),
+          addressWrittenAt: z.string().nullable(),
           images: z.array(z.object({ id: z.string(), kind: z.string() })),
           verifications: z.array(
             z.object({
@@ -353,7 +394,29 @@ export const cardsRouter = router({
         if (!p) throw notFound();
         assertSiteAccess(ctx.actor, p.siteId);
         const cards = await listCardsForPerson(tx, input.personId);
-        return cards.map((c) => ({ ...c, permissionType: null, permittedAt: null }));
+        const keyring = requireVault(ctx.services).keyring;
+        return Promise.all(
+          cards.map(async ({ cardNumberEnc, addressEnc, ...c }) => ({
+            ...c,
+            cardNumberMasked: maskCardNumber(await decryptCardNumber(keyring, ctx.actor.tenantId, cardNumberEnc)),
+            address: addressEnc ? await decryptAddress(keyring, ctx.actor.tenantId, addressEnc) : null,
+          })),
+        );
+      }),
+    ),
+
+  /** 在留カード番号を全桁で表示する(監査ログに残す) */
+  revealCardNumber: permissionProcedure("cards.viewImage")
+    .input(z.object({ cardId: z.uuid() }))
+    .output(z.object({ cardNumber: z.string() }))
+    .mutation(({ ctx, input }) =>
+      ctx.tenantTx(async (tx) => {
+        const card = await getCardWithSite(tx, input.cardId);
+        if (!card) throw notFound();
+        assertSiteAccess(ctx.actor, card.siteId);
+        const cardNumber = await decryptCardNumber(requireVault(ctx.services).keyring, ctx.actor.tenantId, card.cardNumberEnc);
+        await ctx.audit(tx, { action: "card.reveal_number", targetType: "residence_card", targetId: card.id, detail: { purpose: "view" } });
+        return { cardNumber };
       }),
     ),
 

@@ -5,18 +5,22 @@
  * - サーバーは保存時にも IC を検証し直す
  */
 import {
+  ADDRESS_SOURCE_LABEL,
+  chooseAddress,
   isValidCardNumber,
   normalizeCardNumberInput,
   WORK_RESTRICTION_LABEL,
   WORK_RESTRICTIONS,
+  type AddressSource,
   type CardManualFields,
+  type FrontOcrFields,
   type IcReadPayload,
 } from "@zairyu/shared";
 import { useState } from "react";
 import { Switch, Text, View } from "react-native";
 import { api, messageOf } from "../api";
 import { IcProgressView, icErrorMessage, isCardReadError, readIcPayload, type IcProgress } from "../ic/readIc";
-import { compressForUpload, deleteFile, recognizeCardNumber } from "../photo";
+import { compressForUpload, deleteFile, recognizeBackAddress, recognizeFront } from "../photo";
 import { FORMAT_LABEL } from "../screens/format";
 import { Button, Card, Choice, color, Field, Message, Row, Screen } from "../ui/kit";
 import { CameraCapture } from "../ui/CameraCapture";
@@ -35,6 +39,7 @@ const DIFF_LABEL: Record<string, string> = {
   statusOfResidence: "在留資格",
   workRestriction: "就労制限",
   pendingApplication: "更新申請中",
+  birthDate: "生年月日",
 };
 
 const IC_FAILURE: { value: IcFailure; label: string }[] = [
@@ -62,6 +67,11 @@ export function CardWizard({ personId, personName, onClose, onDone }: { personId
   const [icProgress, setIcProgress] = useState<IcProgress>(null);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<{ icVerified: boolean; needsReview: boolean } | null>(null);
+  /** 表面・裏面の端末内 OCR で読み取った候補(画像は外部に送らない) */
+  const [frontOcr, setFrontOcr] = useState<FrontOcrFields | null>(null);
+  const [backOcrAddress, setBackOcrAddress] = useState<string | null>(null);
+  /** 住居地: 自動で選んだ値(null)か、利用者が直した値 */
+  const [addressEdit, setAddressEdit] = useState<string | null>(null);
 
   const cardNumber = normalizeCardNumberInput(numberInput);
   const numberOk = isValidCardNumber(cardNumber);
@@ -69,9 +79,10 @@ export function CardWizard({ personId, personName, onClose, onDone }: { personId
 
   async function onFrontCaptured(path: string) {
     try {
-      const found = await recognizeCardNumber(path).catch(() => []);
+      const { numbers: found, fields } = await recognizeFront(path);
       setFront(await compressForUpload(path));
       setCandidates(found);
+      setFrontOcr(fields);
       if (found[0]) setNumberInput(found[0]);
     } finally {
       deleteFile(path);
@@ -82,6 +93,7 @@ export function CardWizard({ personId, personName, onClose, onDone }: { personId
 
   async function onBackCaptured(path: string) {
     try {
+      setBackOcrAddress(await recognizeBackAddress(path));
       setBack(await compressForUpload(path));
     } finally {
       deleteFile(path);
@@ -96,7 +108,10 @@ export function CardWizard({ personId, personName, onClose, onDone }: { personId
       const payload = await readIcPayload(cardNumber, setIcProgress);
       setIc(payload);
       setIcFailure(null);
-      setVerify(await api.cards.verifyIcRead.mutate({ personId, cardNumber, ic: payload, manual: {} }));
+      const v = await api.cards.verifyIcRead.mutate({ personId, cardNumber, ic: payload, manual: {} });
+      setVerify(v);
+      // 旧様式は IC に文字情報が無いので、表面の読み取り結果を入力欄に入れておく(第2世代は IC の値を使う)
+      if (v.format === "legacy") prefillFromFront();
       setStep("confirm");
     } catch (e) {
       setError(isCardReadError(e) ? icErrorMessage(e) : messageOf(e, icErrorMessage(e)));
@@ -104,6 +119,22 @@ export function CardWizard({ personId, personName, onClose, onDone }: { personId
       setBusy(false);
       setIcProgress(null);
     }
+  }
+
+  /** 表面の読み取り結果を、まだ入力していない欄に入れる(確認・修正してもらう) */
+  function prefillFromFront() {
+    const f = frontOcr;
+    if (!f) return;
+    const permanentCard = /永住者/.test(f.statusOfResidence ?? "");
+    if (permanentCard) setNoStayLimit(true);
+    setManual((m) => ({
+      ...m,
+      statusOfResidence: m.statusOfResidence ?? f.statusOfResidence,
+      ...(permanentCard ? { cardValidUntil: m.cardValidUntil ?? f.cardValidUntil, expiryDate: null } : { expiryDate: m.expiryDate ?? f.expiryDate }),
+      birthDate: m.birthDate ?? f.birthDate,
+      sex: m.sex ?? f.sex,
+      nationality: m.nationality ?? f.nationality,
+    }));
   }
 
   /** 入力した値で照合し直す(第2世代は IC の値と比べる) */
@@ -129,7 +160,10 @@ export function CardWizard({ personId, personName, onClose, onDone }: { personId
         cardNumber,
         ic,
         ...(ic ? {} : { icFailureReason: icFailure ?? "other" }),
-        manual,
+        manual: {
+          ...manual,
+          ...(address.trim() && addressSource && addressSource !== "ic_back" ? { address: address.trim(), addressSource } : {}),
+        },
         photos: { ...(front ? { front } : {}), ...(back ? { back } : {}) },
         ...(diffReason.trim() ? { diffReason: diffReason.trim() } : {}),
       });
@@ -145,6 +179,12 @@ export function CardWizard({ personId, personName, onClose, onDone }: { personId
       setBusy(false);
     }
   }
+
+  // 住居地: 裏面に新しい住所がある場合はそちらを採用する(IC の裏面追記 > 裏面の読み取り > 表面の読み取り)
+  const icBackAddress = verify?.icBackAddress?.address ?? null;
+  const autoAddress = chooseAddress({ icBack: icBackAddress, backPhoto: backOcrAddress, frontPhoto: frontOcr?.address ?? null });
+  const address = icBackAddress ? icBackAddress : (addressEdit ?? autoAddress?.address ?? "");
+  const addressSource: AddressSource | null = icBackAddress ? "ic_back" : addressEdit !== null ? "manual" : (autoAddress?.source ?? null);
 
   const needsReason = (verify?.diffs.length ?? 0) > 0;
   const manualNeeded = !hasIcText; // 旧様式・IC なしは満了日などを入力する
@@ -216,6 +256,7 @@ export function CardWizard({ personId, personName, onClose, onDone }: { personId
             onPress={() => {
               setIc(null);
               setVerify(null);
+              prefillFromFront();
               setStep("confirm");
             }}
           />
@@ -319,6 +360,24 @@ export function CardWizard({ personId, personName, onClose, onDone }: { personId
                 value={manual.workRestriction ?? null}
                 onChange={(w) => setManual({ ...manual, workRestriction: w })}
               />
+              <Field
+                label="生年月日(YYYY-MM-DD)"
+                value={manual.birthDate ?? ""}
+                onChangeText={(v) => setManual({ ...manual, birthDate: v || null })}
+                placeholder="1995-04-01"
+                keyboardType="numbers-and-punctuation"
+              />
+              <Text style={{ fontWeight: "600" }}>性別</Text>
+              <Choice
+                options={[
+                  { value: "M" as const, label: "男 M" },
+                  { value: "F" as const, label: "女 F" },
+                ]}
+                value={manual.sex ?? null}
+                onChange={(v) => setManual({ ...manual, sex: v })}
+              />
+              <Field label="国籍・地域" value={manual.nationality ?? ""} onChangeText={(v) => setManual({ ...manual, nationality: v || null })} placeholder="ベトナム" />
+              {frontOcr && <Text style={{ color: color.sub }}>表面の読み取り結果を入れています。券面と見比べて、違っていれば直してください。</Text>}
               {!verify && (
                 <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
                   <Switch value={manual.pendingApplication ?? false} onValueChange={(v) => setManual({ ...manual, pendingApplication: v })} />
@@ -352,6 +411,24 @@ export function CardWizard({ personId, personName, onClose, onDone }: { personId
           <Text>追記欄・資格外活動許可欄を確認するため、裏面を撮影します。</Text>
           <Button label={back ? "裏面を撮り直す" : "裏面を撮影"} kind={back ? "secondary" : "primary"} onPress={() => setCamera("back")} />
           {back && <Message text="裏面を撮影しました" tone="ok" />}
+          <Text style={{ fontWeight: "700", marginTop: 8 }}>住居地</Text>
+          {icBackAddress ? (
+            <>
+              <Row k="住居地" v={icBackAddress} />
+              <Text style={{ color: color.sub }}>
+                裏面に記載された新しい住居地を IC から読み取りました{verify?.icBackAddress?.writtenAt ? `(${verify.icBackAddress.writtenAt} 記載)` : ""}。こちらを登録します。
+              </Text>
+            </>
+          ) : (
+            <>
+              <Field label="住居地" value={address} onChangeText={setAddressEdit} placeholder="東京都新宿区西新宿2-8-1" multiline />
+              <Text style={{ color: color.sub }}>
+                {addressSource
+                  ? `${ADDRESS_SOURCE_LABEL[addressSource]}の結果です。裏面に新しい住居地の記載があればそちらを優先します。券面と見比べて、違っていれば直してください。`
+                  : "読み取れませんでした。券面(裏面に記載があれば裏面の最新の住所)を見て入力してください(任意)。"}
+              </Text>
+            </>
+          )}
           <Message text={error} />
           <Button label="保存する" busy={busy} disabled={!canSave} onPress={save} />
         </Card>

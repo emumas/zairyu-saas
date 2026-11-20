@@ -1,5 +1,5 @@
 /** 登録者の詳細: 現在のカード・期限・カード履歴と確認履歴 */
-import { EXPIRY_BUCKET_LABEL, WORK_RESTRICTION_LABEL } from "@zairyu/shared";
+import { ADDRESS_SOURCE_LABEL, EXPIRY_BUCKET_LABEL, WORK_RESTRICTION_LABEL } from "@zairyu/shared";
 import { useCallback, useEffect, useState } from "react";
 import { Text } from "react-native";
 import { api, messageOf } from "../api";
@@ -33,6 +33,17 @@ export function PersonScreen({
   const [shown, setShown] = useState<Record<string, { kind: string } & ImageData>>({});
   const [cardFace, setCardFace] = useState<{ front: ImageData; face: ImageData | null } | null>(null);
   const [loadingImage, setLoadingImage] = useState<string | null>(null);
+  /** 全桁表示した番号(この画面を開いている間だけ) */
+  const [revealed, setRevealed] = useState<Record<string, string>>({});
+
+  async function reveal(cardId: string) {
+    try {
+      const r = await api.cards.revealCardNumber.mutate({ cardId });
+      setRevealed((x) => ({ ...x, [cardId]: r.cardNumber }));
+    } catch (e) {
+      setError(messageOf(e));
+    }
+  }
 
   /** IC の券面イメージと顔写真から、カードの見た目で表示する(旧様式) */
   async function showCardFace(frontId: string, faceId: string | undefined) {
@@ -110,6 +121,34 @@ export function PersonScreen({
           </>
         )}
       </Card>
+      {(() => {
+        const cur = cards.find((x) => x.isCurrent);
+        if (!cur) return null;
+        return (
+          <Card>
+            <Text style={{ fontWeight: "700" }}>カード記載事項</Text>
+            <Row k="在留カード番号" v={revealed[cur.id] ?? cur.cardNumberMasked} />
+            {session.can("cards.viewImage") && !revealed[cur.id] && (
+              <Button label="番号を全桁表示(記録が残ります)" kind="secondary" onPress={() => void reveal(cur.id)} />
+            )}
+            <Row k="生年月日" v={cur.birthDate ?? "—"} />
+            <Row k="性別" v={cur.sex === "M" ? "男" : cur.sex === "F" ? "女" : "—"} />
+            <Row k="国籍・地域" v={cur.nationality ?? "—"} />
+            <Row k="住居地" v={cur.address ?? "—"} />
+            {cur.address && cur.addressSource && (
+              <Text style={{ color: color.sub, fontSize: 12 }}>
+                {ADDRESS_SOURCE_LABEL[cur.addressSource as keyof typeof ADDRESS_SOURCE_LABEL] ?? cur.addressSource}
+                {cur.addressWrittenAt ? `(${cur.addressWrittenAt} 記載)` : ""}
+              </Text>
+            )}
+            <Row k="在留資格" v={cur.statusOfResidence ?? "—"} />
+            {cur.periodOfStay && <Row k="在留期間" v={cur.periodOfStay} />}
+            {cur.permittedAt && <Row k="許可年月日" v={cur.permittedAt} />}
+            <Row k="在留期間満了日" v={cur.expiryDate ?? "—"} />
+            <Row k="カードの有効期限" v={cur.cardValidUntil ?? "—"} />
+          </Card>
+        );
+      })()}
       {session.can("cards.viewImage") && cards.find((x) => x.isCurrent)?.images.length ? (
         <Card>
           <Text style={{ fontWeight: "700" }}>カード画像</Text>

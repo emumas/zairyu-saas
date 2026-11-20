@@ -1,4 +1,4 @@
-import { EXPIRY_BUCKET_LABEL, WORK_RESTRICTION_LABEL } from "@zairyu/shared";
+import { ADDRESS_SOURCE_LABEL, EXPIRY_BUCKET_LABEL, WORK_RESTRICTION_LABEL } from "@zairyu/shared";
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router";
 import { api, messageOf } from "../api";
@@ -21,6 +21,17 @@ export function PersonDetailPage() {
   /** カードごとの組み立て表示(画像はメモリ上だけに持ち、ブラウザのキャッシュに残さない) */
   const [faces, setFaces] = useState<Record<string, { front: ImageData; face: ImageData | null }>>({});
   const [loadingFace, setLoadingFace] = useState<string | null>(null);
+  /** 全桁表示した番号(この画面を開いている間だけ。表示は監査ログに残る) */
+  const [revealed, setRevealed] = useState<Record<string, string>>({});
+
+  async function reveal(cardId: string) {
+    try {
+      const r = await api.cards.revealCardNumber.mutate({ cardId });
+      setRevealed((x) => ({ ...x, [cardId]: r.cardNumber }));
+    } catch (e) {
+      setError(messageOf(e));
+    }
+  }
 
   useEffect(() => {
     api.persons.get.query({ id }).then(setP, (e) => setError(messageOf(e)));
@@ -96,6 +107,50 @@ export function PersonDetailPage() {
           </dl>
         </Card>
       </div>
+      {(() => {
+        const cur = cards.find((c) => c.isCurrent);
+        if (!cur) return null;
+        return (
+          <Card title="カード記載事項">
+            <dl>
+              <dt>在留カード番号</dt>
+              <dd>
+                <code>{revealed[cur.id] ?? cur.cardNumberMasked}</code>{" "}
+                {session.can("cards.viewImage") && !revealed[cur.id] && (
+                  <button className="link" onClick={() => void reveal(cur.id)}>
+                    全桁を表示(記録が残ります)
+                  </button>
+                )}
+              </dd>
+              <dt>生年月日</dt>
+              <dd>{cur.birthDate ?? "—"}</dd>
+              <dt>性別</dt>
+              <dd>{cur.sex === "M" ? "男" : cur.sex === "F" ? "女" : "—"}</dd>
+              <dt>国籍・地域</dt>
+              <dd>{cur.nationality ?? "—"}</dd>
+              <dt>住居地</dt>
+              <dd>
+                {cur.address ?? "—"}
+                {cur.address && cur.addressSource && (
+                  <span className="sub">
+                    (
+                    {ADDRESS_SOURCE_LABEL[cur.addressSource as keyof typeof ADDRESS_SOURCE_LABEL] ?? cur.addressSource}
+                    {cur.addressWrittenAt ? `・${cur.addressWrittenAt} 記載` : ""})
+                  </span>
+                )}
+              </dd>
+              <dt>在留資格</dt>
+              <dd>{cur.statusOfResidence ?? "—"}</dd>
+              {cur.periodOfStay && (<><dt>在留期間</dt><dd>{cur.periodOfStay}</dd></>)}
+              {cur.permittedAt && (<><dt>許可年月日</dt><dd>{cur.permittedAt}</dd></>)}
+              <dt>在留期間満了日</dt>
+              <dd>{cur.expiryDate ?? "—"}</dd>
+              <dt>カードの有効期限</dt>
+              <dd>{cur.cardValidUntil ?? "—"}</dd>
+            </dl>
+          </Card>
+        );
+      })()}
       {cards.map((c) => (
         <Card key={c.id} title={`${FORMAT_LABEL[c.cardFormat]} ・ ${fmtDateTime(c.createdAt)} 登録${c.isCurrent ? "(現在)" : ""}`}>
           {faces[c.id] && <CardFaceView front={faces[c.id]!.front} face={faces[c.id]!.face} />}

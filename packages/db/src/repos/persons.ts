@@ -215,3 +215,14 @@ export async function findPersonsByEmployeeCodes(tx: Tx, codes: readonly string[
     .from(persons)
     .where(inArray(persons.employeeCode, [...codes]));
 }
+
+/** カード登録時に、登録者の生年月日・国籍が空欄ならカードの値で埋める(入力済みの値は変えない) */
+export async function fillPersonFromCard(tx: Tx, id: string, v: { birthDate: string | null; nationality: string | null }): Promise<string[]> {
+  const set: Record<string, unknown> = {};
+  if (v.birthDate) set.birthDate = sql`coalesce(${persons.birthDate}, ${v.birthDate}::date)`;
+  if (v.nationality && /^[A-Z]{3}$/.test(v.nationality)) set.nationality = sql`coalesce(${persons.nationality}, ${v.nationality})`;
+  if (Object.keys(set).length === 0) return [];
+  const [before] = await tx.select({ birthDate: persons.birthDate, nationality: persons.nationality }).from(persons).where(eq(persons.id, id));
+  await tx.update(persons).set(set).where(eq(persons.id, id));
+  return Object.keys(set).filter((k) => before && before[k as "birthDate" | "nationality"] === null);
+}

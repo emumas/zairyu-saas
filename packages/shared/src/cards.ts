@@ -1,5 +1,6 @@
 /** カード登録 API の入出力(mobile / web / api で共有) */
 import { z } from "zod";
+import { addressInput } from "./address.js";
 import { CARD_NUMBER_PATTERN } from "./cardNumber.js";
 import { dateString } from "./persons.js";
 
@@ -49,6 +50,13 @@ export const cardManualFields = z.object({
   statusOfResidence: z.string().trim().max(50).nullish(),
   workRestriction: z.enum(WORK_RESTRICTIONS).nullish(),
   pendingApplication: z.boolean().optional(),
+  /** カード記載の生年月日・性別・国籍(旧様式は券面の読み取り・入力。第2世代は IC の値を使い、これは照合に使う) */
+  birthDate: dateString.nullish(),
+  sex: z.enum(["M", "F"]).nullish(),
+  nationality: z.string().trim().max(50).nullish(),
+  /** 住居地(撮影画像の端末内 OCR か手入力。IC に裏面の記載があればサーバーはそちらを採用する) */
+  address: addressInput.nullish(),
+  addressSource: z.enum(["back_photo", "front_photo", "manual"]).nullish(),
 });
 export type CardManualFields = z.infer<typeof cardManualFields>;
 

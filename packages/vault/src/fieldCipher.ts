@@ -58,3 +58,15 @@ export async function decryptCardNumber(keyring: TenantKeyring, tenantId: string
 export async function cardNumberHmac(keyring: TenantKeyring, tenantId: string, normalizedCardNumber: string): Promise<Buffer> {
   return createHmac("sha256", await keyring.hmacKey(tenantId)).update(`card_number:${normalizedCardNumber}`).digest();
 }
+
+// ---------------------------------------------------------------- 住居地
+
+const ADDRESS_CONTEXT = "residence_cards.address";
+
+export function encryptAddress(keyring: TenantKeyring, tenantId: string, address: string): Promise<Buffer> {
+  return encryptField(keyring, tenantId, Buffer.from(address, "utf8"), ADDRESS_CONTEXT);
+}
+
+export async function decryptAddress(keyring: TenantKeyring, tenantId: string, sealed: Uint8Array): Promise<string> {
+  return (await decryptField(keyring, tenantId, sealed, ADDRESS_CONTEXT)).toString("utf8");
+}
