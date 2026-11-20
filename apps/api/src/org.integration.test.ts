@@ -41,6 +41,17 @@ describe.skipIf(!url)("組織管理と招待", () => {
     expect(await codeOf(admin.persons.create({ siteId: id, employeeCode: "X", name: "x" }))).toBe("BAD_REQUEST");
   });
 
+  it("保存期間の設定(3〜5 年、テナント管理者のみ)", async () => {
+    expect((await admin.org.settings.get()).retentionYears).toBe(5);
+    await admin.org.settings.update({ retentionYears: 3 });
+    expect((await admin.org.settings.get()).retentionYears).toBe(3);
+    expect(await codeOf(admin.org.settings.update({ retentionYears: 2 }))).toBe("BAD_REQUEST");
+    expect(await codeOf(siteAdmin.org.settings.update({ retentionYears: 4 }))).toBe("FORBIDDEN");
+    const logs = await withTenant(h.db, tenant, (tx) => tx.select().from(schema.auditLogs).where(eq(schema.auditLogs.action, "tenant.retention_update")));
+    expect(logs[0]?.detail).toEqual({ from: 5, to: 3 });
+    await admin.org.settings.update({ retentionYears: 5 });
+  });
+
   it("拠点管理者は組織管理を使えない", async () => {
     expect(await codeOf(siteAdmin.org.users.list())).toBe("FORBIDDEN");
     expect(await codeOf(siteAdmin.org.sites.create({ name: "x" }))).toBe("FORBIDDEN");

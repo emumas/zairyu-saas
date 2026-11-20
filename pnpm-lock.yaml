@@ -197,6 +197,9 @@ importers:
       '@zairyu/shared':
         specifier: workspace:*
         version: link:../../packages/shared
+      '@zairyu/vault':
+        specifier: workspace:*
+        version: link:../../packages/vault
       drizzle-orm:
         specifier: ^0.45.4
         version: 0.45.4(@types/pg@8.23.1)(pg@8.23.1)

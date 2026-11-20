@@ -8,6 +8,7 @@ import { LoginPage } from "./pages/LoginPage";
 import { PersonDetailPage } from "./pages/PersonDetailPage";
 import { PersonsPage } from "./pages/PersonsPage";
 import { ReportsPage } from "./pages/ReportsPage";
+import { SettingsPage } from "./pages/SettingsPage";
 import { SitesPage } from "./pages/SitesPage";
 import { UsersPage } from "./pages/UsersPage";
 import { PlatformApp } from "./platform/PlatformApp";
@@ -54,6 +55,7 @@ function Shell() {
             <NavLink to="/org/sites">拠点</NavLink>
             <NavLink to="/org/users">ユーザー</NavLink>
             {session.can("billing.manage") && <NavLink to="/billing">契約・請求</NavLink>}
+            {session.can("tenant.settings") && <NavLink to="/settings">設定</NavLink>}
           </>
         )}
         <div className="nav-foot">
@@ -76,6 +78,7 @@ function Shell() {
           {session.can("org.manage") && <Route path="/org/sites" element={<SitesPage />} />}
           {session.can("org.manage") && <Route path="/org/users" element={<UsersPage />} />}
           {session.can("billing.manage") && <Route path="/billing" element={<BillingPage />} />}
+          {session.can("tenant.settings") && <Route path="/settings" element={<SettingsPage />} />}
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>

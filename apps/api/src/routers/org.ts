@@ -15,8 +15,10 @@ import {
   setUserSites,
   updateSite,
   updateUser,
+  schema,
   type Tx,
 } from "@zairyu/db";
+import { eq } from "drizzle-orm";
 import { inviteUserInput, siteNameInput, USER_ROLES } from "@zairyu/shared";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
@@ -182,6 +184,30 @@ export const orgRouter = router({
           }
           await ctx.audit(tx, { action: input.active ? "user.reactivate" : "user.suspend", targetType: "user", targetId: u.id });
           return { userId: u.id };
+        }),
+      ),
+  }),
+
+  /** テナント設定: 退職後の保存期間(3〜5 年。過ぎたら自動削除 1-21) */
+  settings: router({
+    get: permissionProcedure("tenant.settings")
+      .output(z.object({ name: z.string(), retentionYears: z.number() }))
+      .query(({ ctx }) =>
+        ctx.tenantTx(async (tx) => {
+          const [t] = await tx.select({ name: schema.tenants.name, retentionYears: schema.tenants.retentionYears }).from(schema.tenants);
+          if (!t) throw notFound();
+          return t;
+        }),
+      ),
+    update: permissionProcedure("tenant.settings")
+      .input(z.object({ retentionYears: z.number().int().min(3).max(5) }))
+      .output(z.object({ retentionYears: z.number() }))
+      .mutation(({ ctx, input }) =>
+        ctx.tenantTx(async (tx) => {
+          const [before] = await tx.select({ retentionYears: schema.tenants.retentionYears }).from(schema.tenants);
+          await tx.update(schema.tenants).set({ retentionYears: input.retentionYears, updatedAt: new Date() }).where(eq(schema.tenants.id, ctx.actor.tenantId));
+          await ctx.audit(tx, { action: "tenant.retention_update", targetType: "tenant", targetId: ctx.actor.tenantId, detail: { from: before?.retentionYears ?? null, to: input.retentionYears } });
+          return { retentionYears: input.retentionYears };
         }),
       ),
   }),

@@ -8,12 +8,14 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "daily": "tsx --env-file-if-exists=../api/.env src/cli.ts daily",
-    "send": "tsx --env-file-if-exists=../api/.env src/cli.ts send"
+    "send": "tsx --env-file-if-exists=../api/.env src/cli.ts send",
+    "purge": "tsx --env-file-if-exists=../api/.env src/cli.ts purge"
   },
   "dependencies": {
     "@azure/communication-email": "1.1.0",
     "@zairyu/db": "workspace:*",
     "@zairyu/shared": "workspace:*",
+    "@zairyu/vault": "workspace:*",
     "drizzle-orm": "^0.45.4"
   },
   "devDependencies": {

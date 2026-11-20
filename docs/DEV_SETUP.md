@@ -79,6 +79,8 @@ pnpm dev
 ```powershell
 pnpm --filter worker daily   # 前日の課金対象人数の記録、今日の期限アラートの作成、通知の送信
 pnpm --filter worker send    # 送信待ちの通知だけを送る
+pnpm --filter worker purge -- --dry-run   # 保存期間が過ぎた退職者の件数(消さない)
+pnpm --filter worker purge   # 保存期間が過ぎた退職者のデータを消す(元に戻せない)
 ```
 
 メールの設定(`ACS_CONNECTION_STRING`・`ACS_SENDER_ADDRESS`)が無い間は、送らずにウィンドウに件数を表示するだけです。
