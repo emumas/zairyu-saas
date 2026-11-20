@@ -14,7 +14,7 @@ import {
 } from "@zairyu/shared";
 import { CardNumberMismatchError, CardReadError, readResidenceCard, toBase64, type EfPath } from "@zairyu/zairyu-ic";
 import { useState } from "react";
-import { Switch, Text, View } from "react-native";
+import { Switch, Text, Vibration, View } from "react-native";
 import { api, messageOf } from "../api";
 import { randomBytes, tokuteiDeliveryKey } from "../config";
 import { maxReadLengthFor, withIsoDep } from "../nfc";
@@ -68,6 +68,8 @@ export function CardWizard({ personId, personName, onClose, onDone }: { personId
   /** 永住者・特別永住者(在留期間の定めがない)。券面の日付はカードの有効期限になる */
   const [noStayLimit, setNoStayLimit] = useState(false);
   const [busy, setBusy] = useState(false);
+  /** IC 読み取りの進み具合(カードとやり取りした回数) */
+  const [icProgress, setIcProgress] = useState<{ phase: "wait" | "reading" | "checking"; apdus: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<{ icVerified: boolean; needsReview: boolean } | null>(null);
 
@@ -100,10 +102,16 @@ export function CardWizard({ personId, personName, onClose, onDone }: { personId
   async function readIc() {
     setBusy(true);
     setError(null);
+    setIcProgress({ phase: "wait", apdus: 0 });
     try {
-      const raw = await withIsoDep(async (transceive, info) => {
+      const raw = await withIsoDep(async (rawTransceive, info) => {
         const maxReadLength = maxReadLengthFor(info);
         const deliveryKey = tokuteiDeliveryKey();
+        let n = 0;
+        const transceive = async (apdu: Uint8Array) => {
+          setIcProgress({ phase: "reading", apdus: ++n });
+          return rawTransceive(apdu);
+        };
         return readResidenceCard(transceive, {
           cardNumber,
           randomBytes,
@@ -111,6 +119,9 @@ export function CardWizard({ personId, personName, onClose, onDone }: { personId
           ...(deliveryKey ? { tokuteiDeliveryKey: deliveryKey } : {}),
         });
       });
+      // 読み取りが終わったら振動で知らせる(カードを離してよい)
+      Vibration.vibrate(150);
+      setIcProgress({ phase: "checking", apdus: 0 });
       const files: Partial<Record<EfPath, string>> = {};
       for (const [path, data] of Object.entries(raw.files)) if (data) files[path as EfPath] = toBase64(data);
       const payload: IcReadPayload = { format: raw.format, kind: raw.kind, files };
@@ -122,6 +133,7 @@ export function CardWizard({ personId, personName, onClose, onDone }: { personId
       setError(e instanceof CardReadError ? icErrorMessage(e) : messageOf(e, icErrorMessage(e)));
     } finally {
       setBusy(false);
+      setIcProgress(null);
     }
   }
 
@@ -224,6 +236,17 @@ export function CardWizard({ personId, personName, onClose, onDone }: { personId
           <Text style={{ fontWeight: "700" }}>3. IC の読み取り</Text>
           <Text>ボタンを押してから、カードを端末の背面(iPhone は上部)に当て、読み取りが終わるまで動かさないでください(5 秒ほど)。金属の机の上では読めないことがあります。</Text>
           <Button label="IC を読み取る" busy={busy} onPress={readIc} />
+          {icProgress?.phase === "wait" && <Message text="カードを端末の背面に当ててください" tone="warn" />}
+          {icProgress?.phase === "reading" && (
+            <View style={{ gap: 4 }}>
+              <Message text="読み取り中… カードを動かさないでください" tone="warn" />
+              {/* 旧様式で約 16 回、第2世代で約 20 回のやり取り */}
+              <View style={{ height: 6, backgroundColor: color.muted, borderRadius: 3 }}>
+                <View style={{ height: 6, borderRadius: 3, backgroundColor: color.primary, width: `${Math.min(95, (icProgress.apdus / 20) * 100)}%` }} />
+              </View>
+            </View>
+          )}
+          {icProgress?.phase === "checking" && <Message text="読み取り完了。カードを離して大丈夫です。サーバーで確認しています…" tone="ok" />}
           <Message text={error} />
           <Text style={{ color: color.sub, marginTop: 8 }}>IC が読めない場合</Text>
           <Choice options={IC_FAILURE} value={icFailure} onChange={setIcFailure} />

@@ -21,7 +21,17 @@ const TILES: { bucket?: ExpiryBucket; flag?: "icUnverified" | "needsReview"; lab
 
 type Filter = { bucket?: ExpiryBucket; flag?: "icUnverified" | "needsReview"; label: string } | null;
 
-export function HomeScreen({ onOpenPerson, onOpenPoc, onCreatePerson }: { onOpenPerson: (id: string) => void; onOpenPoc: () => void; onCreatePerson: () => void }) {
+export function HomeScreen({
+  onOpenPerson,
+  onOpenPoc,
+  onCreatePerson,
+  onOpenAlerts,
+}: {
+  onOpenPerson: (id: string) => void;
+  onOpenPoc: () => void;
+  onCreatePerson: () => void;
+  onOpenAlerts: () => void;
+}) {
   const session = useSession();
   const me = session.state.status === "signedIn" ? session.state.me : null;
   const [summary, setSummary] = useState<Summary | null>(null);
@@ -77,6 +87,7 @@ export function HomeScreen({ onOpenPerson, onOpenPoc, onCreatePerson }: { onOpen
           );
         })}
       </View>
+      {session.can("alerts.read") && <Button label="アラート(未対応)を見る" kind="secondary" onPress={onOpenAlerts} />}
       {session.can("persons.write") && <Button label="登録者を追加" kind="secondary" onPress={onCreatePerson} />}
       <Field label={filter ? `${filter.label}の登録者を検索` : "登録者を検索"} value={q} onChangeText={setQ} placeholder="氏名・社員番号" autoCapitalize="none" />
       <Message text={error} />

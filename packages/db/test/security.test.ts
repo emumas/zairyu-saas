@@ -126,7 +126,7 @@ describe.skipIf(!url)("DB セキュリティ", () => {
         WHERE n.nspname = 'public' AND c.relkind = 'r'
           AND (EXISTS (SELECT 1 FROM pg_attribute a WHERE a.attrelid = c.oid AND a.attname = 'tenant_id' AND NOT a.attisdropped)
                OR c.relname = 'tenants')`);
-      expect(res.rows.length).toBeGreaterThanOrEqual(16);
+      expect(res.rows.length).toBeGreaterThanOrEqual(18);
       for (const r of res.rows) expect({ table: r.relname, rls: r.rls, force: r.force }).toEqual({ table: r.relname, rls: true, force: true });
     });
   });

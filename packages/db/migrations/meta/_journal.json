@@ -50,6 +50,20 @@
       "when": 1795133166672,
       "tag": "0006_audit_detail",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1795144348126,
+      "tag": "0007_notifications",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1795144348707,
+      "tag": "0008_notifications_security",
+      "breakpoints": true
     }
   ]
 }

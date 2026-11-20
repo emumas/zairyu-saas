@@ -2,7 +2,9 @@ import { TRPCError } from "@trpc/server";
 import { isValidCardNumber, normalizeCardNumberInput } from "@zairyu/shared";
 import { z } from "zod";
 import { verifyIcRead, verifyIcReadInput, verifyIcReadOutput } from "./poc.js";
+import { alertsRouter } from "./routers/alerts.js";
 import { authRouter } from "./routers/auth.js";
+import { devicesRouter } from "./routers/devices.js";
 import { cardsRouter } from "./routers/cards.js";
 import { dashboardRouter } from "./routers/dashboard.js";
 import { meRouter } from "./routers/me.js";
@@ -15,6 +17,8 @@ export const appRouter = router({
   cards: cardsRouter,
   persons: personsRouter,
   dashboard: dashboardRouter,
+  alerts: alertsRouter,
+  devices: devicesRouter,
 
   health: publicProcedure.output(z.object({ status: z.literal("ok") })).query(() => ({ status: "ok" as const })),
 

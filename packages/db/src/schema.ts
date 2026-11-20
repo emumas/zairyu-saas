@@ -62,7 +62,11 @@ export const alertType = pgEnum("alert_type", [
   "expired",
   "recheck_revocation",
   "hours_limit",
+  /** 署名検証に失敗(偽造の疑い)。登録時に即時通知 */
+  "needs_review",
 ]);
+export const notificationChannel = pgEnum("notification_channel", ["push", "email"]);
+export const notificationStatus = pgEnum("notification_status", ["pending", "sent", "failed"]);
 export const billingMode = pgEnum("billing_mode", ["per_unit", "tiered"]);
 export const billingPeriodStatus = pgEnum("billing_period_status", ["open", "finalized", "reported", "paid", "failed"]);
 
@@ -366,6 +370,49 @@ export const alerts = pgTable(
       .on(t.tenantId, t.dueDate)
       .where(sql`${t.acknowledgedAt} is null`),
   ],
+);
+
+/** 端末のプッシュ通知トークン(Expo Push) */
+export const userDevices = pgTable(
+  "user_devices",
+  {
+    id: id(),
+    tenantId: tenantId(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    platform: text("platform").notNull(),
+    expoPushToken: text("expo_push_token").notNull(),
+    createdAt: createdAt(),
+    lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("user_devices_token_uq").on(t.expoPushToken)],
+);
+
+/**
+ * 通知の送信待ち(アウトボックス)。アラートを作った処理と同じトランザクションで積み、送信ジョブが再送つきで送る。
+ * payload には件数などだけを入れ、氏名・カード番号は入れない(ロック画面やメールに出るため)
+ */
+export const notificationOutbox = pgTable(
+  "notification_outbox",
+  {
+    id: id(),
+    tenantId: tenantId(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    channel: notificationChannel("channel").notNull(),
+    /** { title, body, kind } */
+    payload: jsonb("payload").notNull(),
+    status: notificationStatus("status").notNull().default("pending"),
+    attempts: integer("attempts").notNull().default(0),
+    nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true }).notNull().defaultNow(),
+    sentAt: timestamp("sent_at", { withTimezone: true }),
+    /** 失敗の理由(送信先の応答コード等。個人情報は入れない) */
+    lastError: text("last_error"),
+    createdAt: createdAt(),
+  },
+  (t) => [index("notification_outbox_due_idx").on(t.status, t.nextAttemptAt)],
 );
 
 /** フェーズ2(週就労時間) */

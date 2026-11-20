@@ -7,7 +7,10 @@
  * - IC が読めない場合は「IC 未検証」として保存する
  */
 import {
+  alertRecipients,
+  enqueueNotifications,
   findOtherPersonWithCard,
+  insertAlertsIfAbsent,
   findPersonSite,
   insertCardImage,
   insertVerification,
@@ -15,7 +18,7 @@ import {
   replaceCurrentCard,
   type Tx,
 } from "@zairyu/db";
-import { cardRegisterInput, cardVerifyInput, jstDate } from "@zairyu/shared";
+import { cardRegisterInput, cardVerifyInput, jstDate, needsReviewNotice } from "@zairyu/shared";
 import { cardNumberHmac, encryptCardNumber, putEncryptedBlob } from "@zairyu/vault";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
@@ -149,7 +152,7 @@ export const cardsRouter = router({
       // TODO(1-21): 登録に失敗した場合に残った Blob を掃除するジョブ
 
       return ctx.tenantTx(async (tx) => {
-        await loadActivePerson(tx, ctx.actor, input.personId);
+        const person = await loadActivePerson(tx, ctx.actor, input.personId);
         if (await findOtherPersonWithCard(tx, numberHmac, input.personId)) {
           throw new TRPCError({ code: "CONFLICT", message: "同じ在留カード番号が別の登録者に登録されています" });
         }
@@ -194,7 +197,12 @@ export const cardsRouter = router({
           targetId: cardId,
           detail: { personId: input.personId, format: ic?.format ?? null, icVerified: judged.icVerified, needsReview: judged.needsReview, images: stored.map((i) => i.kind) },
         });
-        // TODO(1-13): needsReview(偽造の疑い)のときはテナント管理者へ即時通知
+        // 署名検証に失敗(偽造の疑い)したら、アラートを作って管理者へ即時通知する(送信はワーカーが数分以内に行う)
+        if (judged.needsReview) {
+          await insertAlertsIfAbsent(tx, [{ personId: input.personId, cardId, type: "needs_review", dueDate: today }]);
+          const recipients = (await alertRecipients(tx, person.siteId)).map((r) => r.id);
+          await enqueueNotifications(tx, recipients, needsReviewNotice(), new Date(ctx.services.now()));
+        }
         return { cardId, icVerified: judged.icVerified, needsReview: judged.needsReview, diffs };
       });
     }),

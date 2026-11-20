@@ -1,0 +1,22 @@
+{
+  "name": "worker",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "daily": "tsx --env-file-if-exists=../api/.env src/cli.ts daily",
+    "send": "tsx --env-file-if-exists=../api/.env src/cli.ts send"
+  },
+  "dependencies": {
+    "@azure/communication-email": "1.1.0",
+    "@zairyu/db": "workspace:*",
+    "@zairyu/shared": "workspace:*",
+    "drizzle-orm": "^0.45.4"
+  },
+  "devDependencies": {
+    "tsx": "^4.23.15"
+  }
+}

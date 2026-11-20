@@ -5,6 +5,7 @@ import { LockScreen } from "./src/auth/LockScreen";
 import { LoginScreen } from "./src/auth/LoginScreen";
 import { SessionProvider, useSession } from "./src/auth/session";
 import { IcPocScreen } from "./src/IcPocScreen";
+import { AlertsScreen } from "./src/screens/AlertsScreen";
 import { HomeScreen } from "./src/screens/HomeScreen";
 import { PersonCreateScreen } from "./src/screens/PersonCreateScreen";
 import { PersonScreen } from "./src/screens/PersonScreen";
@@ -16,6 +17,7 @@ type Route =
   | { name: "person"; id: string }
   | { name: "wizard"; personId: string; personName: string }
   | { name: "personCreate" }
+  | { name: "alerts" }
   | { name: "poc" };
 
 function Main() {
@@ -44,6 +46,8 @@ function Main() {
           </View>
         </View>
       );
+    case "alerts":
+      return <AlertsScreen onBack={() => setRoute({ name: "home" })} onOpenPerson={(id) => setRoute({ name: "person", id })} />;
     case "personCreate":
       return <PersonCreateScreen onBack={() => setRoute({ name: "home" })} onCreated={(id) => setRoute({ name: "person", id })} />;
     case "person":
@@ -73,6 +77,7 @@ function Main() {
           onOpenPerson={(id) => setRoute({ name: "person", id })}
           onOpenPoc={() => setRoute({ name: "poc" })}
           onCreatePerson={() => setRoute({ name: "personCreate" })}
+          onOpenAlerts={() => setRoute({ name: "alerts" })}
         />
       );
   }
