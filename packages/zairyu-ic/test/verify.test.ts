@@ -4,8 +4,8 @@ import { describe, expect, it } from "vitest";
 import { concatBytes, padNulls } from "../src/bytes.js";
 import type { SignatureParts } from "../src/parse.js";
 import { trimDer, verifyCardSignature } from "../src/verify.js";
-import { rsaRawSign } from "./fixtures.js";
-import { makeCertAndKey } from "./helpers.js";
+import { rsaRawSign } from "../src/testing.js";
+import { makeCertAndKey } from "../src/testing.js";
 
 const rsa = makeCertAndKey("rsa");
 const ec = makeCertAndKey("ec");

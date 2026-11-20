@@ -131,8 +131,8 @@ export async function readResidenceCard(transceive: Transceive, options: ReadOpt
     const p = READ_P1.legacy;
     const size = LEGACY_EF_SIZE;
     await s.send("select", Apdu.selectAid(AID.df1));
-    files["df1/ef01"] = await r.read(p.df1.frontImage, size.df1.frontImage, true);
-    files["df1/ef02"] = await r.read(p.df1.face, size.df1.face, true);
+    files["df1/ef01"] = await r.readTlvs(p.df1.frontImage, size.df1.frontImage, 1);
+    files["df1/ef02"] = await r.readTlvs(p.df1.face, size.df1.face, 1);
     await s.send("select", Apdu.selectAid(AID.df2));
     files["df2/ef01"] = await r.read(p.df2.address, size.df2.address, false);
     if (kind === "residence") {
@@ -149,8 +149,8 @@ export async function readResidenceCard(transceive: Transceive, options: ReadOpt
     if (format === "gen2") {
       files["df1/ef01"] = await r.read(p.df1.cardNumber, size.df1.cardNumber, true);
       files["df1/ef02"] = await r.read(p.df1.faceItems, size.df1.faceItems, true);
-      files["df1/ef03"] = await r.read(p.df1.nameAndFace, size.df1.nameAndFace, true);
-      files["df1/ef04"] = await r.read(p.df1.addressImage, size.df1.addressImage, true);
+      files["df1/ef03"] = await r.readTlvs(p.df1.nameAndFace, size.df1.nameAndFace, 2);
+      files["df1/ef04"] = await r.readTlvs(p.df1.addressImage, size.df1.addressImage, 1);
     } else {
       // 特定在留カード: EF-ID で選択し、オフセット指定で分割読出し(個人番号カードの SM 読出し長制限)
       const chunk = Math.min(options.tokuteiChunkSize ?? 0x400, options.maxReadLength ?? Infinity);
@@ -248,11 +248,70 @@ class EfReader {
     return out.subarray(0, Math.min(offset, size));
   }
 
+  /**
+   * SM の EF を TLV 単位で読む。実カードは TLV の長さが実データ長で EF の残りが 0x00 埋めのため、
+   * 先にヘッダ(最大 5 バイト)を読んで長さを知り、値の分だけ読む(埋め草の暗号化・転送を省く)。
+   * tlvCount(仕様書の EF 内のデータオブジェクト数)だけ読むか、0x00 埋めに達したら終える。
+   * 返すのは読んだ TLV の連結(後ろの 0x00 は含まない)
+   */
+  async readTlvs(p1: number, size: number, tlvCount: number): Promise<Uint8Array> {
+    const parts: Uint8Array[] = [];
+    let offset = 0;
+    while (offset < size && parts.length < tlvCount) {
+      const headerLen = Math.min(5, size - offset);
+      const head = offset === 0 ? await this.readOnce(p1, 0, headerLen, true) : await this.readAt(offset, headerLen);
+      if (head.length === 0 || head[0] === 0x00 || head[0] === 0xff) break;
+      const h = tlvHeader(head);
+      if (!h) throw new CardReadError("read", null, "TLV のヘッダを解釈できません");
+      const total = Math.min(h.headerLength + h.valueLength, size - offset);
+      const tlv = new Uint8Array(total);
+      const have = Math.min(head.length, total);
+      tlv.set(head.subarray(0, have));
+      let filled = have;
+      while (filled < total) {
+        const le = Math.min(this.maxReadLength ?? total, total - filled);
+        const part = await this.readAt(offset + filled, le);
+        if (part.length === 0) throw new CardReadError("read", null, "データが途中で終わっています");
+        tlv.set(part.subarray(0, total - filled), filled);
+        filled += part.length;
+      }
+      parts.push(tlv);
+      offset += total;
+    }
+    const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
+    let o = 0;
+    for (const p of parts) {
+      out.set(p, o);
+      o += p.length;
+    }
+    return out;
+  }
+
+  /** カレント EF をオフセット指定で読む(SM) */
+  private readAt(offset: number, le: number): Promise<Uint8Array> {
+    return this.readOnce((offset >> 8) & 0x7f, offset & 0xff, le, true);
+  }
+
   private async readOnce(p1: number, p2: number, le: number, secure: boolean): Promise<Uint8Array> {
     if (!secure) return (await this.s.send("read", Apdu.readBinary(p1, p2, le))).data;
     const res = await this.s.send("read", Apdu.readBinarySm(p1, p2, le));
     return this.sm.decrypt(unwrapSmData(res.data));
   }
+}
+
+/** TLV ヘッダ(タグ 1〜2 バイト、長さ 1〜3 バイト)の長さと値の長さ */
+function tlvHeader(b: Uint8Array): { headerLength: number; valueLength: number } | null {
+  let i = 0;
+  if (b.length < 2) return null;
+  i += (b[0]! & 0x1f) === 0x1f ? 2 : 1;
+  const l = b[i];
+  if (l === undefined) return null;
+  if (l < 0x80) return { headerLength: i + 1, valueLength: l };
+  const n = l & 0x7f;
+  if (n < 1 || n > 2 || b.length < i + 1 + n) return null;
+  let v = 0;
+  for (let k = 0; k < n; k++) v = v * 256 + b[i + 1 + k]!;
+  return { headerLength: i + 1 + n, valueLength: v };
 }
 
 async function readSmTokutei(

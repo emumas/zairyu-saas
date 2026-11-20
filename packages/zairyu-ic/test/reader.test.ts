@@ -5,8 +5,8 @@ import { parseCardRead } from "../src/parse.js";
 import type { CardFormat, CardKind } from "../src/spec.js";
 import { verifyCardSignature } from "../src/verify.js";
 import { CardSimulator } from "./cardSimulator.js";
-import { buildCardFiles } from "./fixtures.js";
-import { makeCertAndKey } from "./helpers.js";
+import { buildCardFiles } from "../src/testing.js";
+import { makeCertAndKey } from "../src/testing.js";
 
 const CARD_NUMBER = "AB12345678CD";
 const rsa = makeCertAndKey("rsa");
@@ -56,10 +56,10 @@ describe.each(cases)("%s / %s", (format, kind) => {
     expect(raw.kind).toBe(kind);
 
     const parsed = parseCardRead(raw);
-    expect(parsed.images.face?.length).toBe(3000);
+    expect(parsed.images.face?.length).toBe(format === "legacy" ? 2800 : 3000);
     if (format === "legacy") {
       expect(parsed.cardNumber).toBeNull();
-      expect(parsed.images.front?.length).toBe(7000);
+      expect(parsed.images.front?.length).toBe(5000);
       expect(parsed.back).toMatchObject({ format: "legacy", municipalityCode: "131016", address: "東京都千代田区霞が関1-1-1" });
       if (kind === "residence") {
         expect(parsed.back).toMatchObject({ renewalApplying: true, outsideActivityComprehensive: "許可:原則週28時間以内", outsideActivityIndividual: null });
@@ -92,6 +92,16 @@ describe.each(cases)("%s / %s", (format, kind) => {
     const raw = await readResidenceCard(card.transceive, { cardNumber: CARD_NUMBER, randomBytes: rnd, tokuteiDeliveryKey });
     expect(raw.format).toBe(format);
     expect(verifyCardSignature(parseCardRead(raw).signature)).toMatchObject({ status: "valid" });
+  });
+
+  it("SM の EF は TLV の値の分だけ読み、0x00 埋めは読まない", async () => {
+    const card = setup(format, kind);
+    await readResidenceCard(card.transceive, { cardNumber: CARD_NUMBER, randomBytes: rnd, tokuteiDeliveryKey });
+    // カードに要求した Le の合計(SM の READ BINARY のみ)
+    const requested = card.log
+      .filter((a) => a[0] === 0x08 && a[1] === 0xb0)
+      .reduce((n, a) => n + (format === "tokutei" ? (a[10]! << 8) | a[11]! : (a[9]! << 8) | a[10]!), 0);
+    if (format === "legacy") expect(requested).toBe(4 + 5000 + 4 + 2800); // TLV(ヘッダ 4 バイト+値)x 2 のみ。0x00 埋めは読まない
   });
 
   it("番号が違えば認証できない", async () => {
