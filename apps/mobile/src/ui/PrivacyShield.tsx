@@ -53,6 +53,11 @@ export function PrivacyShield({ children }: { children: ReactNode }) {
   return (
     <View style={{ flex: 1 }}>
       {children}
+      {allowScreenshots && (
+        <View style={styles.devBadge} pointerEvents="none">
+          <Text style={styles.devText}>開発用: スクリーンショット許可</Text>
+        </View>
+      )}
       {covered && !allowScreenshots && (
         <View style={styles.cover} pointerEvents="none">
           <Text style={styles.text}>在留カード管理</Text>
@@ -65,4 +70,6 @@ export function PrivacyShield({ children }: { children: ReactNode }) {
 const styles = StyleSheet.create({
   cover: { ...StyleSheet.absoluteFill, backgroundColor: "#0b5cad", alignItems: "center", justifyContent: "center" },
   text: { color: "#fff", fontSize: 20, fontWeight: "700" },
+  devBadge: { position: "absolute", bottom: 4, alignSelf: "center", backgroundColor: "#9a6700", borderRadius: 4, paddingHorizontal: 6, paddingVertical: 2 },
+  devText: { color: "#fff", fontSize: 10 },
 });
