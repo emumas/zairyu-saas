@@ -129,6 +129,18 @@ describe.skipIf(!url)("カード登録", () => {
     expect(card!.verifications.find((x) => x.method === "ic_signature")?.result).toBe("unverifiable");
   });
 
+  it("旧様式の永住者: 在留期間満了日の入力は拒否し、カードの有効期限で期限を管理する", async () => {
+    const personId = await newPerson("L003");
+    const ic = icPayload({ format: "legacy", kind: "residence", signer: rsa, renewalApplying: false });
+    expect(
+      await codeOf(tokyoAdmin.cards.register({ personId, cardNumber: "AB00000011CD", ic, manual: { statusOfResidence: "永住者", expiryDate: "2030-06-26" } })),
+    ).toBe("BAD_REQUEST");
+    await tokyoAdmin.cards.register({ personId, cardNumber: "AB00000011CD", ic, manual: { statusOfResidence: "永住者", cardValidUntil: "2030-06-26", workRestriction: "1" } });
+    const p = await tokyoAdmin.persons.get({ id: personId });
+    expect(p.card).toMatchObject({ expiryDate: null, cardValidUntil: "2030-06-26" });
+    expect(p.expiry).toMatchObject({ bucket: "ok", deadlineBasis: "card", deadline: "2030-06-26" });
+  });
+
   it("旧様式: RSA 署名付きなら検証済み", async () => {
     const personId = await newPerson("L002");
     const r = await tokyoAdmin.cards.register({

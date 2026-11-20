@@ -65,6 +65,8 @@ export function CardWizard({ personId, personName, onClose, onDone }: { personId
   const [verify, setVerify] = useState<Verify | null>(null);
   const [manual, setManual] = useState<CardManualFields>({});
   const [diffReason, setDiffReason] = useState("");
+  /** 永住者・特別永住者(在留期間の定めがない)。券面の日付はカードの有効期限になる */
+  const [noStayLimit, setNoStayLimit] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<{ icVerified: boolean; needsReview: boolean } | null>(null);
@@ -165,7 +167,11 @@ export function CardWizard({ personId, personName, onClose, onDone }: { personId
 
   const needsReason = (verify?.diffs.length ?? 0) > 0;
   const manualNeeded = !hasIcText; // 旧様式・IC なしは満了日などを入力する
-  const canSave = numberOk && (!needsReason || diffReason.trim().length > 0) && (!manualNeeded || !!manual.expiryDate || verify?.kind === "special_permanent");
+  const permanent = noStayLimit || verify?.kind === "special_permanent";
+  const canSave =
+    numberOk &&
+    (!needsReason || diffReason.trim().length > 0) &&
+    (!manualNeeded || (permanent ? !!manual.cardValidUntil : !!manual.expiryDate));
 
   return (
     <Screen title={`カード登録: ${personName}`} onBack={step === "done" ? undefined : onClose}>
@@ -269,13 +275,46 @@ export function CardWizard({ personId, personName, onClose, onDone }: { personId
               <Text style={{ fontWeight: "700" }}>券面の記載事項を入力</Text>
               <Text style={{ color: color.sub }}>旧様式のカードは IC に文字情報がないため、券面を見て入力します。</Text>
               <Field
-                label="在留期間の満了日(YYYY-MM-DD)"
-                value={manual.expiryDate ?? ""}
-                onChangeText={(v) => setManual({ ...manual, expiryDate: v || null })}
-                placeholder="2029-06-20"
-                keyboardType="numbers-and-punctuation"
+                label="在留資格"
+                value={manual.statusOfResidence ?? ""}
+                onChangeText={(v) => {
+                  setManual({ ...manual, statusOfResidence: v || null });
+                  if (/永住者/.test(v)) setNoStayLimit(true);
+                }}
+                placeholder="技術・人文知識・国際業務"
               />
-              <Field label="在留資格" value={manual.statusOfResidence ?? ""} onChangeText={(v) => setManual({ ...manual, statusOfResidence: v || null })} placeholder="技術・人文知識・国際業務" />
+              {verify?.kind !== "special_permanent" && (
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                  <Switch
+                    value={noStayLimit}
+                    onValueChange={(v) => {
+                      setNoStayLimit(v);
+                      // 入力済みの日付を、選んだ側の項目へ移す
+                      const d = manual.expiryDate ?? manual.cardValidUntil ?? null;
+                      setManual(v ? { ...manual, expiryDate: null, cardValidUntil: d } : { ...manual, expiryDate: d, cardValidUntil: null });
+                    }}
+                  />
+                  <Text style={{ flex: 1 }}>永住者(在留期間の定めなし)</Text>
+                </View>
+              )}
+              {permanent ? (
+                <Field
+                  label="カードの有効期限(YYYY-MM-DD)"
+                  value={manual.cardValidUntil ?? ""}
+                  onChangeText={(v) => setManual({ ...manual, cardValidUntil: v || null, expiryDate: null })}
+                  placeholder="2030-06-26"
+                  keyboardType="numbers-and-punctuation"
+                />
+              ) : (
+                <Field
+                  label="在留期間の満了日(YYYY-MM-DD)"
+                  value={manual.expiryDate ?? ""}
+                  onChangeText={(v) => setManual({ ...manual, expiryDate: v || null })}
+                  placeholder="2029-06-20"
+                  keyboardType="numbers-and-punctuation"
+                />
+              )}
+              {permanent && <Text style={{ color: color.sub }}>永住者・特別永住者には在留期間の満了日がありません。券面の日付はカードの有効期限(カードの更新期限)です。</Text>}
               <Text style={{ fontWeight: "600" }}>就労制限の有無</Text>
               <Choice
                 options={WORK_RESTRICTIONS.map((w) => ({ value: w, label: WORK_RESTRICTION_LABEL[w] }))}

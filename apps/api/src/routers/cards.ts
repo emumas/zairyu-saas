@@ -129,6 +129,10 @@ export const cardsRouter = router({
         throw new TRPCError({ code: "BAD_REQUEST", message: "IC を読み取れなかった理由を選んでください" });
       }
       const fields = mergeFields(ic, input.manual);
+      // 永住者には在留期間の満了日がない(券面の日付はカードの有効期限)。取り違えると期限切れを誤警告するため止める
+      if (/永住者/.test(fields.statusOfResidence ?? "") && input.manual.expiryDate && !ic?.fields.expiryDate) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "永住者には在留期間の満了日がありません。券面の日付は「カードの有効期限」として入力してください" });
+      }
       const judged = ic ? judgeSignature(ic.signature) : { icVerified: false, needsReview: false, result: null };
       const [numberEnc, numberHmac] = await Promise.all([
         encryptCardNumber(vault.keyring, tenantId, input.cardNumber),
