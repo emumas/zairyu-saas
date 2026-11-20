@@ -10,6 +10,7 @@ import { readFileSync } from "node:fs";
 import sharp from "sharp";
 import { serveImage } from "./images.js";
 import { createHarness, type AppCaller, type Harness } from "./testHarness.js";
+import { trustedIssuers } from "./trust.js";
 
 const url = process.env.TEST_DATABASE_URL;
 const codeOf = async (p: Promise<unknown>) => p.then(() => "ok", (e: unknown) => (e instanceof TRPCError ? e.code : String(e)));
@@ -255,6 +256,26 @@ describe.skipIf(!url)("カード登録", () => {
       const { cardId } = await tokyoAdmin.cards.register({ personId, cardNumber: "AB10000004CD", ic: null, icFailureReason: "other" });
       expect(await codeOf(viewer.cards.reverifyStart({ cardId }))).toBe("FORBIDDEN");
       expect(await codeOf(osakaAdmin.cards.reverifyStart({ cardId }))).toBe("NOT_FOUND");
+    });
+  });
+
+  describe("発行者証明書(入管庁 ZairyuCard CA)", () => {
+    afterAll(() => {
+      h.services.config.trustedIssuers = [];
+    });
+
+    it("旧様式(RSA): 本物の CA で発行されていない証明書は要確認(偽造の疑い)。第2世代(ECDSA)は CA が無いので未確認のまま検証済み", async () => {
+      h.services.config.trustedIssuers = trustedIssuers({});
+      const legacyPerson = await newPerson("CA1");
+      const n1 = "AJ12345678CD";
+      const r1 = await tokyoAdmin.cards.register({ personId: legacyPerson, cardNumber: n1, ic: icPayload({ format: "legacy", kind: "residence", signer: rsa, cardNumber: n1 }), manual: { expiryDate: "2029-06-20" } });
+      expect(r1).toMatchObject({ icVerified: false, needsReview: true });
+
+      const gen2Person = await newPerson("CA2");
+      const n2 = "AK12345678CD";
+      const v = await tokyoAdmin.cards.verifyIcRead({ personId: gen2Person, cardNumber: n2, ic: icPayload({ format: "gen2", kind: "residence", signer: ec, cardNumber: n2 }), manual: {} });
+      expect(v.signature).toMatchObject({ status: "valid", issuerTrusted: null });
+      expect(v).toMatchObject({ icVerified: true, needsReview: false });
     });
   });
 

@@ -125,7 +125,7 @@ export const cardsRouter = router({
     .mutation(({ ctx, input }) =>
       ctx.tenantTx(async (tx) => {
         const card = await loadCurrentCardForWrite(tx, ctx.actor, input.cardId);
-        const ic = evaluateIc(input.ic);
+        const ic = evaluateIc(input.ic, ctx.services.config.trustedIssuers);
         // 別のカードを読んでいないか(第2世代・特定は IC 内の番号で確かめる。旧様式は番号による IC の認証が通ったことで確かめられる)
         const stored = await decryptCardNumber(requireVault(ctx.services).keyring, ctx.actor.tenantId, card.cardNumberEnc);
         if (ic.format !== card.cardFormat || (ic.cardNumber !== null && ic.cardNumber !== stored)) {
@@ -208,7 +208,7 @@ export const cardsRouter = router({
     .mutation(({ ctx, input }) =>
       ctx.tenantTx(async (tx) => {
         await loadActivePerson(tx, ctx.actor, input.personId);
-        const ic = evaluateIc(input.ic);
+        const ic = evaluateIc(input.ic, ctx.services.config.trustedIssuers);
         // 住居地イメージは照合に使わないので返さない(通信量を抑える)
         const icImages = await Promise.all(
           ic.images
@@ -258,7 +258,7 @@ export const cardsRouter = router({
       const vault = requireVault(ctx.services);
       const tenantId = ctx.actor.tenantId;
       // 重い処理(署名検証・暗号化・Blob 保存)はトランザクションの外で先に行う
-      const ic = input.ic ? evaluateIc(input.ic) : null;
+      const ic = input.ic ? evaluateIc(input.ic, ctx.services.config.trustedIssuers) : null;
       const diffs = diffFields(ic, input.cardNumber, input.manual);
       if (diffs.length > 0 && !input.diffReason) {
         throw new TRPCError({ code: "BAD_REQUEST", message: "券面と IC の内容が一致しません。差分を確認し、理由を入力してください" });

@@ -43,6 +43,8 @@ describe.skipIf(!url)("カード画像の配信", () => {
     purposeTokenTtlSec: 300,
     maxFailedLogins: 10,
     lockoutSec: 900,
+    // 既定は発行者の判定なし(テスト用の証明書で署名するため)。判定は cards.integration.test.ts で本物の CA を使って確かめる
+    trustedIssuers: [],
   };
 
   /** ログイン手順は auth.integration.test.ts で確かめているので、ここではアクセストークンを直接作る */

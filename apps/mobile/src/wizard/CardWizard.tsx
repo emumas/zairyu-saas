@@ -275,6 +275,13 @@ export function CardWizard({ personId, personName, onClose, onDone }: { personId
                   v={verify.signature.status === "valid" ? "OK(真正)" : verify.signature.status === "absent" ? "なし(年少者のカード)" : "NG"}
                   tone={verify.signature.status === "valid" ? "ok" : verify.signature.status === "absent" ? "warn" : "danger"}
                 />
+                {verify.signature.status === "valid" && (
+                  <Row
+                    k="発行者"
+                    v={verify.signature.issuerTrusted === true ? "入管庁の証明書で確認済み" : verify.signature.issuerTrusted === false ? "入管庁の証明書と一致しない" : "未確認(第2世代)"}
+                    tone={verify.signature.issuerTrusted === true ? "ok" : verify.signature.issuerTrusted === false ? "danger" : "warn"}
+                  />
+                )}
                 {verify.needsReview && (
                   <Message text="署名の検証に失敗しました。偽造の疑いがあります。「要確認」として登録し、入管局・労働局に相談してください。" />
                 )}

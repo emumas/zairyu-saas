@@ -6,8 +6,11 @@
  * - 第2世代・特定(3.4.3): ECDSA secp384r1 / SHA-256。チェックコードは r||s(96 バイト)。
  *   署名対象は 券面記載事項(53)||顔画像(3000)||氏名イメージ(2500)。
  *
- * 公開鍵はカード内の証明書(DB / DD)から取り出す。発行者(入管庁)の証明書は仕様書に記載がないため
- * trustedIssuers で外から与える。与えない場合は issuerTrusted=null(未確認)で返す。
+ * 公開鍵はカード内の証明書(DB / DD)から取り出す。発行者(入管庁 ZairyuCard CA)の証明書は trustedIssuers で与える。
+ * 発行者の判定は、カードの証明書の署名方式(RSA / ECDSA)と同じ鍵種別の発行者証明書だけで行う:
+ * - 同じ種別の発行者証明書を持っていれば、そのいずれかで検証できなければ issuerTrusted=false(偽造の疑い)
+ * - 同じ種別の発行者証明書を 1 つも持っていなければ issuerTrusted=null(未確認)
+ *   (例: RSA の CA だけを持っている間に、第2世代の ECDSA で署名された証明書を誤って偽造扱いしないため)
  */
 import {
   X509Certificate,
@@ -91,9 +94,9 @@ export function verifyCardSignature(
     if (!matched) return { status: "invalid", reason: "signature_invalid" };
   }
 
-  const issuers = options.trustedIssuers ?? [];
-  const issuerTrusted =
-    issuers.length === 0 ? null : issuers.some((i) => cert.checkIssued(i) && cert.verify(i.publicKey));
+  const family = certSignatureFamily(cert.raw);
+  const issuers = (options.trustedIssuers ?? []).filter((i) => i.publicKey.asymmetricKeyType === family);
+  const issuerTrusted = issuers.length === 0 ? null : issuers.some((i) => cert.checkIssued(i) && cert.verify(i.publicKey));
   const at = (options.at ?? new Date()).getTime();
   const certificateValidAt = at >= Date.parse(cert.validFrom) && at <= Date.parse(cert.validTo);
   return { status: "valid", issuerTrusted, certificateValidAt, matched, ...(hashFormat ? { hashFormat } : {}) };
@@ -142,4 +145,23 @@ export function trimDer(der: Uint8Array): Uint8Array {
   let len = 0;
   for (let i = 0; i < n; i++) len = len * 256 + der[2 + i]!;
   return der.subarray(0, Math.min(der.length, 2 + n + len));
+}
+
+// 署名アルゴリズムの OID(DER)
+const OID_ECDSA_WITH_SHA = Buffer.from([0x06, 0x08, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x04, 0x03]); // ecdsa-with-SHA224/256/384/512 の共通部分
+const OID_RSA_PKCS1 = Buffer.from([0x06, 0x09, 0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x01, 0x01]); // 1.2.840.113549.1.1.x
+
+/**
+ * 証明書が RSA と ECDSA のどちらで署名されているか(発行者の鍵種別)。
+ * 公開鍵の OID(rsaEncryption = ...1.1.1 / id-ecPublicKey)と区別するため、署名アルゴリズムの OID だけを見る
+ */
+export function certSignatureFamily(der: Uint8Array): "rsa" | "ec" | null {
+  const b = Buffer.from(der);
+  if (b.includes(OID_ECDSA_WITH_SHA)) return "ec";
+  for (let i = b.indexOf(OID_RSA_PKCS1); i >= 0; i = b.indexOf(OID_RSA_PKCS1, i + 1)) {
+    const last = b[i + OID_RSA_PKCS1.length];
+    // 1.1.5(sha1)/ 1.1.11〜13(sha256/384/512)/ 1.1.10(PSS)。1.1.1 は公開鍵の種別なので除く
+    if (last !== undefined && [5, 10, 11, 12, 13, 14].includes(last)) return "rsa";
+  }
+  return null;
 }

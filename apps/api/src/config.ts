@@ -1,6 +1,7 @@
 /** 環境変数から設定を読む。秘密情報は環境変数 / Key Vault から与え、リポジトリに置かない */
-import { randomBytes } from "node:crypto";
+import { randomBytes, type X509Certificate } from "node:crypto";
 import { z } from "zod";
+import { trustedIssuers } from "./trust.js";
 
 const base64Key32 = z
   .string()
@@ -37,6 +38,8 @@ export interface Config {
   /** ログイン失敗でロックするまでの回数とロック時間 */
   maxFailedLogins: number;
   lockoutSec: number;
+  /** 在留カードの発行者証明書(ZairyuCard CA。apps/api/trust と ZAIRYU_TRUSTED_ISSUERS) */
+  trustedIssuers: X509Certificate[];
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
@@ -63,5 +66,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     purposeTokenTtlSec: 5 * 60,
     maxFailedLogins: 10,
     lockoutSec: 15 * 60,
+    trustedIssuers: trustedIssuers(env),
   };
 }

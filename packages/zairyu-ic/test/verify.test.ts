@@ -3,11 +3,12 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { concatBytes, padNulls } from "../src/bytes.js";
 import type { SignatureParts } from "../src/parse.js";
-import { trimDer, verifyCardSignature } from "../src/verify.js";
+import { certSignatureFamily, trimDer, verifyCardSignature } from "../src/verify.js";
 import { rsaRawSign } from "../src/testing.js";
 import { makeCertAndKey } from "../src/testing.js";
 
 const rsa = makeCertAndKey("rsa");
+const otherEc = makeCertAndKey("ec");
 const ec = makeCertAndKey("ec");
 const data = new TextEncoder().encode("signed-data");
 const otherIssuer = new X509Certificate(readFileSync(new URL("./fixtures/test-other.der", import.meta.url)));
@@ -87,7 +88,28 @@ describe("証明書", () => {
   it("信頼する発行者を渡すと issuerTrusted を判定する", () => {
     const sig = sign("sha256", data, { key: ec.key, dsaEncoding: "ieee-p1363" });
     expect(verifyCardSignature(ecParts(sig), { trustedIssuers: [ec.cert] })).toMatchObject({ issuerTrusted: true });
-    expect(verifyCardSignature(ecParts(sig), { trustedIssuers: [otherIssuer] })).toMatchObject({ issuerTrusted: false });
+    expect(verifyCardSignature(ecParts(sig), { trustedIssuers: [otherEc.cert] })).toMatchObject({ issuerTrusted: false });
+  });
+
+  it("旧様式(RSA): 信頼する発行者で検証できれば true、別の RSA の発行者だけなら false(偽造の疑い)", () => {
+    const parts = rsaParts(rsaRawSign(rsa.key, data));
+    expect(verifyCardSignature(parts, { trustedIssuers: [rsa.cert] })).toMatchObject({ status: "valid", issuerTrusted: true });
+    expect(verifyCardSignature(parts, { trustedIssuers: [otherIssuer] })).toMatchObject({ status: "valid", issuerTrusted: false });
+    // ECDSA の CA だけなら RSA の証明書は判定しない
+    expect(verifyCardSignature(parts, { trustedIssuers: [ec.cert] })).toMatchObject({ status: "valid", issuerTrusted: null });
+  });
+
+  it("同じ鍵種別の発行者証明書が無ければ未確認(null)。あれば、それで検証できないと false", () => {
+    const sig = sign("sha256", data, { key: ec.key, dsaEncoding: "ieee-p1363" });
+    // RSA の CA だけを持っている: ECDSA で署名された証明書は判定しない
+    expect(verifyCardSignature(ecParts(sig), { trustedIssuers: [rsa.cert] })).toMatchObject({ status: "valid", issuerTrusted: null });
+    expect(verifyCardSignature(ecParts(sig), { trustedIssuers: [rsa.cert, otherEc.cert] })).toMatchObject({ issuerTrusted: false });
+    expect(verifyCardSignature(ecParts(sig), { trustedIssuers: [rsa.cert, otherEc.cert, ec.cert] })).toMatchObject({ issuerTrusted: true });
+  });
+
+  it("証明書の署名方式を判別する", () => {
+    expect(certSignatureFamily(ec.certDer)).toBe("ec");
+    expect(certSignatureFamily(rsa.certDer)).toBe("rsa");
   });
 
   it("有効期間外を判定する", () => {

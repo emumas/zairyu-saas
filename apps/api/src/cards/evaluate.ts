@@ -6,7 +6,7 @@ import { parseCardRead, type EfPath, type ParsedCard } from "@zairyu/zairyu-ic";
 import { verifyCardSignature, type SignatureVerification } from "@zairyu/zairyu-ic/verify";
 import type { CardManualFields, IcReadPayload } from "@zairyu/shared";
 import { TRPCError } from "@trpc/server";
-import { trustedIssuers } from "../trust.js";
+import type { X509Certificate } from "node:crypto";
 
 /** residence_cards に入れる項目 */
 export interface CardFields {
@@ -69,7 +69,8 @@ export interface IcEvaluation {
   backAddress: { address: string; writtenAt: string | null } | null;
 }
 
-export function evaluateIc(payload: IcReadPayload): IcEvaluation {
+/** issuers: 信頼する発行者証明書(config.trustedIssuers) */
+export function evaluateIc(payload: IcReadPayload, issuers: readonly X509Certificate[]): IcEvaluation {
   const files: Partial<Record<EfPath, Uint8Array>> = {};
   for (const [path, b64] of Object.entries(payload.files)) files[path as EfPath] = Buffer.from(b64, "base64");
   let parsed: ParsedCard;
@@ -78,7 +79,7 @@ export function evaluateIc(payload: IcReadPayload): IcEvaluation {
   } catch {
     throw new TRPCError({ code: "BAD_REQUEST", message: "IC のデータを解釈できませんでした。読み取り直してください" });
   }
-  const signature = verifyCardSignature(parsed.signature, { trustedIssuers: trustedIssuers() });
+  const signature = verifyCardSignature(parsed.signature, { trustedIssuers: issuers });
 
   let fields: CardFields;
   if (parsed.back.format === "legacy") {
@@ -162,7 +163,7 @@ export function judgeSignature(s: SignatureVerification): {
 } {
   if (s.status === "absent") return { icVerified: false, needsReview: false, result: "unverifiable" };
   if (s.status === "invalid") return { icVerified: false, needsReview: true, result: "failed" };
-  // 発行者の証明書が未入手の間(issuerTrusted = null)は署名の一致だけで検証済みとする(SPEC_NOTES.md 4章 A)
+  // 同じ鍵種別の発行者証明書が無い間(issuerTrusted = null。第2世代の ECDSA)は署名の一致だけで検証済みとする
   if (s.issuerTrusted === false) return { icVerified: false, needsReview: true, result: "failed" };
   return { icVerified: true, needsReview: false, result: "ok" };
 }
