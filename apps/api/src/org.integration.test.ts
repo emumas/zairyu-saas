@@ -120,7 +120,7 @@ describe.skipIf(!url)("組織管理と招待", () => {
     const r = await publicCaller(web).auth.login({ email: "web@example.com", password: PASSWORD });
     if (r.status !== "ok") throw new Error("unexpected");
     expect(r.refreshToken).toBe("");
-    expect(set[0]).toMatchObject({ name: REFRESH_COOKIE, path: "/trpc/auth" });
+    expect(set[0]).toMatchObject({ name: REFRESH_COOKIE, path: "/trpc" });
     const before = jar[REFRESH_COOKIE];
     const refreshed = await publicCaller(web).auth.refresh({});
     expect(refreshed.accessToken).toBeTruthy();

@@ -1,0 +1,73 @@
+:root {
+  --primary: #0b5cad;
+  --danger: #cf222e;
+  --warn: #9a6700;
+  --ok: #1a7f37;
+  --text: #1f2328;
+  --sub: #59636e;
+  --border: #d1d9e0;
+  --muted: #f6f8fa;
+  font-family: system-ui, -apple-system, "Segoe UI", "Hiragino Sans", "Yu Gothic UI", "Meiryo", sans-serif;
+  color: var(--text);
+  background: #fff;
+}
+* { box-sizing: border-box; }
+body { margin: 0; }
+h1 { font-size: 22px; margin: 0 0 16px; }
+h2 { font-size: 16px; margin: 0; }
+a { color: var(--primary); }
+.layout { display: grid; grid-template-columns: 220px 1fr; min-height: 100vh; }
+.layout > nav { background: var(--muted); border-right: 1px solid var(--border); padding: 16px; display: flex; flex-direction: column; gap: 6px; }
+.layout > nav a { text-decoration: none; color: var(--text); padding: 6px 8px; border-radius: 6px; }
+.layout > nav a.active { background: #ddf4ff; color: var(--primary); font-weight: 600; }
+.layout > main { padding: 24px 32px; max-width: 1200px; }
+.brand { font-size: 16px; margin-bottom: 12px; }
+.nav-head { margin-top: 12px; font-size: 12px; color: var(--sub); }
+.nav-foot { margin-top: auto; font-size: 13px; display: flex; flex-direction: column; gap: 4px; }
+.center { display: grid; place-items: center; min-height: 100vh; padding: 16px; }
+.center .card { width: min(440px, 100%); }
+.card { border: 1px solid var(--border); border-radius: 10px; padding: 16px; margin-bottom: 16px; }
+.card-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.card form { display: flex; flex-direction: column; gap: 12px; }
+.card form.row { flex-direction: row; }
+.field { display: flex; flex-direction: column; gap: 4px; font-size: 14px; font-weight: 600; }
+input, select { font: inherit; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; }
+.row { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+.row.wrap { flex-wrap: wrap; }
+.row input:not([type="checkbox"]) { flex: 1; min-width: 200px; }
+.check input { flex: none; min-width: 0; }
+.check { display: inline-flex; gap: 6px; align-items: center; font-weight: normal; margin-right: 12px; }
+.btn { font: inherit; border-radius: 6px; padding: 8px 14px; cursor: pointer; border: 1px solid var(--primary); white-space: nowrap; }
+.btn-primary { background: var(--primary); color: #fff; }
+.btn-secondary { background: #fff; color: var(--primary); }
+.btn-danger { background: var(--danger); border-color: var(--danger); color: #fff; }
+.btn:disabled { opacity: 0.4; cursor: default; }
+button.link { background: none; border: 0; color: var(--primary); padding: 0; text-align: left; cursor: pointer; font: inherit; }
+.msg-danger { color: var(--danger); }
+.msg-warn { color: var(--warn); }
+.msg-ok { color: var(--ok); }
+.sub { color: var(--sub); font-size: 13px; }
+.error { color: var(--danger); font-weight: normal; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 12px; margin-bottom: 16px; }
+.tile { border: 1px solid var(--border); border-radius: 10px; padding: 14px; text-decoration: none; color: var(--text); display: flex; flex-direction: column; align-items: center; }
+.tile strong { font-size: 28px; }
+.tile span { color: var(--sub); font-size: 13px; }
+.tile-danger strong { color: var(--danger); }
+.tile-warn strong { color: var(--warn); }
+table { width: 100%; border-collapse: collapse; margin-bottom: 16px; font-size: 14px; }
+th, td { border-bottom: 1px solid var(--border); padding: 8px; text-align: left; vertical-align: top; }
+th { background: var(--muted); font-weight: 600; }
+tr.muted td { color: var(--sub); }
+.b-expired { color: var(--danger); font-weight: 600; }
+.b-within30, .b-within90, .b-pending, .b-noCard { color: var(--warn); }
+.b-ok { color: var(--ok); }
+dl { display: grid; grid-template-columns: 140px 1fr; gap: 6px 12px; margin: 0; }
+dt { color: var(--sub); }
+dd { margin: 0; }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.notice { background: #fff8c5; border-radius: 8px; padding: 12px; margin-top: 12px; display: flex; flex-direction: column; gap: 8px; }
+.break { word-break: break-all; }
+@media (max-width: 800px) {
+  .layout { grid-template-columns: 1fr; }
+  .grid2 { grid-template-columns: 1fr; }
+}

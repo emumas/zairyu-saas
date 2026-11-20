@@ -12,9 +12,13 @@ function limit(ctx: Context) {
 /** Web では refreshToken を空文字で返し、HttpOnly Cookie に入れる */
 const tokenPair = z.object({ accessToken: z.string(), accessTokenExpiresIn: z.number(), refreshToken: z.string() });
 
-/** リフレッシュトークンの Cookie(JavaScript から読めない。認証系の手続きにだけ送られる) */
+/**
+ * リフレッシュトークンの Cookie(HttpOnly で JavaScript から読めない)。
+ * Path は /trpc。手続きの URL は /trpc/auth.refresh のように「.」で続くため、/trpc/auth にすると
+ * Cookie のパス照合(直後が「/」であること)に合わず送られない
+ */
 export const REFRESH_COOKIE = "zr_rt";
-const REFRESH_COOKIE_PATH = "/trpc/auth";
+const REFRESH_COOKIE_PATH = "/trpc";
 
 function deliver<T extends { refreshToken: string }>(ctx: Context, pair: T): T {
   if (!ctx.web) return pair;
