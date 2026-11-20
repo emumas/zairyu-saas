@@ -14,7 +14,15 @@ import {
   updatePerson,
   type Tx,
 } from "@zairyu/db";
-import { dateString, jstDate, personCreateInput, personListInput, personUpdateInput } from "@zairyu/shared";
+import {
+  classifyExpiry,
+  dateString,
+  EXPIRY_BUCKETS,
+  jstDate,
+  personCreateInput,
+  personListInput,
+  personUpdateInput,
+} from "@zairyu/shared";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { assertSiteAccess } from "../authz/guards.js";
@@ -51,11 +59,21 @@ const personOutput = z.object({
   status: z.enum(["active", "retired", "archived"]),
   retiredAt: z.string().nullable(),
   card: cardSummary,
+  /** 期限区分(1-11) */
+  expiry: z.object({
+    bucket: z.enum(EXPIRY_BUCKETS),
+    deadline: z.string().nullable(),
+    deadlineBasis: z.enum(["stay", "card"]).nullable(),
+    daysLeft: z.number().nullable(),
+    specialPeriodUntil: z.string().nullable(),
+    icUnverified: z.boolean(),
+    needsReview: z.boolean(),
+  }),
 });
 
 type PersonRow = NonNullable<Awaited<ReturnType<typeof getPerson>>>;
 
-function present(row: PersonRow, role: Role): z.infer<typeof personOutput> {
+function present(row: PersonRow, role: Role, today: string): z.infer<typeof personOutput> {
   const hidePersonal = role === "viewer";
   return {
     id: row.id,
@@ -68,6 +86,7 @@ function present(row: PersonRow, role: Role): z.infer<typeof personOutput> {
     status: row.status,
     retiredAt: row.retiredAt,
     card: row.card,
+    expiry: classifyExpiry(row.card, today),
   };
 }
 
@@ -103,8 +122,9 @@ export const personsRouter = router({
     .output(z.object({ items: z.array(personOutput), total: z.number() }))
     .query(({ ctx, input }) =>
       ctx.tenantTx(async (tx) => {
-        const r = await listPersons(tx, { ...input, scope: siteScope(ctx.actor) });
-        return { items: r.items.map((p) => present(p, ctx.actor.role)), total: r.total };
+        const today = jstDate(ctx.services.now());
+        const r = await listPersons(tx, { ...input, scope: siteScope(ctx.actor), today });
+        return { items: r.items.map((p) => present(p, ctx.actor.role, today)), total: r.total };
       }),
     ),
 
@@ -113,9 +133,10 @@ export const personsRouter = router({
     .output(personOutput)
     .query(({ ctx, input }) =>
       ctx.tenantTx(async (tx) => {
-        const p = await getPerson(tx, input.id, siteScope(ctx.actor));
+        const today = jstDate(ctx.services.now());
+        const p = await getPerson(tx, input.id, siteScope(ctx.actor), today);
         if (!p) throw notFound();
-        return present(p, ctx.actor.role);
+        return present(p, ctx.actor.role, today);
       }),
     ),
 

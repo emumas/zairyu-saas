@@ -21,6 +21,7 @@
     "db:migrate": "tsx src/migrate.ts"
   },
   "dependencies": {
+    "@zairyu/shared": "workspace:*",
     "drizzle-orm": "^0.45.4",
     "pg": "^8.23.1"
   },

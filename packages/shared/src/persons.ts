@@ -1,5 +1,6 @@
 /** 登録者 API の入出力(mobile / web / api で共有) */
 import { z } from "zod";
+import { EXPIRY_BUCKETS } from "./expiry.js";
 import { isValidDate } from "./jst.js";
 
 export const dateString = z.string().refine(isValidDate, "日付は YYYY-MM-DD で入力してください");
@@ -40,8 +41,12 @@ export const personListInput = z.object({
   /** 氏名の部分一致または社員番号の前方一致 */
   q: z.string().trim().max(100).optional(),
   siteId: z.uuid().optional(),
-  /** 既定は在籍中と退職(アーカイブを除く) */
+  /** 既定は在籍中と退職(アーカイブを除く)。期限区分・目印で絞り込むときの既定は在籍中のみ */
   statuses: z.array(z.enum(PERSON_STATUSES)).min(1).optional(),
+  /** 期限区分(1-11)。指定した区分のいずれか */
+  expiryBuckets: z.array(z.enum(EXPIRY_BUCKETS)).min(1).optional(),
+  icUnverified: z.boolean().optional(),
+  needsReview: z.boolean().optional(),
   sort: z.enum(["employeeCode", "name", "expiryDate"]).default("employeeCode"),
   limit: z.number().int().min(1).max(100).default(50),
   offset: z.number().int().min(0).max(100_000).default(0),
