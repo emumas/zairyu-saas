@@ -9,9 +9,13 @@ export interface CardLabel {
   /** 左上の位置(0〜1) */
   x: number;
   y: number;
-  /** 文字の大きさ(カード幅に対する割合) */
+  /** 文字の大きさ(カード幅に対する割合。既定 LABEL_SIZE) */
   size?: number;
 }
+
+/** 項目名の文字の大きさ(カード幅に対する割合)。実物の印字に合わせて小さめ */
+export const LABEL_SIZE = 0.018;
+export const LABEL_EN_SIZE = 0.0115;
 
 export const LEGACY_FRONT_LABELS: CardLabel[] = [
   { ja: "日本国政府", en: "GOVERNMENT OF JAPAN", x: 0.024, y: 0.035, size: 0.03 },
@@ -19,17 +23,18 @@ export const LEGACY_FRONT_LABELS: CardLabel[] = [
   { ja: "番号", en: "No.", x: 0.705, y: 0.055 },
   { ja: "氏名", en: "NAME", x: 0.026, y: 0.135 },
   { ja: "生年月日", en: "DATE OF BIRTH", x: 0.024, y: 0.24 },
-  { ja: "性別", en: "SEX", x: 0.386, y: 0.24 },
+  { ja: "性別", en: "SEX", x: 0.372, y: 0.24 },
   { ja: "国籍・地域", en: "NATIONALITY/REGION", x: 0.487, y: 0.24 },
   { ja: "住居地", en: "ADDRESS", x: 0.024, y: 0.355 },
   { ja: "在留資格", en: "STATUS", x: 0.024, y: 0.46 },
-  { ja: "就労制限の有無", x: 0.25, y: 0.545, size: 0.018 },
-  { ja: "在留期間(満了日)", en: "PERIOD OF STAY (DATE OF EXPIRATION)", x: 0.024, y: 0.645 },
+  { ja: "就労制限の有無", x: 0.25, y: 0.545, size: 0.016 },
+  { ja: "在留期間(満了日)", en: "PERIOD OF STAY\n(DATE OF EXPIRATION)", x: 0.024, y: 0.645 },
   { ja: "許可の種類", x: 0.024, y: 0.765 },
   { ja: "許可年月日", x: 0.024, y: 0.83 },
   { ja: "交付年月日", x: 0.358, y: 0.83 },
   { ja: "このカードは", x: 0.024, y: 0.885 },
-  { ja: "です。", en: "PERIOD OF VALIDITY OF THIS CARD", x: 0.665, y: 0.885 },
+  // 「PERIOD OF VALIDITY OF THIS CARD」は IC の券面イメージ側に含まれる
+  { ja: "です。", x: 0.665, y: 0.885 },
 ];
 
 /** 顔写真の枠(割合) */

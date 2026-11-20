@@ -4,7 +4,7 @@
  */
 import { useState } from "react";
 import { Image, Text, View } from "react-native";
-import { LEGACY_BANDS, LEGACY_FACE_BOX, LEGACY_FRONT_LABELS } from "./cardLayout";
+import { LABEL_EN_SIZE, LABEL_SIZE, LEGACY_BANDS, LEGACY_FACE_BOX, LEGACY_FRONT_LABELS } from "./cardLayout";
 import { color } from "./kit";
 
 export interface ImageData {
@@ -34,8 +34,8 @@ export function CardFaceView({ front, face }: { front: ImageData; face?: ImageDa
         {width > 0 &&
           LEGACY_FRONT_LABELS.map((l) => (
             <View key={l.ja} style={{ position: "absolute", left: pct(l.x), top: pct(l.y) }}>
-              <Text style={{ fontSize: width * (l.size ?? 0.022), color: "#4a5a4a" }}>{l.ja}</Text>
-              {l.en && <Text style={{ fontSize: width * 0.014, color: "#4a5a4a" }}>{l.en}</Text>}
+              <Text style={{ fontSize: width * (l.size ?? LABEL_SIZE), color: "#4a5a4a" }}>{l.ja}</Text>
+              {l.en && <Text style={{ fontSize: width * LABEL_EN_SIZE, lineHeight: width * LABEL_EN_SIZE * 1.15, color: "#4a5a4a" }}>{l.en}</Text>}
             </View>
           ))}
         {face && (
