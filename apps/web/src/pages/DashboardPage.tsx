@@ -52,6 +52,12 @@ export function DashboardPage() {
             <span>{t.label}</span>
           </Link>
         ))}
+        {s && s.duplicateGroups !== null && (
+          <Link to="/duplicates" className={`tile ${s.duplicateGroups ? "tile-warn" : ""}`}>
+            <strong>{s.duplicateGroups}</strong>
+            <span>二重登録の疑い</span>
+          </Link>
+        )}
         {s && s.openAlerts !== null && (
           <Link to="/alerts" className={`tile ${s.openAlerts ? "tile-danger" : ""}`}>
             <strong>{s.openAlerts}</strong>

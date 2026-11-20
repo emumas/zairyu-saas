@@ -3,9 +3,9 @@
  * テナントの絞り込みは RLS が行う(withTenant のトランザクションで呼ぶこと)。
  */
 import { toKatakana, type ExpiryBucket } from "@zairyu/shared";
-import { and, asc, count, eq, ilike, inArray, or, sql, type SQL } from "drizzle-orm";
+import { and, asc, count, desc, eq, ilike, inArray, isNotNull, isNull, ne, or, sql, type SQL } from "drizzle-orm";
 import type { Tx } from "../client.js";
-import { persons, residenceCards, sites } from "../schema.js";
+import { personEmployments, persons, residenceCards, sites } from "../schema.js";
 import { expiryBucketSql, icUnverifiedSql, needsReviewSql } from "./expiry.js";
 
 /** null は全拠点、配列はその拠点だけ(空なら何も見えない) */
@@ -39,6 +39,7 @@ const summaryColumns = (today: string) => ({
   phone: persons.phone,
   nationality: persons.nationality,
   birthDate: persons.birthDate,
+  hiredAt: persons.hiredAt,
   status: persons.status,
   retiredAt: persons.retiredAt,
   archivedAt: persons.archivedAt,
@@ -131,6 +132,7 @@ export async function createPerson(
     phone?: string | null | undefined;
     nationality?: string | null | undefined;
     birthDate?: string | null | undefined;
+    hiredAt?: string | null | undefined;
   },
 ) {
   const [row] = await tx
@@ -143,6 +145,7 @@ export async function createPerson(
       phone: input.phone ?? null,
       nationality: input.nationality ?? null,
       birthDate: input.birthDate ?? null,
+      hiredAt: input.hiredAt ?? null,
     })
     .returning({ id: persons.id });
   return row!.id;
@@ -156,7 +159,16 @@ export async function findPersonSite(tx: Tx, id: string): Promise<{ siteId: stri
 export async function updatePerson(
   tx: Tx,
   id: string,
-  patch: Partial<{ siteId: string; employeeCode: string; name: string; nameKana: string | null; phone: string | null; nationality: string | null; birthDate: string | null }>,
+  patch: Partial<{
+    siteId: string;
+    employeeCode: string;
+    name: string;
+    nameKana: string | null;
+    phone: string | null;
+    nationality: string | null;
+    birthDate: string | null;
+    hiredAt: string | null;
+  }>,
 ): Promise<void> {
   await tx
     .update(persons)
@@ -225,6 +237,7 @@ export async function findPersonsByEmployeeCodes(tx: Tx, codes: readonly string[
       phone: persons.phone,
       nationality: persons.nationality,
       birthDate: persons.birthDate,
+      hiredAt: persons.hiredAt,
       status: persons.status,
     })
     .from(persons)
@@ -240,4 +253,107 @@ export async function fillPersonFromCard(tx: Tx, id: string, v: { birthDate: str
   const [before] = await tx.select({ birthDate: persons.birthDate, nationality: persons.nationality }).from(persons).where(eq(persons.id, id));
   await tx.update(persons).set(set).where(eq(persons.id, id));
   return Object.keys(set).filter((k) => before && before[k as "birthDate" | "nationality"] === null);
+}
+
+// ---------------------------------------------------------------- 在籍期間・同一人物の照合
+
+/** SQL 側で personMatchName と同じそろえ方をする(NFKC・大文字・空白と区切り記号) */
+export const matchNameSql = sql<string>`trim(regexp_replace(upper(normalize(${persons.name}, NFKC)), '[[:space:],.・]+', ' ', 'g'))`;
+
+export async function insertEmployment(
+  tx: Tx,
+  v: { personId: string; hiredAt: string | null; retiredAt: string; reasonCode: string; reasonNote: string | null; siteId: string; recordedBy: string },
+): Promise<void> {
+  await tx.insert(personEmployments).values(v);
+}
+
+export async function listEmployments(tx: Tx, personIds: readonly string[]) {
+  if (personIds.length === 0) return [];
+  return tx
+    .select({
+      personId: personEmployments.personId,
+      hiredAt: personEmployments.hiredAt,
+      retiredAt: personEmployments.retiredAt,
+      reasonCode: personEmployments.reasonCode,
+      reasonNote: personEmployments.reasonNote,
+      siteName: sites.name,
+    })
+    .from(personEmployments)
+    .leftJoin(sites, eq(sites.id, personEmployments.siteId))
+    .where(inArray(personEmployments.personId, [...personIds]))
+    .orderBy(desc(personEmployments.retiredAt), desc(personEmployments.createdAt));
+}
+
+/**
+ * 同一人物と思われる登録者(アーカイブを除く)。
+ * 氏名が同じで生年月日が同じ(片方が未入力なら氏名だけ)、またはフリガナと生年月日が同じ人
+ */
+export async function findSimilarPersons(
+  tx: Tx,
+  q: { matchName: string; nameKana?: string | null | undefined; birthDate?: string | null | undefined; excludeId?: string | undefined },
+) {
+  const byName = and(
+    sql`${matchNameSql} = ${q.matchName}`,
+    q.birthDate ? or(isNull(persons.birthDate), eq(persons.birthDate, q.birthDate)) : undefined,
+  );
+  const byKana = q.nameKana && q.birthDate ? and(eq(persons.nameKana, q.nameKana), eq(persons.birthDate, q.birthDate)) : undefined;
+  return tx
+    .select({
+      id: persons.id,
+      siteId: persons.siteId,
+      siteName: sites.name,
+      employeeCode: persons.employeeCode,
+      name: persons.name,
+      birthDate: persons.birthDate,
+      status: persons.status,
+      retiredAt: persons.retiredAt,
+    })
+    .from(persons)
+    .innerJoin(sites, eq(sites.id, persons.siteId))
+    .where(and(ne(persons.status, "archived"), q.excludeId ? ne(persons.id, q.excludeId) : undefined, or(byName, byKana)))
+    .orderBy(asc(persons.employeeCode))
+    .limit(20);
+}
+
+/**
+ * 二重登録の疑い: 在籍中の登録者で、氏名と生年月日(またはフリガナと生年月日)が同じ組。
+ * scope の拠点の人を 1 人以上含む組だけ返す
+ */
+export async function listDuplicateGroups(tx: Tx, scope: SiteScope) {
+  const key = sql<string>`coalesce(${matchNameSql}, '') || '|' || ${persons.birthDate}::text`;
+  const kanaKey = sql<string>`${persons.nameKana} || '|' || ${persons.birthDate}::text`;
+  const rows = await tx
+    .select({
+      id: persons.id,
+      siteId: persons.siteId,
+      siteName: sites.name,
+      employeeCode: persons.employeeCode,
+      name: persons.name,
+      birthDate: persons.birthDate,
+      hiredAt: persons.hiredAt,
+      key,
+      kanaKey,
+    })
+    .from(persons)
+    .innerJoin(sites, eq(sites.id, persons.siteId))
+    .where(and(eq(persons.status, "active"), isNotNull(persons.birthDate)));
+  const groups = new Map<string, typeof rows>();
+  for (const r of rows) {
+    for (const k of [r.key, r.kanaKey ? `kana:${r.kanaKey}` : null]) {
+      if (!k) continue;
+      groups.set(k, [...(groups.get(k) ?? []), r]);
+    }
+  }
+  // 同じ組を氏名とフリガナの両方で数えないよう、メンバーの ID の組でまとめる
+  const seen = new Set<string>();
+  const out: { members: Omit<(typeof rows)[number], "key" | "kanaKey">[] }[] = [];
+  for (const members of groups.values()) {
+    if (members.length < 2) continue;
+    const ids = members.map((m) => m.id).sort().join(",");
+    if (seen.has(ids)) continue;
+    seen.add(ids);
+    if (scope !== null && !members.some((m) => scope.includes(m.siteId))) continue;
+    out.push({ members: members.map(({ key: _k, kanaKey: _kk, ...m }) => m) });
+  }
+  return out;
 }

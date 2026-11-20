@@ -29,7 +29,7 @@ describe.skipIf(!url)("未払い時の制御", () => {
     viewer = await h.callerAs(tenant, await h.createUser(tenant, "viewer@example.com", "viewer", [site]));
     activeId = (await admin.persons.create({ siteId: site, employeeCode: "E1", name: "A" })).id;
     retiredId = (await admin.persons.create({ siteId: site, employeeCode: "E2", name: "B" })).id;
-    await admin.persons.retire({ id: retiredId });
+    await admin.persons.retire({ id: retiredId, reasonCode: "self" });
   });
   afterAll(async () => h?.end());
 
@@ -61,7 +61,7 @@ describe.skipIf(!url)("未払い時の制御", () => {
   it("閲覧・更新・退職・ダッシュボードは止めない", async () => {
     expect((await admin.persons.list({})).total).toBeGreaterThan(0);
     await admin.persons.update({ id: activeId, name: "A 再更新" });
-    await admin.persons.retire({ id: activeId });
+    await admin.persons.retire({ id: activeId, reasonCode: "self" });
     await admin.dashboard.summary({});
     await viewer.persons.list({});
   });

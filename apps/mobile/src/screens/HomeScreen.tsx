@@ -150,6 +150,9 @@ export function HomeScreen({
       {session.can("alerts.read") && (
         <Button label={summary?.openAlerts ? `アラート(未対応 ${summary.openAlerts} 件)を見る` : "アラートを見る"} kind={summary?.openAlerts ? "primary" : "secondary"} onPress={onOpenAlerts} />
       )}
+      {summary?.duplicateGroups ? (
+        <Message text={`二重登録の疑いが ${summary.duplicateGroups} 組あります(同じ氏名・生年月日の在籍者)。Web の「二重登録の疑い」で確認してください。`} tone="warn" />
+      ) : null}
       {billing?.state === "restricted" && <Message text={RESTRICTED_MESSAGE} tone="warn" />}
       {session.can("persons.write") && billing?.state !== "restricted" && <Button label="登録者を追加" kind="secondary" onPress={onCreatePerson} />}
       <Field label={tile ? `${tile.label}の登録者を検索` : "登録者を検索"} value={q} onChangeText={setQ} placeholder="氏名・社員番号" autoCapitalize="none" />

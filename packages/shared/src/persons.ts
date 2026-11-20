@@ -58,6 +58,10 @@ export const personCreateInput = z.object({
   phone: phoneSchema.nullish(),
   nationality: nationalitySchema.nullish(),
   birthDate: dateString.nullish(),
+  /** 入社日 */
+  hiredAt: dateString.nullish(),
+  /** 同一人物と思われる在籍者がいても登録する(確認済み) */
+  confirmDuplicate: z.boolean().optional(),
 });
 export type PersonCreateInput = z.infer<typeof personCreateInput>;
 
@@ -70,6 +74,7 @@ export const personUpdateInput = z.object({
   phone: phoneSchema.nullish(),
   nationality: nationalitySchema.nullish(),
   birthDate: dateString.nullish(),
+  hiredAt: dateString.nullish(),
 });
 export type PersonUpdateInput = z.infer<typeof personUpdateInput>;
 
@@ -105,4 +110,43 @@ export const inviteUserInput = z.object({
   role: z.enum(USER_ROLES),
   /** 拠点管理者・閲覧者の担当拠点(テナント管理者は全拠点のため不要) */
   siteIds: z.array(z.uuid()).max(200).default([]),
+});
+
+// ---------------------------------------------------------------- 在籍期間・退職理由・二重登録
+
+export const RETIRE_REASONS = ["self", "company", "contract_end", "visa", "transfer", "other"] as const;
+export type RetireReason = (typeof RETIRE_REASONS)[number];
+export const RETIRE_REASON_LABEL: Record<RetireReason, string> = {
+  self: "自己都合",
+  company: "会社都合",
+  contract_end: "契約期間満了",
+  visa: "在留資格・在留期限の問題",
+  transfer: "転籍(グループ会社など)",
+  other: "その他",
+};
+
+export const retireInput = z.object({
+  id: z.uuid(),
+  retiredAt: dateString.optional(),
+  reasonCode: z.enum(RETIRE_REASONS),
+  reasonNote: z.string().trim().max(500).optional(),
+});
+
+/** 再入社(退職した登録者を在籍に戻す)。入社日は省略すると今日 */
+export const rehireInput = z.object({ id: z.uuid(), hiredAt: dateString.optional() });
+
+/**
+ * 同一人物かを比べるための氏名(全角英数を半角、大文字、空白をそろえる)。
+ * 例: "Nguyen  Van A" と "ＮＧＵＹＥＮ ＶＡＮ Ａ" は同じ
+ */
+export function personMatchName(name: string): string {
+  return name.normalize("NFKC").toUpperCase().replace(/[\s,.・]+/g, " ").trim();
+}
+
+export const duplicateCheckInput = z.object({
+  name: z.string().trim().max(200),
+  nameKana: z.string().trim().max(200).optional(),
+  birthDate: dateString.optional(),
+  /** 編集中の本人を除く */
+  excludeId: z.uuid().optional(),
 });

@@ -10,6 +10,7 @@ import { api, messageOf } from "../api";
 import { CardFaceView, type ImageData } from "../CardFaceView";
 import { FORMAT_LABEL, METHOD_LABEL, RESULT_LABEL } from "../labels";
 import { useSession } from "../session";
+import { EmploymentSection } from "./EmploymentSection";
 import { CardDetailsForm, PersonEditForm } from "./personForms";
 import { Button, Card, fmtDateTime, Message } from "../ui";
 
@@ -217,6 +218,7 @@ export function PersonDetailPage() {
           </dl>
         </Card>
       </div>
+      <EmploymentSection person={p} onChanged={reload} />
       {(() => {
         const cur = cards.find((c) => c.isCurrent);
         if (!cur) return null;

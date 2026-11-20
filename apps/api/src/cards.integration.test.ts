@@ -412,7 +412,7 @@ describe.skipIf(!url)("カード登録", () => {
 
   it("退職者にはカードを登録できない", async () => {
     const personId = await newPerson("X001");
-    await admin.persons.retire({ id: personId });
+    await admin.persons.retire({ id: personId, reasonCode: "self" });
     expect(await codeOf(admin.cards.register({ personId, cardNumber: "AB00000010CD", ic: null, icFailureReason: "other" }))).toBe("BAD_REQUEST");
   });
 

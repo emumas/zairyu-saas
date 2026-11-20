@@ -3,12 +3,12 @@
  * zairyu_purge ロールは全テナントの行が見える(RLS は USING true)ため、すべての条件で tenant_id を必ず指定する。
  *
  * 対象: 退職・アーカイブした登録者のうち、退職日(無ければアーカイブ日)からテナントの保存期間(3〜5 年)が過ぎた人。
- * 消すもの: 登録者・カード・カード画像(行。ファイルは呼び出し側で消す)・確認履歴・アラート・就労時間。
+ * 消すもの: 登録者・カード・カード画像(行。ファイルは呼び出し側で消す)・確認履歴・アラート・就労時間・在籍期間の履歴。
  * 監査ログは値を含まない(ID だけ)ので残す。日次人数・請求も人に結び付かないので残す
  */
 import { and, eq, inArray, or, sql } from "drizzle-orm";
 import type { Tx } from "../client.js";
-import { alerts, cardImages, persons, residenceCards, tenants, verifications, workHours } from "../schema.js";
+import { alerts, cardImages, personEmployments, persons, residenceCards, tenants, verifications, workHours } from "../schema.js";
 
 export async function tenantsForPurge(tx: Tx) {
   return tx.select({ id: tenants.id, retentionYears: tenants.retentionYears }).from(tenants);
@@ -57,6 +57,7 @@ export async function deletePersonsData(tx: Tx, tenantId: string, personIds: rea
     .delete(alerts)
     .where(and(eq(alerts.tenantId, tenantId), or(inArray(alerts.personId, ids), cards.length ? inArray(alerts.cardId, cards) : sql`false`)));
   await tx.delete(workHours).where(and(eq(workHours.tenantId, tenantId), inArray(workHours.personId, ids)));
+  await tx.delete(personEmployments).where(and(eq(personEmployments.tenantId, tenantId), inArray(personEmployments.personId, ids)));
   if (cards.length) await tx.delete(residenceCards).where(and(eq(residenceCards.tenantId, tenantId), inArray(residenceCards.id, cards)));
   await tx.delete(persons).where(and(eq(persons.tenantId, tenantId), inArray(persons.id, ids)));
   return { blobKeys: images.map((i) => i.blobKey), cards: cards.length, images: images.length, verifications: vs.length };

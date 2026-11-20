@@ -289,6 +289,8 @@ export const persons = pgTable(
     phone: text("phone"),
     nationality: text("nationality"),
     birthDate: date("birth_date"),
+    /** 入社日(今の在籍期間の始まり。再入社で更新し、以前の期間は person_employments に残す) */
+    hiredAt: date("hired_at"),
     /** 課金対象の判定に使う(active のみ数える) */
     status: personStatus("status").notNull().default("active"),
     retiredAt: date("retired_at"),
@@ -471,6 +473,30 @@ export const notificationOutbox = pgTable(
     createdAt: createdAt(),
   },
   (t) => [index("notification_outbox_due_idx").on(t.status, t.nextAttemptAt)],
+);
+
+/**
+ * 在籍期間の履歴(退職のたびに 1 行)。再入社のときに、前回どんな理由で辞めたかを確認するために使う。
+ * 退職理由のメモは個人の事情を含みうるので、閲覧者には見せない
+ */
+export const personEmployments = pgTable(
+  "person_employments",
+  {
+    id: id(),
+    tenantId: tenantId(),
+    personId: uuid("person_id")
+      .notNull()
+      .references(() => persons.id),
+    hiredAt: date("hired_at"),
+    retiredAt: date("retired_at").notNull(),
+    /** self / company / contract_end / visa / transfer / other */
+    reasonCode: text("reason_code").notNull(),
+    reasonNote: text("reason_note"),
+    siteId: uuid("site_id").references(() => sites.id),
+    recordedBy: uuid("recorded_by").references(() => users.id),
+    createdAt: createdAt(),
+  },
+  (t) => [index("person_employments_person_idx").on(t.tenantId, t.personId)],
 );
 
 /** フェーズ2(週就労時間) */

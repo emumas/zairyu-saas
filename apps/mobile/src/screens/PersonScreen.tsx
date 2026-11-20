@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Text } from "react-native";
 import { api, messageOf } from "../api";
 import { useSession } from "../auth/session";
+import { EmploymentCard } from "./EmploymentCard";
 import { CardFaceView, type ImageData } from "../ui/CardFaceView";
 import { CardImage, IMAGE_KIND_LABEL } from "../ui/CardImage";
 import { Button, Card, color, Message, Row, Screen } from "../ui/kit";
@@ -113,6 +114,8 @@ export function PersonScreen({
           <Button label="登録者の情報を編集" kind="secondary" onPress={() => onEditPerson(person)} />
         )}
       </Card>
+
+      <EmploymentCard person={person} onChanged={() => void load()} />
 
       <Text style={{ fontWeight: "700", fontSize: 16 }}>現在のカード</Text>
       <Card>

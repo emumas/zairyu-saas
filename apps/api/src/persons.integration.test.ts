@@ -163,12 +163,60 @@ describe.skipIf(!url)("登録者 API と監査ログ", () => {
       expect(await codeOf(tokyoAdmin.persons.get({ id }))).toBe("NOT_FOUND");
     });
 
+    it("入社日・退職理由・再入社。前回の在籍期間と退職理由が履歴に残り、閲覧者には見せない", async () => {
+      h.clock.now = Date.parse("2026-04-01T03:00:00Z");
+      const { id } = await admin.persons.create({ siteId: tokyo, employeeCode: "H001", name: "LOPEZ JUAN", birthDate: "1990-05-05", hiredAt: "2024-04-01" });
+      expect((await admin.persons.get({ id })).hiredAt).toBe("2024-04-01");
+      expect(await codeOf(admin.persons.retire({ id, retiredAt: "2024-03-01", reasonCode: "self" }))).toBe("BAD_REQUEST"); // 入社日より前
+      await admin.persons.retire({ id, retiredAt: "2025-12-31", reasonCode: "visa", reasonNote: "在留期限の更新が不許可" });
+      const retired = await admin.persons.get({ id });
+      expect(retired.employments).toEqual([
+        { hiredAt: "2024-04-01", retiredAt: "2025-12-31", reasonCode: "visa", reasonNote: "在留期限の更新が不許可", siteName: "東京" },
+      ]);
+      expect((await viewer.persons.get({ id })).employments).toEqual([]);
+      // 監査ログには理由の区分だけ
+      const logs = await auditOf(id);
+      expect(logs.find((l) => l.action === "person.retire")?.detail).toEqual({ reasonCode: "visa" });
+      expect(JSON.stringify(logs)).not.toContain("不許可");
+
+      // 再入社: 同じ人をもう一度登録しようとすると、前回の退職理由が分かる
+      const similar = await admin.persons.findSimilar({ name: "Lopez  Juan", birthDate: "1990-05-05" });
+      expect(similar).toEqual([
+        expect.objectContaining({ id, employeeCode: "H001", status: "retired", strong: true, lastEmployment: expect.objectContaining({ reasonCode: "visa", reasonNote: "在留期限の更新が不許可" }) }),
+      ]);
+      expect(await codeOf(admin.persons.create({ siteId: osaka, employeeCode: "H002", name: "LOPEZ JUAN", birthDate: "1990-05-05" }))).toBe("CONFLICT");
+      await admin.persons.reactivate({ id, hiredAt: "2026-04-01" });
+      const back = await admin.persons.get({ id });
+      expect(back).toMatchObject({ status: "active", hiredAt: "2026-04-01", retiredAt: null });
+      expect(back.employments).toHaveLength(1); // 前回の期間は残る
+    });
+
+    it("二重登録の疑い: 別の拠点に同じ氏名・生年月日の在籍者がいれば止め、確認すれば登録でき、一覧に出る", async () => {
+      await admin.persons.create({ siteId: tokyo, employeeCode: "D001", name: "Kim Minji", birthDate: "1998-08-08", nameKana: "きむ みんじ" });
+      expect(await codeOf(tokyoAdmin.persons.create({ siteId: tokyo, employeeCode: "D002", name: "KIM MINJI", birthDate: "1998-08-08" }))).toBe("CONFLICT");
+      // フリガナと生年月日の一致でも見つける
+      expect((await admin.persons.findSimilar({ name: "KIM MIN JI", nameKana: "キム ミンジ", birthDate: "1998-08-08" }))[0]).toMatchObject({ employeeCode: "D001", strong: true });
+      // 生年月日が違えば別人。生年月日が分からなければ氏名だけの一致を参考に出す(止めない)
+      expect(await admin.persons.findSimilar({ name: "Kim Minji", birthDate: "2000-01-01" })).toEqual([]);
+      expect((await admin.persons.findSimilar({ name: "Kim Minji" }))[0]).toMatchObject({ employeeCode: "D001", strong: false });
+      await admin.persons.create({ siteId: osaka, employeeCode: "D003", name: "KIM MINJI", birthDate: "1998-08-08", confirmDuplicate: true });
+      const groups = await admin.persons.duplicates();
+      expect(groups.find((g) => g.members.some((m) => m.employeeCode === "D001"))?.members.map((m) => [m.employeeCode, m.siteName]).sort()).toEqual([
+        ["D001", "東京"],
+        ["D003", "大阪"],
+      ]);
+      // 拠点管理者には担当外の人は社員番号と拠点名だけ
+      const forTokyo = (await tokyoAdmin.persons.duplicates()).find((g) => g.members.some((m) => m.employeeCode === "D001"))!;
+      expect(forTokyo.members.find((m) => m.employeeCode === "D003")).toEqual({ id: null, employeeCode: "D003", name: null, siteName: "大阪", birthDate: null, hiredAt: null });
+      expect((await admin.dashboard.summary()).duplicateGroups).toBeGreaterThanOrEqual(1);
+    });
+
     it("退職日は既定で JST の今日。復職で元に戻る", async () => {
       h.clock.now = Date.parse("2026-03-31T15:30:00Z"); // JST 4/1 0:30
       const { id } = await admin.persons.create({ siteId: tokyo, employeeCode: "R001", name: "a" });
-      expect((await admin.persons.retire({ id })).retiredAt).toBe("2026-04-01");
+      expect((await admin.persons.retire({ id, reasonCode: "self" })).retiredAt).toBe("2026-04-01");
       expect(await admin.persons.get({ id })).toMatchObject({ status: "retired", retiredAt: "2026-04-01" });
-      expect(await codeOf(admin.persons.retire({ id }))).toBe("BAD_REQUEST");
+      expect(await codeOf(admin.persons.retire({ id, reasonCode: "self" }))).toBe("BAD_REQUEST");
       await admin.persons.reactivate({ id });
       expect(await admin.persons.get({ id })).toMatchObject({ status: "active", retiredAt: null });
       const actions = (await auditOf(id)).map((l) => l.action).sort();

@@ -19,6 +19,7 @@ export function PersonEditForm({ person, onDone }: { person: Person; onDone: () 
     phone: person.phone ?? "",
     nationality: person.nationality ?? "",
     birthDate: person.birthDate ?? "",
+    hiredAt: person.hiredAt ?? "",
   });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -33,6 +34,7 @@ export function PersonEditForm({ person, onDone }: { person: Person; onDone: () 
     if (f.phone.trim() !== (person.phone ?? "")) patch.phone = f.phone.trim();
     if (f.nationality.trim().toUpperCase() !== (person.nationality ?? "")) patch.nationality = f.nationality.trim() ? f.nationality.trim().toUpperCase() : null;
     if (f.birthDate !== (person.birthDate ?? "")) patch.birthDate = f.birthDate || null;
+    if (f.hiredAt !== (person.hiredAt ?? "")) patch.hiredAt = f.hiredAt || null;
     if (Object.keys(patch).length === 1) return onDone();
     setBusy(true);
     try {
@@ -80,6 +82,10 @@ export function PersonEditForm({ person, onDone }: { person: Person; onDone: () 
       <label className="field">
         <span>生年月日</span>
         <input type="date" value={f.birthDate} onChange={(e) => setF({ ...f, birthDate: e.target.value })} />
+      </label>
+      <label className="field">
+        <span>入社日</span>
+        <input type="date" value={f.hiredAt} onChange={(e) => setF({ ...f, hiredAt: e.target.value })} />
       </label>
       <Message text={error} />
       <div className="row">

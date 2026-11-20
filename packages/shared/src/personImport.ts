@@ -18,6 +18,7 @@ export const PERSON_IMPORT_COLUMNS = [
   { key: "nationality", header: "国籍", required: false },
   { key: "birthDate", header: "生年月日", required: false },
   { key: "phone", header: "電話番号", required: false },
+  { key: "hiredAt", header: "入社日", required: false },
 ] as const;
 type ColumnKey = (typeof PERSON_IMPORT_COLUMNS)[number]["key"];
 
@@ -41,6 +42,9 @@ const ALIASES: Record<string, ColumnKey> = {
   電話番号: "phone",
   電話: "phone",
   携帯電話: "phone",
+  入社日: "hiredAt",
+  入社年月日: "hiredAt",
+  雇入れ日: "hiredAt",
 };
 
 export const personImportRow = z.object({
@@ -53,12 +57,14 @@ export const personImportRow = z.object({
   birthDate: z.string().max(50),
   nameKana: z.string().max(400).default(""),
   phone: z.string().max(50).default(""),
+  hiredAt: z.string().max(50).default(""),
 });
 export type PersonImportRow = z.infer<typeof personImportRow>;
 
 export const personImportInput = z.object({ rows: z.array(personImportRow).min(1).max(MAX_IMPORT_ROWS) });
 
-export const IMPORT_FIELD_LABEL: Record<"siteId" | "employeeCode" | "name" | "nameKana" | "phone" | "nationality" | "birthDate", string> = {
+export const IMPORT_FIELD_LABEL: Record<"siteId" | "employeeCode" | "name" | "nameKana" | "phone" | "nationality" | "birthDate" | "hiredAt", string> = {
+  hiredAt: "入社日",
   siteId: "拠点",
   employeeCode: "社員番号",
   name: "氏名",
@@ -103,6 +109,7 @@ export function rowsFromCsv(table: string[][]): { rows: PersonImportRow[] } | { 
       birthDate: get("birthDate"),
       nameKana: get("nameKana"),
       phone: get("phone"),
+      hiredAt: get("hiredAt"),
     });
   });
   if (rows.length === 0) return { error: "取り込む行がありません" };
@@ -118,6 +125,7 @@ export interface NormalizedImportRow {
   birthDate: string | null;
   nameKana: string | null;
   phone: string | null;
+  hiredAt: string | null;
 }
 
 /** 1 行の値を確かめる(拠点の有無や重複はサーバーで確かめる) */
@@ -142,15 +150,20 @@ export function validateImportRow(r: z.input<typeof personImportRow>): { value: 
     birthDate = normalizeDateInput(r.birthDate);
     if (!birthDate) errors.push("生年月日は 1990/01/31 または 1990-01-31 の形で入力してください");
   }
+  let hiredAt: string | null = null;
+  if ((r.hiredAt ?? "") !== "") {
+    hiredAt = normalizeDateInput(r.hiredAt!);
+    if (!hiredAt) errors.push("入社日は 2024/04/01 または 2024-04-01 の形で入力してください");
+  }
   const kana = nameKanaSchema.safeParse(r.nameKana ?? "");
   issue(kana);
   const phone = phoneSchema.safeParse(r.phone ?? "");
   issue(phone);
   if (errors.length > 0 || !code.success || !name.success || !kana.success || !phone.success) return { errors };
-  return { value: { employeeCode: code.data, name: name.data, siteName: r.siteName, nationality, birthDate, nameKana: kana.data, phone: phone.data } };
+  return { value: { employeeCode: code.data, name: name.data, siteName: r.siteName, nationality, birthDate, nameKana: kana.data, phone: phone.data, hiredAt } };
 }
 
 /** 取込用 CSV のひな形(見出しと記入例) */
 export function personImportTemplate(): string[][] {
-  return [PERSON_IMPORT_COLUMNS.map((c) => c.header), ["E0001", "NGUYEN VAN A", "グエン ヴァン アー", "本社", "VNM", "1995-04-01", "090-1234-5678"]];
+  return [PERSON_IMPORT_COLUMNS.map((c) => c.header), ["E0001", "NGUYEN VAN A", "グエン ヴァン アー", "本社", "VNM", "1995-04-01", "090-1234-5678", "2024-04-01"]];
 }

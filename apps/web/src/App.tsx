@@ -2,6 +2,7 @@ import { BrowserRouter, Link, Navigate, NavLink, Route, Routes } from "react-rou
 import { AlertsPage } from "./pages/AlertsPage";
 import { BillingPage } from "./pages/BillingPage";
 import { DashboardPage } from "./pages/DashboardPage";
+import { DuplicatesPage } from "./pages/DuplicatesPage";
 import { ImportPage } from "./pages/ImportPage";
 import { InvitePage } from "./pages/InvitePage";
 import { LoginPage } from "./pages/LoginPage";
@@ -73,6 +74,7 @@ function Shell() {
           <Route path="/persons" element={<PersonsPage />} />
           <Route path="/persons/:id" element={<PersonDetailPage />} />
           <Route path="/alerts" element={<AlertsPage />} />
+          {session.can("persons.write") && <Route path="/duplicates" element={<DuplicatesPage />} />}
           {session.can("imports.run") && <Route path="/import" element={<ImportPage />} />}
           {session.can("reports.export") && <Route path="/reports" element={<ReportsPage />} />}
           {session.can("org.manage") && <Route path="/org/sites" element={<SitesPage />} />}
