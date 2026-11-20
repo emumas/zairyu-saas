@@ -13,8 +13,21 @@ export const IMAGE_KIND_LABEL: Record<string, string> = {
   ic_address: "IC の住居地イメージ",
 };
 
-export function CardImage({ kind, contentType, data, aspectRatio }: { kind: string; contentType: string; data: string; aspectRatio?: number }) {
-  const ratio = aspectRatio ?? (kind === "ic_face" ? 0.8 : kind === "ic_name" || kind === "ic_address" ? 2.5 : 85.6 / 54);
+export function CardImage({
+  kind,
+  contentType,
+  data,
+  width,
+  height,
+}: {
+  kind: string;
+  contentType: string;
+  data: string;
+  width?: number;
+  height?: number;
+}) {
+  // 画像の実寸が分かればその比率で、分からなければ種類ごとの目安で表示する
+  const ratio = width && height ? width / height : kind === "ic_face" ? 0.8 : kind === "ic_name" || kind === "ic_address" ? 2.5 : 85.6 / 54;
   return (
     <View style={{ gap: 4 }}>
       <Text style={{ color: color.sub, fontSize: 13 }}>{IMAGE_KIND_LABEL[kind] ?? kind}</Text>

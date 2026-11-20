@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Text } from "react-native";
 import { api, messageOf } from "../api";
 import { useSession } from "../auth/session";
+import { CardFaceView, type ImageData } from "../ui/CardFaceView";
 import { CardImage, IMAGE_KIND_LABEL } from "../ui/CardImage";
 import { Button, Card, color, Message, Row, Screen } from "../ui/kit";
 import { bucketTone, FORMAT_LABEL, METHOD_LABEL, RESULT_LABEL } from "./format";
@@ -17,8 +18,25 @@ export function PersonScreen({ personId, onBack, onRegisterCard }: { personId: s
   const [cards, setCards] = useState<Cards>([]);
   const [error, setError] = useState<string | null>(null);
   /** 表示中の画像(画面を離れると破棄される) */
-  const [shown, setShown] = useState<Record<string, { kind: string; contentType: string; data: string }>>({});
+  const [shown, setShown] = useState<Record<string, { kind: string } & ImageData>>({});
+  const [cardFace, setCardFace] = useState<{ front: ImageData; face: ImageData | null } | null>(null);
   const [loadingImage, setLoadingImage] = useState<string | null>(null);
+
+  /** IC の券面イメージと顔写真から、カードの見た目で表示する(旧様式) */
+  async function showCardFace(frontId: string, faceId: string | undefined) {
+    setLoadingImage("cardFace");
+    try {
+      const [front, face] = await Promise.all([
+        api.cards.getImage.mutate({ imageId: frontId }),
+        faceId ? api.cards.getImage.mutate({ imageId: faceId }) : Promise.resolve(null),
+      ]);
+      setCardFace({ front, face });
+    } catch (e) {
+      setError(messageOf(e));
+    } finally {
+      setLoadingImage(null);
+    }
+  }
 
   async function showImage(id: string) {
     setLoadingImage(id);
@@ -84,6 +102,16 @@ export function PersonScreen({ personId, onBack, onRegisterCard }: { personId: s
         <Card>
           <Text style={{ fontWeight: "700" }}>カード画像</Text>
           <Text style={{ color: color.sub, fontSize: 13 }}>表示した記録が監査ログに残ります。</Text>
+          {(() => {
+            const imgs = cards.find((x) => x.isCurrent)!.images;
+            const front = imgs.find((i) => i.kind === "ic_front");
+            if (!front) return null;
+            return cardFace ? (
+              <CardFaceView front={cardFace.front} face={cardFace.face} />
+            ) : (
+              <Button label="IC の記録をカードの見た目で表示" busy={loadingImage === "cardFace"} onPress={() => void showCardFace(front.id, imgs.find((i) => i.kind === "ic_face")?.id)} />
+            );
+          })()}
           {cards
             .find((x) => x.isCurrent)!
             .images.slice()

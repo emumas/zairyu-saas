@@ -22,6 +22,7 @@ import { compressForUpload, deleteFile, recognizeCardNumber } from "../photo";
 import { FORMAT_LABEL } from "../screens/format";
 import { Button, Card, Choice, color, Field, Message, Row, Screen } from "../ui/kit";
 import { CameraCapture } from "../ui/CameraCapture";
+import { CardFaceView } from "../ui/CardFaceView";
 import { CardImage } from "../ui/CardImage";
 
 type Photo = { contentType: "image/jpeg"; data: string };
@@ -299,10 +300,14 @@ export function CardWizard({ personId, personName, onClose, onDone }: { personId
               <Text style={{ fontWeight: "700" }}>券面と IC の画像を見比べる</Text>
               <Text style={{ color: color.sub }}>氏名・顔写真が実物のカードと一致しているか確認してください。</Text>
               {front && <CardImage kind="front" contentType={front.contentType} data={front.data} />}
-              {verify?.icImages
-                .slice()
-                .sort((a, b) => (a.kind === "ic_face" ? 1 : 0) - (b.kind === "ic_face" ? 1 : 0))
-                .map((img) => <CardImage key={img.kind} kind={img.kind} contentType={img.contentType} data={img.data} />)}
+              {verify?.icImages.some((i) => i.kind === "ic_front") ? (
+                <CardFaceView front={verify.icImages.find((i) => i.kind === "ic_front")!} face={verify.icImages.find((i) => i.kind === "ic_face")} />
+              ) : (
+                verify?.icImages
+                  .slice()
+                  .sort((a, b) => (a.kind === "ic_face" ? 1 : 0) - (b.kind === "ic_face" ? 1 : 0))
+                  .map((img) => <CardImage key={img.kind} kind={img.kind} contentType={img.contentType} data={img.data} />)
+              )}
             </Card>
           )}
 

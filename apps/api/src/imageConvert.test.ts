@@ -6,10 +6,16 @@ import { ImageConvertError, toDisplayImage } from "./imageConvert.js";
 const fixture = (name: string) => readFileSync(new URL(`../test-fixtures/${name}`, import.meta.url));
 
 describe("表示用の変換", () => {
-  it("MMR(CCITT G4)の TIFF を PNG にする", async () => {
+  it("MMR(CCITT G4)の TIFF を、白を透明にした PNG にする", async () => {
     const r = await toDisplayImage("image/tiff", fixture("g4.tif"));
     expect(r).toMatchObject({ contentType: "image/png", width: 600, height: 380 });
-    expect((await sharp(r.data).metadata()).format).toBe("png");
+    const { data, info } = await sharp(r.data).raw().toBuffer({ resolveWithObject: true });
+    expect(info.channels).toBe(4);
+    // 左上(余白)は透明、文字の部分には不透明な画素がある
+    expect(data[3]).toBe(0);
+    let opaque = 0;
+    for (let i = 3; i < data.length; i += 4) if (data[i]! > 200) opaque++;
+    expect(opaque).toBeGreaterThan(100);
   });
 
   it.each(["face8.jp2", "face16.jp2", "face.j2k"])("JPEG2000(%s)を JPEG にする", async (name) => {

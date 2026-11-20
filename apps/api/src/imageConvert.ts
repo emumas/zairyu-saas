@@ -77,10 +77,15 @@ export async function toDisplayImage(contentType: string, data: Uint8Array): Pro
   try {
     if (contentType === "image/jp2") return await jpeg2000ToJpeg(data);
     if (contentType === "image/tiff") {
-      const img = sharp(data);
-      const meta = await img.metadata();
-      // 白黒 2 値の画像なので PNG(小さく、文字がにじまない)
-      return { contentType: "image/png", data: await img.png().toBuffer(), width: meta.width ?? 0, height: meta.height ?? 0 };
+      // 白黒 2 値の文字画像。白を透明にした PNG にして、背景や顔写真と重ねられるようにする
+      // (白い背景の上にそのまま置けば従来どおりの見た目になる)
+      const { data: grey, info } = await sharp(data).greyscale().raw().toBuffer({ resolveWithObject: true });
+      const rgba = Buffer.alloc(info.width * info.height * 4);
+      for (let i = 0; i < info.width * info.height; i++) {
+        rgba[i * 4 + 3] = 255 - grey[i * info.channels]!; // 黒いほど不透明
+      }
+      const png = await sharp(rgba, { raw: { width: info.width, height: info.height, channels: 4 } }).png().toBuffer();
+      return { contentType: "image/png", data: png, width: info.width, height: info.height };
     }
     if (contentType === "image/jpeg" || contentType === "image/png") {
       const meta = await sharp(data).metadata();

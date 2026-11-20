@@ -85,7 +85,7 @@ export const cardsRouter = router({
         fields: fieldsOutput,
         diffs: z.array(diffOutput),
         /** IC 内の画像(表示用に変換済み)。撮影した券面と見比べる */
-        icImages: z.array(z.object({ kind: z.string(), contentType: z.string(), data: z.string() })),
+        icImages: z.array(z.object({ kind: z.string(), contentType: z.string(), data: z.string(), width: z.number(), height: z.number() })),
       }),
     )
     .mutation(({ ctx, input }) =>
@@ -99,7 +99,7 @@ export const cardsRouter = router({
             .map(async (img) => {
               try {
                 const d = await toDisplayImage(img.contentType, img.data);
-                return [{ kind: img.kind, contentType: d.contentType, data: d.data.toString("base64") }];
+                return [{ kind: img.kind, contentType: d.contentType, data: d.data.toString("base64"), width: d.width, height: d.height }];
               } catch {
                 return [];
               }
