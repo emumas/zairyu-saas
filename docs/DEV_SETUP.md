@@ -114,4 +114,4 @@ cd apps\api
 pnpm postal:load
 ```
 
-日本郵便のサイトから UTF-8 版(utf_ken_all.zip)を取得して全件を入れ替えます(数十秒)。サイトに直接つながらない環境では、ブラウザで https://www.post.japanpost.jp/zipcode/dl/utf-zip.html から zip を保存し、`pnpm postal:load -- --file <保存した zip のパス>` で入れます。データは毎月更新されるので、本番では月 1 回の定期実行にします。
+日本郵便のサイトから取得して全件を入れ替えます(数十秒)。自動で取得できない場合(サイトの構成変更など)は、ブラウザで日本郵便の「郵便番号データダウンロード」ページから「全国一括」の zip(UTF-8 版・Shift_JIS 版のどちらでも可)を保存し、`pnpm postal:load -- --file <保存した zip のパス>` で入れます。データは毎月更新されるので、本番では月 1 回の定期実行にします。
