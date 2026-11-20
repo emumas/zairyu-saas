@@ -23,7 +23,7 @@ import {
   replaceCurrentCard,
   type Tx,
 } from "@zairyu/db";
-import { cardRegisterInput, cardVerifyInput, icReadPayload, jstDate, needsReviewNotice } from "@zairyu/shared";
+import { cardDetailsUpdateInput, cardRegisterInput, cardVerifyInput, icReadPayload, jstDate, needsReviewNotice } from "@zairyu/shared";
 import { cardNumberHmac, decryptAddress, decryptCardNumber, encryptAddress, encryptCardNumber, putEncryptedBlob } from "@zairyu/vault";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
@@ -78,11 +78,11 @@ const diffOutput = z.object({
   input: z.union([z.string(), z.boolean()]).nullable(),
 });
 
-async function loadCurrentCardForWrite(tx: Tx, actor: Actor, cardId: string) {
+async function loadCurrentCardForWrite(tx: Tx, actor: Actor, cardId: string, notCurrentMessage = "現在のカードだけ再検証できます") {
   const card = await getCardWithSite(tx, cardId);
   if (!card) throw notFound();
   assertSiteAccess(actor, card.siteId);
-  if (!card.isCurrent) throw new TRPCError({ code: "BAD_REQUEST", message: "現在のカードだけ再検証できます" });
+  if (!card.isCurrent) throw new TRPCError({ code: "BAD_REQUEST", message: notCurrentMessage });
   return card;
 }
 
@@ -402,6 +402,64 @@ export const cardsRouter = router({
             address: addressEnc ? await decryptAddress(keyring, ctx.actor.tenantId, addressEnc) : null,
           })),
         );
+      }),
+    ),
+
+  /**
+   * 現在のカードの記載事項を直す(保存済みの撮影画像を端末で読み取った結果や目視で)。
+   * - 第2世代・特定の券面記載事項(生年月日・性別・国籍・在留資格・満了日・有効期限)は IC の値なので変えられない
+   * - IC の裏面追記から取った住居地は変えられない(IC 再検証で更新する)
+   * - 変更した項目名を監査ログに、目視確認として確認履歴に残す(値は残さない)
+   */
+  updateDetails: permissionProcedure("cards.write")
+    .input(cardDetailsUpdateInput)
+    .output(z.object({ changed: z.array(z.string()) }))
+    .mutation(({ ctx, input }) =>
+      ctx.tenantTx(async (tx) => {
+        const card = await loadCurrentCardForWrite(tx, ctx.actor, input.cardId, "記載事項を直せるのは現在のカードだけです");
+        const fromIc = card.cardFormat !== "legacy";
+        const icOnly = ["birthDate", "sex", "nationality", "statusOfResidence", "expiryDate", "cardValidUntil"] as const;
+        if (fromIc && icOnly.some((k) => input[k] !== undefined)) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "第2世代のカードの記載事項は IC の値を使うため変更できません" });
+        }
+        if (input.address !== undefined && card.addressSource === "ic_back") {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "IC の裏面記載から読み取った住居地は変更できません(IC の再検証で更新されます)" });
+        }
+        const status = input.statusOfResidence !== undefined ? input.statusOfResidence : card.statusOfResidence;
+        const expiry = input.expiryDate !== undefined ? input.expiryDate : card.expiryDate;
+        if (/永住者/.test(status ?? "") && expiry) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "永住者には在留期間の満了日がありません。券面の日付は「カードの有効期限」として入力してください" });
+        }
+        const patch: CardPatch = {};
+        const changed: string[] = [];
+        for (const k of icOnly) {
+          const v = input[k];
+          if (v === undefined || v === card[k]) continue;
+          (patch as Record<string, unknown>)[k] = v;
+          changed.push(k);
+        }
+        if (input.address !== undefined) {
+          const keyring = requireVault(ctx.services).keyring;
+          const before = card.addressEnc ? await decryptAddress(keyring, ctx.actor.tenantId, card.addressEnc) : null;
+          if ((input.address || null) !== before) {
+            patch.addressEnc = input.address ? await encryptAddress(keyring, ctx.actor.tenantId, input.address) : null;
+            patch.addressSource = input.address ? (input.addressSource ?? "manual") : null;
+            patch.addressWrittenAt = null;
+            changed.push("address");
+          }
+        }
+        if (changed.length === 0) throw new TRPCError({ code: "BAD_REQUEST", message: "変更された項目がありません" });
+        await updateCard(tx, card.id, patch);
+        await insertVerification(tx, {
+          cardId: card.id,
+          method: "visual",
+          result: "ok",
+          diffJson: { corrected: changed },
+          note: "記載事項の修正",
+          performedBy: ctx.actor.userId,
+        });
+        await ctx.audit(tx, { action: "card.update_details", targetType: "residence_card", targetId: card.id, detail: { fields: changed, addressSource: input.addressSource ?? null } });
+        return { changed };
       }),
     ),
 

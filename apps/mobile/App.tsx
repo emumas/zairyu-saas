@@ -6,6 +6,7 @@ import { LoginScreen } from "./src/auth/LoginScreen";
 import { SessionProvider, useSession } from "./src/auth/session";
 import { IcPocScreen } from "./src/IcPocScreen";
 import { AlertsScreen } from "./src/screens/AlertsScreen";
+import { CardDetailsScreen } from "./src/screens/CardDetailsScreen";
 import { HomeScreen } from "./src/screens/HomeScreen";
 import { PersonCreateScreen } from "./src/screens/PersonCreateScreen";
 import { PersonScreen } from "./src/screens/PersonScreen";
@@ -23,6 +24,7 @@ type Route =
   | { name: "alerts" }
   | { name: "revocation"; cardId: string; personId: string; personName: string }
   | { name: "reverify"; cardId: string; personId: string; personName: string }
+  | { name: "cardDetails"; personId: string; personName: string }
   | { name: "poc" };
 
 function Main() {
@@ -86,6 +88,16 @@ function Main() {
           onRegisterCard={(personName) => setRoute({ name: "wizard", personId: route.id, personName })}
           onRevocationCheck={(cardId, personName) => setRoute({ name: "revocation", cardId, personId: route.id, personName })}
           onReverify={(cardId, personName) => setRoute({ name: "reverify", cardId, personId: route.id, personName })}
+          onEditDetails={(personName) => setRoute({ name: "cardDetails", personId: route.id, personName })}
+        />
+      );
+    case "cardDetails":
+      return (
+        <CardDetailsScreen
+          personId={route.personId}
+          personName={route.personName}
+          onClose={() => setRoute({ name: "person", id: route.personId })}
+          onSaved={() => setReloadKey((k) => k + 1)}
         />
       );
     case "wizard":

@@ -18,12 +18,14 @@ export function PersonScreen({
   onRegisterCard,
   onRevocationCheck,
   onReverify,
+  onEditDetails,
 }: {
   personId: string;
   onBack: () => void;
   onRegisterCard: (personName: string) => void;
   onRevocationCheck: (cardId: string, personName: string) => void;
   onReverify: (cardId: string, personName: string) => void;
+  onEditDetails: (personName: string) => void;
 }) {
   const session = useSession();
   const [person, setPerson] = useState<Person | null>(null);
@@ -146,6 +148,9 @@ export function PersonScreen({
             {cur.permittedAt && <Row k="許可年月日" v={cur.permittedAt} />}
             <Row k="在留期間満了日" v={cur.expiryDate ?? "—"} />
             <Row k="カードの有効期限" v={cur.cardValidUntil ?? "—"} />
+            {session.can("cards.write") && person.status === "active" && (
+              <Button label="保存済みの写真から読み取る・直す" kind="secondary" onPress={() => onEditDetails(person.name)} />
+            )}
           </Card>
         );
       })()}

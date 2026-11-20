@@ -3,7 +3,7 @@
  */
 import TextRecognition, { TextRecognitionScript } from "@react-native-ml-kit/text-recognition";
 import { extractCardNumberCandidates, frontFieldsFromOcr, latestAddressFromBackOcr, type FrontOcrFields, type OcrLine } from "@zairyu/shared";
-import { File } from "expo-file-system";
+import { File, Paths } from "expo-file-system";
 import { manipulateAsync, SaveFormat } from "expo-image-manipulator";
 
 export const toFileUrl = (path: string) => (path.startsWith("file://") ? path : `file://${path}`);
@@ -58,4 +58,19 @@ export async function compressForUpload(pathOrUrl: string): Promise<{ contentTyp
   deleteFile(r.uri);
   if (!r.base64) throw new Error("画像を変換できませんでした");
   return { contentType: "image/jpeg", data: r.base64 };
+}
+
+/**
+ * 保存済みの撮影画像(サーバーから受け取った base64)を端末内 OCR にかける。
+ * ML Kit はファイルから読むため一時ファイルに書き、読み取り後すぐに消す(カメラロールには保存しない)
+ */
+export async function recognizeSavedImage<T>(base64: string, recognize: (path: string) => Promise<T>): Promise<T> {
+  const file = new File(Paths.cache, `ocr-${Date.now()}-${Math.random().toString(36).slice(2)}.jpg`);
+  try {
+    file.create();
+    file.write(base64, { encoding: "base64" });
+    return await recognize(file.uri);
+  } finally {
+    deleteFile(file.uri);
+  }
 }

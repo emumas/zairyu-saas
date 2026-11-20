@@ -86,3 +86,21 @@ export const cardRegisterInput = z.object({
   deviceId: z.string().max(100).optional(),
 });
 export type CardRegisterInput = z.infer<typeof cardRegisterInput>;
+
+/**
+ * 登録済みカードの記載事項の修正(保存済みの撮影画像の端末内 OCR や目視で)。
+ * 送った項目だけ変える。IC の値(第2世代の券面記載事項、IC の裏面追記の住居地)は変えられない
+ */
+export const cardDetailsUpdateInput = z.object({
+  cardId: z.uuid(),
+  birthDate: dateString.nullable().optional(),
+  sex: z.enum(["M", "F"]).nullable().optional(),
+  nationality: z.string().trim().max(50).nullable().optional(),
+  address: addressInput.nullable().optional(),
+  addressSource: z.enum(["back_photo", "front_photo", "manual"]).optional(),
+  /** 旧様式のみ(IC に文字情報が無いため) */
+  statusOfResidence: z.string().trim().max(50).nullable().optional(),
+  expiryDate: dateString.nullable().optional(),
+  cardValidUntil: dateString.nullable().optional(),
+});
+export type CardDetailsUpdateInput = z.infer<typeof cardDetailsUpdateInput>;

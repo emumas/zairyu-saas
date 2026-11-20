@@ -127,7 +127,12 @@ export async function getCardWithSite(tx: Tx, cardId: string) {
       cardFormat: residenceCards.cardFormat,
       cardNumberEnc: residenceCards.cardNumberEnc,
       addressEnc: residenceCards.addressEnc,
+      addressSource: residenceCards.addressSource,
       addressWrittenAt: residenceCards.addressWrittenAt,
+      birthDate: residenceCards.birthDate,
+      sex: residenceCards.sex,
+      nationality: residenceCards.nationality,
+      statusOfResidence: residenceCards.statusOfResidence,
       expiryDate: residenceCards.expiryDate,
       cardValidUntil: residenceCards.cardValidUntil,
       isCurrent: residenceCards.isCurrent,
@@ -154,6 +159,12 @@ export type CardPatch = Partial<
     | "addressEnc"
     | "addressSource"
     | "addressWrittenAt"
+    | "birthDate"
+    | "sex"
+    | "nationality"
+    | "statusOfResidence"
+    | "expiryDate"
+    | "cardValidUntil"
   >
 >;
 
