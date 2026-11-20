@@ -22,6 +22,7 @@ import { compressForUpload, deleteFile, recognizeCardNumber } from "../photo";
 import { FORMAT_LABEL } from "../screens/format";
 import { Button, Card, Choice, color, Field, Message, Row, Screen } from "../ui/kit";
 import { CameraCapture } from "../ui/CameraCapture";
+import { CardImage } from "../ui/CardImage";
 
 type Photo = { contentType: "image/jpeg"; data: string };
 type Verify = Awaited<ReturnType<typeof api.cards.verifyIcRead.mutate>>;
@@ -292,6 +293,18 @@ export function CardWizard({ personId, personName, onClose, onDone }: { personId
               <Message text="IC を読み取っていません。券面を見て入力してください(IC 未検証として登録されます)。" tone="warn" />
             )}
           </Card>
+
+          {(front || (verify?.icImages.length ?? 0) > 0) && (
+            <Card>
+              <Text style={{ fontWeight: "700" }}>券面と IC の画像を見比べる</Text>
+              <Text style={{ color: color.sub }}>氏名・顔写真が実物のカードと一致しているか確認してください。</Text>
+              {front && <CardImage kind="front" contentType={front.contentType} data={front.data} />}
+              {verify?.icImages
+                .slice()
+                .sort((a, b) => (a.kind === "ic_face" ? 1 : 0) - (b.kind === "ic_face" ? 1 : 0))
+                .map((img) => <CardImage key={img.kind} kind={img.kind} contentType={img.contentType} data={img.data} />)}
+            </Card>
+          )}
 
           {manualNeeded && (
             <Card>

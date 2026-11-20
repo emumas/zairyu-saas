@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Text } from "react-native";
 import { api, messageOf } from "../api";
 import { useSession } from "../auth/session";
+import { CardImage, IMAGE_KIND_LABEL } from "../ui/CardImage";
 import { Button, Card, color, Message, Row, Screen } from "../ui/kit";
 import { bucketTone, FORMAT_LABEL, METHOD_LABEL, RESULT_LABEL } from "./format";
 
@@ -15,6 +16,21 @@ export function PersonScreen({ personId, onBack, onRegisterCard }: { personId: s
   const [person, setPerson] = useState<Person | null>(null);
   const [cards, setCards] = useState<Cards>([]);
   const [error, setError] = useState<string | null>(null);
+  /** 表示中の画像(画面を離れると破棄される) */
+  const [shown, setShown] = useState<Record<string, { kind: string; contentType: string; data: string }>>({});
+  const [loadingImage, setLoadingImage] = useState<string | null>(null);
+
+  async function showImage(id: string) {
+    setLoadingImage(id);
+    try {
+      const img = await api.cards.getImage.mutate({ imageId: id });
+      setShown((s) => ({ ...s, [id]: img }));
+    } catch (e) {
+      setError(messageOf(e));
+    } finally {
+      setLoadingImage(null);
+    }
+  }
 
   const load = useCallback(async () => {
     try {
@@ -64,6 +80,29 @@ export function PersonScreen({ personId, onBack, onRegisterCard }: { personId: s
           </>
         )}
       </Card>
+      {session.can("cards.viewImage") && cards.find((x) => x.isCurrent)?.images.length ? (
+        <Card>
+          <Text style={{ fontWeight: "700" }}>カード画像</Text>
+          <Text style={{ color: color.sub, fontSize: 13 }}>表示した記録が監査ログに残ります。</Text>
+          {cards
+            .find((x) => x.isCurrent)!
+            .images.slice()
+            .sort((a, b) => a.kind.localeCompare(b.kind))
+            .map((img) =>
+              shown[img.id] ? (
+                <CardImage key={img.id} {...shown[img.id]!} />
+              ) : (
+                <Button
+                  key={img.id}
+                  label={`${IMAGE_KIND_LABEL[img.kind] ?? img.kind}を表示`}
+                  kind="secondary"
+                  busy={loadingImage === img.id}
+                  onPress={() => void showImage(img.id)}
+                />
+              ),
+            )}
+        </Card>
+      ) : null}
       <Message text={error} />
       {session.can("cards.write") && person.status === "active" && (
         <Button label={c ? "新しいカードを登録" : "カードを登録"} onPress={() => onRegisterCard(person.name)} />

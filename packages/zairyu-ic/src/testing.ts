@@ -27,6 +27,8 @@ export interface FixtureOptions {
   items?: Partial<Record<"C5" | "C6" | "C9" | "CC" | "CD", string>>;
   /** 更新申請中(第2世代・特定は D8、旧様式は D7) */
   renewalApplying?: boolean;
+  /** 画像の中身(省略するとダミーのバイト列)。表示用の変換を試すときに本物の TIFF / JPEG2000 を入れる */
+  images?: { front?: Uint8Array; face?: Uint8Array; name?: Uint8Array };
 }
 
 export function buildCardFiles(o: FixtureOptions): Partial<Record<EfPath, Uint8Array>> {
@@ -37,8 +39,8 @@ export function buildCardFiles(o: FixtureOptions): Partial<Record<EfPath, Uint8A
 
   if (o.format === "legacy") {
     // 実カードの形: TLV の長さは実データ長、EF の残り(7004 / 3004 バイトまで)は 0x00
-    files["df1/ef01"] = padNulls(encodeTlv(0xd0, fill(5000, 1)), 7004);
-    files["df1/ef02"] = padNulls(encodeTlv(0xd1, fill(2800, 2)), 3004);
+    files["df1/ef01"] = padNulls(encodeTlv(0xd0, o.images?.front ?? fill(5000, 1)), 7004);
+    files["df1/ef02"] = padNulls(encodeTlv(0xd1, o.images?.face ?? fill(2800, 2)), 3004);
     files["df2/ef01"] = concatBytes(
       encodeTlv(0xd2, ascii("20240310")),
       encodeTlv(0xd3, ascii("131016")),
@@ -63,7 +65,10 @@ export function buildCardFiles(o: FixtureOptions): Partial<Record<EfPath, Uint8A
         ? [encodeTlv(0xca, ascii("01")), encodeTlv(0xcb, ascii("20260620")), encodeTlv(0xcc, ascii(o.items?.CC ?? "2")), encodeTlv(0xcd, ascii(o.items?.CD ?? "20290620"))]
         : []),
     );
-    files["df1/ef03"] = concatBytes(encodeTlv(0xd0, padNulls(fill(2000, 3), 2500)), encodeTlv(0xd1, padNulls(fill(2900, 4), 3000)));
+    files["df1/ef03"] = concatBytes(
+      encodeTlv(0xd0, padNulls(o.images?.name ?? fill(2000, 3), 2500)),
+      encodeTlv(0xd1, padNulls(o.images?.face ?? fill(2900, 4), 3000)),
+    );
     files["df1/ef04"] = encodeTlv(0xdfd1, padNulls(fill(1800, 5), 2500));
     if (residence) {
       files["df2/ef01"] = concatBytes(encodeTlv(0xd5, padNulls(ascii("1"), 7)), encodeTlv(0xd6, ascii("20290620")), encodeTlv(0xd7, ascii("0")));

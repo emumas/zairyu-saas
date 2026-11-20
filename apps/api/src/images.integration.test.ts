@@ -1,5 +1,6 @@
 /** カード画像の URL 発行と配信(実際の PostgreSQL)。TEST_DATABASE_URL が無ければスキップ */
 import { randomBytes } from "node:crypto";
+import sharp from "sharp";
 import { createDb, schema, withPlatform, withTenant, type Db } from "@zairyu/db";
 import { prepareTestDatabase } from "@zairyu/db/testing";
 import { encryptCardNumber, cardNumberHmac, LocalKeyProvider, MemoryBlobStore, putEncryptedBlob, TenantKeyring } from "@zairyu/vault";
@@ -25,7 +26,7 @@ describe.skipIf(!url)("カード画像の配信", () => {
   let clock = 1_900_000_000_000;
   let tenantId: string;
   let imageId: string;
-  const image = randomBytes(4000);
+  let image: Buffer;
   const users: Record<"admin" | "tokyo" | "osaka" | "viewer", string> = { admin: "", tokyo: "", osaka: "", viewer: "" };
 
   const config: Config = {
@@ -50,6 +51,7 @@ describe.skipIf(!url)("カード画像の配信", () => {
   const tokenOf = (u: string) => u.split("/files/images/")[1]!;
 
   beforeAll(async () => {
+    image = await sharp({ create: { width: 40, height: 25, channels: 3, background: "#cc3366" } }).jpeg().toBuffer();
     const c = createDb(await prepareTestDatabase(url!, "api_images"), { max: 4 });
     db = c.db;
     end = () => c.pool.end();

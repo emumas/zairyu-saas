@@ -13,6 +13,7 @@
     "dev:setup": "tsx --env-file-if-exists=.env src/scripts/devSetup.ts"
   },
   "dependencies": {
+    "@cornerstonejs/codec-openjpeg": "1.3.6",
     "@node-rs/argon2": "^2.2.2",
     "@trpc/server": "^11.29.5",
     "@zairyu/db": "workspace:*",
@@ -21,6 +22,7 @@
     "@zairyu/zairyu-ic": "workspace:*",
     "drizzle-orm": "^0.45.4",
     "jose": "6.2.15",
+    "sharp": "0.35.5",
     "zod": "^4.6.7"
   },
   "devDependencies": {

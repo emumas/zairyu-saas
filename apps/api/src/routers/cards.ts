@@ -25,7 +25,8 @@ import { z } from "zod";
 import { assertSiteAccess } from "../authz/guards.js";
 import type { Actor } from "../authz/permissions.js";
 import { diffFields, evaluateIc, judgeSignature, mergeFields } from "../cards/evaluate.js";
-import { issueImageUrl } from "../images.js";
+import { toDisplayImage } from "../imageConvert.js";
+import { getDisplayImage, issueImageUrl } from "../images.js";
 import { permissionProcedure, requireVault, router } from "../trpc.js";
 
 const notFound = () => new TRPCError({ code: "NOT_FOUND", message: "対象が見つかりません" });
@@ -83,12 +84,27 @@ export const cardsRouter = router({
         /** 保存される値(IC 優先、無い項目は入力) */
         fields: fieldsOutput,
         diffs: z.array(diffOutput),
+        /** IC 内の画像(表示用に変換済み)。撮影した券面と見比べる */
+        icImages: z.array(z.object({ kind: z.string(), contentType: z.string(), data: z.string() })),
       }),
     )
     .mutation(({ ctx, input }) =>
       ctx.tenantTx(async (tx) => {
         await loadActivePerson(tx, ctx.actor, input.personId);
         const ic = evaluateIc(input.ic);
+        // 住居地イメージは照合に使わないので返さない(通信量を抑える)
+        const icImages = await Promise.all(
+          ic.images
+            .filter((img) => img.kind !== "ic_address")
+            .map(async (img) => {
+              try {
+                const d = await toDisplayImage(img.contentType, img.data);
+                return [{ kind: img.kind, contentType: d.contentType, data: d.data.toString("base64") }];
+              } catch {
+                return [];
+              }
+            }),
+        );
         const judged = judgeSignature(ic.signature);
         await ctx.audit(tx, {
           action: "card.ic_verify",
@@ -104,6 +120,7 @@ export const cardsRouter = router({
           needsReview: judged.needsReview,
           fields: mergeFields(ic, input.manual),
           diffs: diffFields(ic, input.cardNumber, input.manual),
+          icImages: icImages.flat(),
         };
       }),
     ),
@@ -245,7 +262,13 @@ export const cardsRouter = router({
       }),
     ),
 
-  /** カード画像を見るための短命な URL。発行は監査ログに記録される */
+  /** カード画像を表示用に変換してデータで返す(アプリ向け)。閲覧は監査ログに記録される */
+  getImage: permissionProcedure("cards.viewImage")
+    .input(z.object({ imageId: z.uuid() }))
+    .output(z.object({ kind: z.string(), contentType: z.enum(["image/png", "image/jpeg"]), data: z.string(), width: z.number(), height: z.number() }))
+    .mutation(({ ctx, input }) => ctx.tenantTx((tx) => getDisplayImage(ctx.services, tx, ctx.actor, input.imageId, ctx.audit))),
+
+  /** カード画像を見るための短命な URL(Web 向け)。発行は監査ログに記録される */
   getImageUrl: permissionProcedure("cards.viewImage")
     .input(z.object({ imageId: z.uuid() }))
     .output(z.object({ url: z.string(), expiresIn: z.number() }))

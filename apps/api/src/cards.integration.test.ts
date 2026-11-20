@@ -6,6 +6,8 @@ import { decryptCardNumber, cardNumberHmac } from "@zairyu/vault";
 import { TRPCError } from "@trpc/server";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
+import sharp from "sharp";
 import { serveImage } from "./images.js";
 import { createHarness, type AppCaller, type Harness } from "./testHarness.js";
 
@@ -32,10 +34,15 @@ describe.skipIf(!url)("カード登録", () => {
     for (const [k, v] of Object.entries(files)) if (v) b64[k as EfPath] = toBase64(v);
     return { format: o.format, kind: o.kind, files: b64 };
   };
-  const photo = { contentType: "image/jpeg" as const, data: Buffer.from("fake-jpeg-front").toString("base64") };
+  const fixture = (name: string) => new Uint8Array(readFileSync(new URL(`../test-fixtures/${name}`, import.meta.url)));
+  const realImages = { front: fixture("g4.tif"), name: fixture("g4.tif"), face: fixture("face8.jp2") };
+  let photoJpeg: Buffer;
+  let photo: { contentType: "image/jpeg"; data: string };
   const newPerson = async (code: string, siteId = tokyo) => (await admin.persons.create({ siteId, employeeCode: code, name: code })).id;
 
   beforeAll(async () => {
+    photoJpeg = await sharp({ create: { width: 32, height: 20, channels: 3, background: "#3366cc" } }).jpeg().toBuffer();
+    photo = { contentType: "image/jpeg", data: photoJpeg.toString("base64") };
     h = await createHarness("api_cards");
     h.clock.now = Date.parse("2026-04-01T03:00:00Z");
     tenant = await h.createTenant("A社");
@@ -50,8 +57,10 @@ describe.skipIf(!url)("カード登録", () => {
 
   it("第2世代: 確認 → 登録。IC の値が保存され、署名検証済み・画像・確認履歴・監査ログが残る", async () => {
     const personId = await newPerson("G001");
-    const ic = icPayload({ format: "gen2", kind: "residence", signer: ec, renewalApplying: false });
+    const ic = icPayload({ format: "gen2", kind: "residence", signer: ec, renewalApplying: false, images: realImages });
     const v = await tokyoAdmin.cards.verifyIcRead({ personId, cardNumber: NUMBER, ic });
+    // IC 内の画像(氏名・顔)が表示用に変換されて返る
+    expect(v.icImages.map((i) => `${i.kind}:${i.contentType}`).sort()).toEqual(["ic_face:image/jpeg", "ic_name:image/png"]);
     expect(v).toMatchObject({ format: "gen2", icVerified: true, needsReview: false, diffs: [] });
     expect(v.signature).toMatchObject({ status: "valid", issuerTrusted: null });
     expect(v.fields).toMatchObject({ expiryDate: "2029-06-20", cardValidUntil: "2031-03-31", workRestriction: "2", statusOfResidence: "15" });
@@ -73,11 +82,19 @@ describe.skipIf(!url)("カード登録", () => {
     expect(await decryptCardNumber(h.services.vault!.keyring, tenant, row.cardNumberEnc)).toBe(NUMBER);
     expect(row.cardNumberHmac.equals(await cardNumberHmac(h.services.vault!.keyring, tenant, NUMBER))).toBe(true);
 
-    // 撮影画像を取り出せる
+    // 撮影画像を取り出せる(URL)
     const frontId = card!.images.find((i) => i.kind === "front")!.id;
     const { url: u } = await tokyoAdmin.cards.getImageUrl({ imageId: frontId });
     const served = await serveImage(h.services, u.split("/files/images/")[1]!);
-    expect(served.body.toString()).toBe("fake-jpeg-front");
+    expect(served.body.equals(photoJpeg)).toBe(true);
+    // IC の顔画像(JPEG2000)・氏名イメージ(TIFF)は表示用に変換してデータで返す
+    const faceId = card!.images.find((i) => i.kind === "ic_face")!.id;
+    const face = await tokyoAdmin.cards.getImage({ imageId: faceId });
+    expect(face).toMatchObject({ kind: "ic_face", contentType: "image/jpeg", width: 160, height: 200 });
+    const nameImg = await tokyoAdmin.cards.getImage({ imageId: card!.images.find((i) => i.kind === "ic_name")!.id });
+    expect(nameImg).toMatchObject({ contentType: "image/png", width: 600, height: 380 });
+    const viewLogs = await withTenant(h.db, tenant, (tx) => tx.select().from(schema.auditLogs).where(eq(schema.auditLogs.targetId, faceId)));
+    expect(viewLogs.map((l) => l.action)).toEqual(["card_image.view"]);
 
     const logs = await withTenant(h.db, tenant, (tx) => tx.select().from(schema.auditLogs).where(eq(schema.auditLogs.targetId, r.cardId)));
     expect(logs.map((l) => l.action)).toContain("card.register");
@@ -141,14 +158,12 @@ describe.skipIf(!url)("カード登録", () => {
     expect(p.expiry).toMatchObject({ bucket: "ok", deadlineBasis: "card", deadline: "2030-06-26" });
   });
 
-  it("旧様式: RSA 署名付きなら検証済み", async () => {
+  it("旧様式: RSA 署名付きなら検証済み。券面イメージ(TIFF)と顔画像(JPEG2000)を表示できる", async () => {
     const personId = await newPerson("L002");
-    const r = await tokyoAdmin.cards.register({
-      personId,
-      cardNumber: "AB00000005CD",
-      ic: icPayload({ format: "legacy", kind: "residence", signer: rsa }),
-      manual: { expiryDate: "2030-01-01" },
-    });
+    const ic = icPayload({ format: "legacy", kind: "residence", signer: rsa, images: { front: realImages.front, face: realImages.face } });
+    const v = await tokyoAdmin.cards.verifyIcRead({ personId, cardNumber: "AB00000005CD", ic });
+    expect(v.icImages.map((i) => i.kind).sort()).toEqual(["ic_face", "ic_front"]);
+    const r = await tokyoAdmin.cards.register({ personId, cardNumber: "AB00000005CD", ic, manual: { expiryDate: "2030-01-01" } });
     expect(r.icVerified).toBe(true);
   });
 
@@ -175,6 +190,11 @@ describe.skipIf(!url)("カード登録", () => {
     const b = await newPerson("D002");
     await tokyoAdmin.cards.register({ personId: a, cardNumber: "AB00000009CD", ic: null, icFailureReason: "other" });
     expect(await codeOf(tokyoAdmin.cards.register({ personId: b, cardNumber: "AB00000009CD", ic: null, icFailureReason: "other" }))).toBe("CONFLICT");
+  });
+
+  it("閲覧者はカード画像を見られない", async () => {
+    const [card] = await admin.cards.listForPerson({ personId: (await admin.persons.list({ q: "G001" })).items[0]!.id });
+    expect(await codeOf(viewer.cards.getImage({ imageId: card!.images[0]!.id }))).toBe("FORBIDDEN");
   });
 
   it("権限と拠点の範囲", async () => {
