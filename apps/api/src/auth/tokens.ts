@@ -10,16 +10,18 @@ import { jwtVerify, SignJWT } from "jose";
 const ISSUER = "zairyu-api";
 const AUDIENCE = "zairyu";
 
-export type TokenType = "access" | "totp_challenge" | "totp_setup";
+export type TokenType = "access" | "totp_challenge" | "totp_setup" | "image";
 
 export interface TokenClaims {
   userId: string;
   tenantId: string;
   type: TokenType;
+  /** 対象リソースの ID(image トークンの画像 ID 等) */
+  resource?: string;
 }
 
 export async function signToken(secret: Uint8Array, claims: TokenClaims, ttlSec: number, nowSec: number): Promise<string> {
-  return new SignJWT({ tid: claims.tenantId, typ: claims.type })
+  return new SignJWT({ tid: claims.tenantId, typ: claims.type, ...(claims.resource ? { res: claims.resource } : {}) })
     .setProtectedHeader({ alg: "HS256" })
     .setSubject(claims.userId)
     .setIssuer(ISSUER)
@@ -44,7 +46,12 @@ export async function verifyToken(
       currentDate: new Date(nowSec * 1000),
     });
     if (payload.typ !== expected || typeof payload.sub !== "string" || typeof payload.tid !== "string") return null;
-    return { userId: payload.sub, tenantId: payload.tid, type: expected };
+    return {
+      userId: payload.sub,
+      tenantId: payload.tid,
+      type: expected,
+      ...(typeof payload.res === "string" ? { resource: payload.res } : {}),
+    };
   } catch {
     return null;
   }

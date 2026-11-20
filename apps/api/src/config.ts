@@ -14,6 +14,8 @@ const schema = z.object({
   AUTH_SECRET_BOX_KEY: base64Key32,
   /** TOTP の発行者名(認証アプリに表示) */
   AUTH_TOTP_ISSUER: z.string().default("在留カード管理"),
+  /** 端末から見た API の URL(画像 URL の組み立てに使う) */
+  PUBLIC_BASE_URL: z.string().default("http://localhost:3000"),
 });
 
 export interface Config {
@@ -21,6 +23,9 @@ export interface Config {
   jwtSecret: Uint8Array;
   secretBoxKey: Buffer;
   totpIssuer: string;
+  publicBaseUrl: string;
+  /** 画像 URL の有効期間 */
+  imageUrlTtlSec: number;
   accessTokenTtlSec: number;
   refreshTokenTtlSec: number;
   purposeTokenTtlSec: number;
@@ -44,6 +49,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     jwtSecret: new TextEncoder().encode(e.AUTH_JWT_SECRET),
     secretBoxKey: Buffer.from(e.AUTH_SECRET_BOX_KEY, "base64"),
     totpIssuer: e.AUTH_TOTP_ISSUER,
+    publicBaseUrl: e.PUBLIC_BASE_URL.replace(/\/$/, ""),
+    imageUrlTtlSec: 120,
     accessTokenTtlSec: 15 * 60,
     refreshTokenTtlSec: 30 * 24 * 60 * 60,
     purposeTokenTtlSec: 5 * 60,

@@ -120,6 +120,35 @@ export const platformOperators = pgTable("platform_operators", {
   createdAt: createdAt(),
 });
 
+export const tenantKeyPurpose = pgEnum("tenant_key_purpose", ["data", "hmac"]);
+
+/**
+ * テナント別の鍵(エンベロープ暗号化)。鍵そのものは Key Vault の KEK で包んだ状態でだけ保存する。
+ * data: カード番号・画像の暗号化(ローテーション可。古い版も復号用に残す)
+ * hmac: カード番号の検索列(変えると検索列の作り直しが必要なため原則固定)
+ */
+export const tenantKeys = pgTable(
+  "tenant_keys",
+  {
+    tenantId: tenantId(),
+    purpose: tenantKeyPurpose("purpose").notNull(),
+    version: integer("version").notNull(),
+    /** 包んだ鍵(KEK の識別子とあわせて unwrap する) */
+    wrappedKey: bytea("wrapped_key").notNull(),
+    /** KEK の識別子(Key Vault の鍵 ID、ローカルなら local:<版>) */
+    kekId: text("kek_id").notNull(),
+    /** 新しい暗号化に使う版か(purpose ごとに 1 つ) */
+    active: boolean("active").notNull().default(true),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.tenantId, t.purpose, t.version] }),
+    uniqueIndex("tenant_keys_active_uq")
+      .on(t.tenantId, t.purpose)
+      .where(sql`${t.active}`),
+  ],
+);
+
 // ---------------------------------------------------------------- 組織
 
 export const sites = pgTable(

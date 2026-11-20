@@ -1,4 +1,5 @@
 import { withTenant, schema, type Db, type Tx } from "@zairyu/db";
+import type { Vault } from "@zairyu/vault";
 import { initTRPC, TRPCError } from "@trpc/server";
 import { and, eq } from "drizzle-orm";
 import type { AuthService } from "./auth/service.js";
@@ -14,6 +15,8 @@ export interface Services {
   now: () => number;
   /** 認証系の手続きの IP 単位レート制限 */
   authRateLimiter: RateLimiter;
+  /** テナント別の鍵とファイル保存先(未設定ならカード番号・画像を扱う API は使えない) */
+  vault: Vault | null;
 }
 
 /**
@@ -34,6 +37,11 @@ const t = initTRPC.context<Context>().create();
 export const router = t.router;
 export const publicProcedure = t.procedure;
 export const createCallerFactory = t.createCallerFactory;
+
+export function requireVault(services: Services): Vault {
+  if (!services.vault) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "暗号化の設定が不足しています" });
+  return services.vault;
+}
 
 export function requireServices(ctx: Context): Services {
   if (!ctx.services) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "サーバーの設定が不足しています" });

@@ -15,6 +15,7 @@
     "@trpc/server": "^11.29.5",
     "@zairyu/db": "workspace:*",
     "@zairyu/shared": "workspace:*",
+    "@zairyu/vault": "workspace:*",
     "@zairyu/zairyu-ic": "workspace:*",
     "drizzle-orm": "^0.45.4",
     "jose": "6.2.15",

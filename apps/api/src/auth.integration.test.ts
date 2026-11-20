@@ -40,6 +40,8 @@ describe.skipIf(!url)("認証と権限(結合)", () => {
     purposeTokenTtlSec: 300,
     maxFailedLogins: 10,
     lockoutSec: 900,
+    publicBaseUrl: "https://api.example.com",
+    imageUrlTtlSec: 120,
   };
 
   const caller = (accessToken: string | null = null) => {
@@ -81,6 +83,7 @@ describe.skipIf(!url)("認証と権限(結合)", () => {
       now,
       auth: new AuthService(db, config, createLocalSecretBox(config.secretBoxKey), now),
       authRateLimiter: new RateLimiter(1000, 60_000, now),
+      vault: null,
     };
     [tenantId, otherTenantId] = await withPlatform(db, async (tx) => {
       const rows = await tx.insert(schema.tenants).values([{ name: "A社", status: "active" }, { name: "B社", status: "active" }]).returning();
