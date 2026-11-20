@@ -7,9 +7,7 @@
 import {
   countActiveTenantAdmins,
   createSite,
-  enqueueNotifications,
   getUser,
-  insertInvitation,
   insertInvitedUser,
   listSites,
   listUsers,
@@ -19,12 +17,12 @@ import {
   updateUser,
   type Tx,
 } from "@zairyu/db";
-import { inviteNotice, inviteUserInput, jstDate, siteNameInput, USER_ROLES } from "@zairyu/shared";
+import { inviteUserInput, siteNameInput, USER_ROLES } from "@zairyu/shared";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
-import { hashRefreshToken, newRefreshToken } from "../auth/tokens.js";
 import type { Actor } from "../authz/permissions.js";
-import { permissionProcedure, router, type Services } from "../trpc.js";
+import { issueInvitation } from "../invitations.js";
+import { permissionProcedure, router } from "../trpc.js";
 
 const p = permissionProcedure("org.manage");
 const notFound = () => new TRPCError({ code: "NOT_FOUND", message: "対象が見つかりません" });
@@ -47,15 +45,6 @@ function assertNotSelf(actor: Actor, userId: string) {
   if (actor.userId === userId) throw new TRPCError({ code: "BAD_REQUEST", message: "自分自身には実行できません" });
 }
 
-async function issueInvitation(services: Services, tx: Tx, actor: Actor, userId: string, email: string) {
-  const token = newRefreshToken(actor.tenantId);
-  const expiresAt = new Date(services.now() + services.config.invitationTtlSec * 1000);
-  await insertInvitation(tx, { userId, tokenHash: hashRefreshToken(token), expiresAt, createdBy: actor.userId });
-  // トークンは URL のフラグメントに入れる(サーバーのログやリファラーに残さない)
-  const inviteUrl = `${services.config.webBaseUrl}/invite#${token}`;
-  await enqueueNotifications(tx, [userId], inviteNotice(inviteUrl, jstDate(expiresAt.getTime())), new Date(services.now()), ["email"]);
-  return { inviteUrl, expiresAt, email };
-}
 
 const userOutput = z.object({
   id: z.string(),
@@ -123,7 +112,7 @@ export const orgRouter = router({
             throw e;
           }
           await setUserSites(tx, userId, siteIds);
-          const inv = await issueInvitation(ctx.services, tx, ctx.actor, userId, input.email);
+          const inv = await issueInvitation(ctx.services, tx, { tenantId: ctx.actor.tenantId, userId, email: input.email, createdBy: ctx.actor.userId });
           await ctx.audit(tx, { action: "user.invite", targetType: "user", targetId: userId, detail: { role: input.role } });
           return { userId, inviteUrl: inv.inviteUrl, expiresAt: inv.expiresAt };
         }),
@@ -138,7 +127,7 @@ export const orgRouter = router({
           const u = await getUser(tx, input.userId);
           if (!u) throw notFound();
           if (u.status !== "invited") throw new TRPCError({ code: "BAD_REQUEST", message: "招待中のユーザーだけ再招待できます" });
-          const inv = await issueInvitation(ctx.services, tx, ctx.actor, u.id, u.email);
+          const inv = await issueInvitation(ctx.services, tx, { tenantId: ctx.actor.tenantId, userId: u.id, email: u.email, createdBy: ctx.actor.userId });
           await ctx.audit(tx, { action: "user.reinvite", targetType: "user", targetId: u.id });
           return { inviteUrl: inv.inviteUrl, expiresAt: inv.expiresAt };
         }),

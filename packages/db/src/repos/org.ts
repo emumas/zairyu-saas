@@ -71,7 +71,7 @@ export async function revokeUserTokens(tx: Tx, userId: string, at: Date): Promis
   await tx.update(refreshTokens).set({ revokedAt: at }).where(and(eq(refreshTokens.userId, userId), isNull(refreshTokens.revokedAt)));
 }
 
-export async function insertInvitation(tx: Tx, v: { userId: string; tokenHash: Buffer; expiresAt: Date; createdBy: string }): Promise<void> {
+export async function insertInvitation(tx: Tx, v: { userId: string; tokenHash: Buffer; expiresAt: Date; createdBy: string | null }): Promise<void> {
   // 以前の未使用の招待は使えなくする
   await tx.update(userInvitations).set({ usedAt: v.expiresAt }).where(and(eq(userInvitations.userId, v.userId), isNull(userInvitations.usedAt)));
   await tx.insert(userInvitations).values(v);

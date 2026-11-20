@@ -7,7 +7,7 @@ import { eq, sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createDb, lookupUserForLogin, withPlatform, withPurge, withTenant, type Db } from "../src/client.js";
 import { prepareTestDatabase } from "../src/testing.js";
-import { auditLogs, persons, residenceCards, sites, tenants, users, verifications } from "../src/schema.js";
+import { auditLogs, persons, platformAuditLogs, residenceCards, sites, tenants, users, verifications } from "../src/schema.js";
 
 const url = process.env.TEST_DATABASE_URL;
 
@@ -177,6 +177,14 @@ describe.skipIf(!url)("DB セキュリティ", () => {
       expect(await pgCode(withPlatform(db, (tx) => tx.select().from(persons)))).toBe("42501");
       expect(await pgCode(withPlatform(db, (tx) => tx.select().from(residenceCards)))).toBe("42501");
       expect(await pgCode(withPlatform(db, (tx) => tx.select().from(verifications)))).toBe("42501");
+    });
+
+    it("運営者の操作記録は追記専用", async () => {
+      await withPlatform(db, (tx) => tx.insert(platformAuditLogs).values({ action: "plan.create" }));
+      expect(await pgCode(withPlatform(db, (tx) => tx.update(platformAuditLogs).set({ action: "x" })))).toBe("42501");
+      expect(await pgCode(withPlatform(db, (tx) => tx.delete(platformAuditLogs)))).toBe("42501");
+      expect(await pgCode(db.delete(platformAuditLogs))).toBe("42501");
+      expect(await pgCode(withTenant(db, tenantA, (tx) => tx.select().from(platformAuditLogs)))).toBe("42501");
     });
 
     it("ユーザーのパスワードハッシュは読めない", async () => {

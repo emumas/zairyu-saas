@@ -1,7 +1,9 @@
-import { insertAudit, withTenant, schema, type AuditEntry, type Db, type Tx } from "@zairyu/db";
+import { insertAudit, withPlatform, withTenant, schema, type AuditEntry, type Db, type Tx } from "@zairyu/db";
 import type { Vault } from "@zairyu/vault";
 import { initTRPC, TRPCError } from "@trpc/server";
 import { and, eq } from "drizzle-orm";
+import { PlatformAuthService } from "./auth/platformAuth.js";
+import { createLocalSecretBox } from "./auth/secretBox.js";
 import type { AuthService } from "./auth/service.js";
 import { verifyToken } from "./auth/tokens.js";
 import { can, type Actor, type Permission } from "./authz/permissions.js";
@@ -128,4 +130,48 @@ export function permissionProcedure(permission: Permission) {
     }
     return next();
   });
+}
+
+// ---------------------------------------------------------------- 運営者(1-19)
+
+/** 運営者のセッションの Cookie(Web 管理画面の運営者コンソールだけが使う) */
+export const PLATFORM_SESSION_COOKIE = "zr_op";
+
+/**
+ * 運営者の手続き。セッションは Cookie(x-zairyu-client: web のリクエストだけ読む)。
+ * DB には zairyu_platform ロールでアクセスし、登録者・カード・確認履歴には権限がない(個人情報を見ない)
+ */
+export const platformProcedure = t.procedure.use(async ({ ctx, next, type, path }) => {
+  const services = requireServices(ctx);
+  const token = ctx.web?.cookies[PLATFORM_SESSION_COOKIE];
+  if (!token) throw unauthorized();
+  const operator = await platformAuthOf(services).authenticate(token);
+  if (!operator) throw unauthorized();
+  let auditCount = 0;
+  return next({
+    ctx: {
+      ...ctx,
+      services,
+      operator,
+      /** 運営者の操作を記録する(追記専用。値は入れない) */
+      platformAudit: async (tx: Tx, e: { action: string; targetType?: string; targetId?: string; detail?: Record<string, unknown> }) => {
+        await tx.insert(schema.platformAuditLogs).values({ operatorId: operator.id, ip: ctx.ip, ...e });
+        auditCount++;
+      },
+      /** 運営者のトランザクション。mutation で記録を書かずに終わろうとしたらロールバックする */
+      platformTx: <T>(fn: (tx: Tx) => Promise<T>) =>
+        withPlatform(services.db, async (tx) => {
+          const before = auditCount;
+          const result = await fn(tx);
+          if (type === "mutation" && auditCount === before) {
+            throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: `操作の記録がありません(${path})` });
+          }
+          return result;
+        }),
+    },
+  });
+});
+
+export function platformAuthOf(services: Services): PlatformAuthService {
+  return new PlatformAuthService(services.db, services.config, createLocalSecretBox(services.config.secretBoxKey), services.now);
 }

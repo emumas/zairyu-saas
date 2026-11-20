@@ -10,7 +10,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "dev:init-env": "tsx src/scripts/initEnv.ts",
-    "dev:setup": "tsx --env-file-if-exists=.env src/scripts/devSetup.ts"
+    "dev:setup": "tsx --env-file-if-exists=.env src/scripts/devSetup.ts",
+    "platform:create-operator": "tsx --env-file-if-exists=.env src/scripts/createOperator.ts"
   },
   "dependencies": {
     "@cornerstonejs/codec-openjpeg": "1.3.6",

@@ -78,6 +78,20 @@
       "when": 1795159619735,
       "tag": "0010_invitations_security",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1795162954375,
+      "tag": "0011_platform",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1795162954962,
+      "tag": "0012_platform_security",
+      "breakpoints": true
     }
   ]
 }

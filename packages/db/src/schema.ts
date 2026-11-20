@@ -121,8 +121,30 @@ export const platformOperators = pgTable("platform_operators", {
   email: text("email").notNull().unique(),
   passwordHash: text("password_hash").notNull(),
   totpSecretEnc: bytea("totp_secret_enc"),
+  /** 最後に受け付けた TOTP のタイムステップ(同じコードの再利用を防ぐ) */
+  totpLastStep: bigint("totp_last_step", { mode: "number" }),
+  failedLoginCount: integer("failed_login_count").notNull().default(0),
+  lockedUntil: timestamp("locked_until", { withTimezone: true }),
+  disabledAt: timestamp("disabled_at", { withTimezone: true }),
   createdAt: createdAt(),
 });
+
+/** 運営者の操作の記録(追記専用。テナントに属さない操作: プランの変更など) */
+export const platformAuditLogs = pgTable(
+  "platform_audit_logs",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    operatorId: uuid("operator_id"),
+    action: text("action").notNull(),
+    targetType: text("target_type"),
+    targetId: text("target_id"),
+    /** 変更した項目名など */
+    detail: jsonb("detail"),
+    ip: inet("ip"),
+    at: timestamp("at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("platform_audit_logs_at_idx").on(t.at)],
+);
 
 export const tenantKeyPurpose = pgEnum("tenant_key_purpose", ["data", "hmac"]);
 

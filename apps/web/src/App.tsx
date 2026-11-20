@@ -10,6 +10,7 @@ import { PersonsPage } from "./pages/PersonsPage";
 import { ReportsPage } from "./pages/ReportsPage";
 import { SitesPage } from "./pages/SitesPage";
 import { UsersPage } from "./pages/UsersPage";
+import { PlatformApp } from "./platform/PlatformApp";
 import { SessionProvider, useSession } from "./session";
 import { USER_ROLE_LABEL } from "@zairyu/shared";
 
@@ -69,6 +70,8 @@ export function App() {
       <Routes>
         {/* 招待リンクはログイン前に開く */}
         <Route path="/invite" element={<InvitePage />} />
+        {/* 運営者コンソール(テナントとは別のログイン) */}
+        <Route path="/platform/*" element={<PlatformApp />} />
         <Route
           path="*"
           element={

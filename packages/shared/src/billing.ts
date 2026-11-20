@@ -103,3 +103,40 @@ export function isLastDayOfMonth(date: string): boolean {
   d.setUTCDate(d.getUTCDate() + 1);
   return d.getUTCDate() === 1;
 }
+
+// ---------------------------------------------------------------- 運営者コンソール(1-19)
+
+/** プランの入力。基本料+単価なら unitPrice、段階制なら tiers が必須 */
+export const planInput = z
+  .object({
+    name: z.string().trim().min(1, "プラン名を入力してください").max(100),
+    baseFee: yen,
+    billingMode: z.enum(["per_unit", "tiered"]),
+    unitPrice: yen.nullable(),
+    tiers: pricingTiersSchema.nullable(),
+  })
+  .refine((p) => (p.billingMode === "per_unit" ? p.unitPrice !== null : p.tiers !== null), {
+    message: "基本料+単価は単価を、段階制は人数帯を入力してください",
+  });
+export type PlanInput = z.infer<typeof planInput>;
+
+/** 個別単価の入力。null の項目はプランの値を使う。単価と人数帯の両方は指定できない */
+export const priceOverrideInput = z
+  .object({
+    /** 指定すると、そのプランのときだけ効く */
+    planId: z.uuid().nullable(),
+    baseFee: yen.nullable(),
+    unitPrice: yen.nullable(),
+    tiers: pricingTiersSchema.nullable(),
+  })
+  .refine((o) => !(o.unitPrice !== null && o.tiers !== null), { message: "単価と人数帯はどちらか一方にしてください" })
+  .refine((o) => o.baseFee !== null || o.unitPrice !== null || o.tiers !== null, { message: "上書きする項目を 1 つ以上入力してください" });
+export type PriceOverrideInput = z.infer<typeof priceOverrideInput>;
+
+export const TENANT_STATUSES = ["trial", "active", "past_due", "suspended"] as const;
+export const TENANT_STATUS_LABEL: Record<(typeof TENANT_STATUSES)[number], string> = {
+  trial: "トライアル",
+  active: "契約中",
+  past_due: "未払い",
+  suspended: "停止",
+};

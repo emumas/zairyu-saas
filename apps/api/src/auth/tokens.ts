@@ -70,3 +70,34 @@ export function parseRefreshToken(token: string): { tenantId: string; hash: Buff
 export function hashRefreshToken(token: string): Buffer {
   return createHash("sha256").update(token).digest();
 }
+
+// ---------------------------------------------------------------- 運営者(1-19)
+// テナントのトークンと取り違えないよう、audience を分ける(テナントのトークンは運営者の API で通らず、その逆も通らない)
+const PLATFORM_AUDIENCE = "zairyu-platform";
+export type PlatformTokenType = "op_challenge" | "op_session";
+
+export async function signPlatformToken(secret: Uint8Array, operatorId: string, type: PlatformTokenType, ttlSec: number, nowSec: number): Promise<string> {
+  return new SignJWT({ typ: type })
+    .setProtectedHeader({ alg: "HS256" })
+    .setSubject(operatorId)
+    .setIssuer(ISSUER)
+    .setAudience(PLATFORM_AUDIENCE)
+    .setIssuedAt(nowSec)
+    .setExpirationTime(nowSec + ttlSec)
+    .sign(secret);
+}
+
+/** 検証できれば運営者 ID、できなければ null */
+export async function verifyPlatformToken(secret: Uint8Array, token: string, expected: PlatformTokenType, nowSec: number): Promise<string | null> {
+  try {
+    const { payload } = await jwtVerify(token, secret, {
+      issuer: ISSUER,
+      audience: PLATFORM_AUDIENCE,
+      algorithms: ["HS256"],
+      currentDate: new Date(nowSec * 1000),
+    });
+    return payload.typ === expected && typeof payload.sub === "string" ? payload.sub : null;
+  } catch {
+    return null;
+  }
+}
