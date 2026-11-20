@@ -30,6 +30,8 @@ export interface Config {
   webBaseUrl: string;
   /** 招待リンクの有効期間 */
   invitationTtlSec: number;
+  /** パスワード再設定リンクの有効期間 */
+  passwordResetTtlSec: number;
   /** 画像 URL の有効期間 */
   imageUrlTtlSec: number;
   accessTokenTtlSec: number;
@@ -60,6 +62,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     publicBaseUrl: e.PUBLIC_BASE_URL.replace(/\/$/, ""),
     webBaseUrl: e.WEB_BASE_URL.replace(/\/$/, ""),
     invitationTtlSec: 72 * 60 * 60,
+    passwordResetTtlSec: 60 * 60,
     imageUrlTtlSec: 120,
     accessTokenTtlSec: 15 * 60,
     refreshTokenTtlSec: 30 * 24 * 60 * 60,

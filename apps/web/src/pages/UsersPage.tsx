@@ -30,7 +30,7 @@ export function UsersPage() {
   const [sites, setSites] = useState<Site[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [invite, setInvite] = useState<{ email: string; role: Role; siteIds: string[] }>({ email: "", role: "site_admin", siteIds: [] });
-  const [issued, setIssued] = useState<{ email: string; url: string; expiresAt: string } | null>(null);
+  const [issued, setIssued] = useState<{ email: string; url: string; expiresAt: string; kind?: "invite" | "reset" } | null>(null);
   const [editing, setEditing] = useState<{ id: string; role: Role; siteIds: string[] } | null>(null);
 
   const load = useCallback(async () => {
@@ -94,7 +94,7 @@ export function UsersPage() {
         {issued && (
           <div className="notice">
             <p>
-              {issued.email} に招待メールを送ります。メールが届かない場合は、次のリンクを本人に安全な方法で伝えてください({fmtDateTime(issued.expiresAt)} まで有効)。
+              {issued.email} に{issued.kind === "reset" ? "パスワード再設定" : "招待"}のメールを送ります。メールが届かない場合は、次のリンクを本人に安全な方法で伝えてください({fmtDateTime(issued.expiresAt)} まで有効)。
             </p>
             <code className="break">{issued.url}</code>
             <Button kind="secondary" onClick={() => void navigator.clipboard.writeText(issued.url)}>
@@ -188,6 +188,30 @@ export function UsersPage() {
                           }
                         >
                           再招待
+                        </Button>
+                      )}
+                      {u.status === "active" && (
+                        <Button
+                          kind="secondary"
+                          onClick={() =>
+                            void act(async () => {
+                              const r = await api.org.users.issuePasswordReset.mutate({ userId: u.id });
+                              setIssued({ email: u.email, url: r.url, expiresAt: r.expiresAt as unknown as string, kind: "reset" });
+                            })
+                          }
+                        >
+                          パスワード再設定
+                        </Button>
+                      )}
+                      {!self && u.totpEnabled && (
+                        <Button
+                          kind="secondary"
+                          onClick={() => {
+                            if (!window.confirm(`${u.email} の認証アプリの設定をリセットしますか?スマホをなくした場合などに使います。本人は次のログインで認証アプリを設定し直します(ログイン中の端末はログアウトされます)。本人からの依頼であることを確かめてから行ってください。`)) return;
+                            void act(() => api.org.users.resetTotp.mutate({ userId: u.id }));
+                          }}
+                        >
+                          認証アプリをリセット
                         </Button>
                       )}
                       {!self && u.status !== "invited" && (

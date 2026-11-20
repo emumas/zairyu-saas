@@ -1,7 +1,7 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { PASSWORD_MAX_LENGTH } from "../auth/password.js";
-import { publicProcedure, requireServices, router, type Context } from "../trpc.js";
+import { authedProcedure, publicProcedure, requireServices, router, type Context } from "../trpc.js";
 
 function limit(ctx: Context) {
   if (!requireServices(ctx).authRateLimiter.take(ctx.ip ?? "unknown")) {
@@ -88,6 +88,57 @@ export const authRouter = router({
     .mutation(({ ctx, input }) => {
       limit(ctx);
       return requireServices(ctx).auth.acceptInvitation(input.token, input.password, meta(ctx));
+    }),
+
+  /**
+   * パスワードを忘れた場合: 再設定のリンクをメールで送る。
+   * 登録の有無が分からないよう、いつも同じ応答を返す
+   */
+  requestPasswordReset: publicProcedure
+    .input(z.object({ email: z.string().trim().max(254) }))
+    .output(z.object({ ok: z.literal(true) }))
+    .mutation(async ({ ctx, input }) => {
+      limit(ctx);
+      await requireServices(ctx).auth.requestPasswordReset(input.email, meta(ctx));
+      return { ok: true as const };
+    }),
+
+  /** 再設定のリンクから新しいパスワードを設定する */
+  resetPassword: publicProcedure
+    .input(z.object({ token: z.string().max(200), password: z.string().max(PASSWORD_MAX_LENGTH) }))
+    .output(z.object({ email: z.string() }))
+    .mutation(({ ctx, input }) => {
+      limit(ctx);
+      return requireServices(ctx).auth.resetPassword(input.token, input.password, meta(ctx));
+    }),
+
+  /** ログイン中のパスワード変更。ほかの端末はログアウトされ、この端末には新しいトークンを返す */
+  changePassword: authedProcedure
+    .input(z.object({ currentPassword: z.string().max(PASSWORD_MAX_LENGTH), newPassword: z.string().max(PASSWORD_MAX_LENGTH) }))
+    .output(tokenPair)
+    .mutation(async ({ ctx, input }) => {
+      limit(ctx);
+      const pair = await ctx.services.auth.changePassword(ctx.actor.userId, ctx.actor.tenantId, input.currentPassword, input.newPassword, meta(ctx));
+      return deliver(ctx, pair);
+    }),
+
+  /** 認証アプリの付け替え(今の認証アプリが手元にある場合)の 1 段目 */
+  beginTotpChange: authedProcedure
+    .input(z.object({ password: z.string().max(PASSWORD_MAX_LENGTH), code: z.string().max(10) }))
+    .output(z.object({ secret: z.string(), otpauthUri: z.string(), changeToken: z.string() }))
+    .mutation(({ ctx, input }) => {
+      limit(ctx);
+      return ctx.services.auth.beginTotpChange(ctx.actor.userId, ctx.actor.tenantId, input.password, input.code, meta(ctx));
+    }),
+
+  /** 付け替えの 2 段目(新しい認証アプリの 6 桁) */
+  confirmTotpChange: authedProcedure
+    .input(z.object({ changeToken: z.string().max(4000), code: z.string().regex(/^\d{6}$/, "6 桁の数字を入力してください") }))
+    .output(z.object({ ok: z.literal(true) }))
+    .mutation(async ({ ctx, input }) => {
+      limit(ctx);
+      await ctx.services.auth.confirmTotpChange(ctx.actor.userId, ctx.actor.tenantId, input.changeToken, input.code, meta(ctx));
+      return { ok: true as const };
     }),
 
   /** Web は refreshToken を省略し、Cookie のものを使う */

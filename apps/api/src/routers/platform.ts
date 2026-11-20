@@ -228,6 +228,24 @@ export const platformRouter = router({
         return { inviteUrl: inv.inviteUrl, expiresAt: inv.expiresAt };
       }),
 
+    /**
+     * テナント管理者の認証アプリをリセットする(唯一のテナント管理者がスマホをなくした場合)。
+     * 運営者は電話などで本人確認をしてから行う。テナントの監査ログにも残す
+     */
+    resetAdminTotp: platformProcedure
+      .input(z.object({ tenantId: z.uuid(), email }))
+      .output(z.object({ ok: z.boolean() }))
+      .mutation(async ({ ctx, input }) => {
+        await withTenant(ctx.services.db, input.tenantId, async (tx) => {
+          const [u] = await tx.select().from(schema.users).where(eq(schema.users.email, input.email));
+          if (!u || u.role !== "tenant_admin") throw new TRPCError({ code: "NOT_FOUND", message: "このテナントのテナント管理者に、そのメールアドレスの人はいません" });
+          await ctx.services.auth.resetTotp(tx, u.id);
+          await insertAudit(tx, { actorId: null, action: "user.totp_reset", targetType: "user", targetId: u.id, detail: { by: "platform", operatorId: ctx.operator.id }, ip: ctx.ip });
+        });
+        await ctx.platformTx((tx) => ctx.platformAudit(tx, { action: "tenant.reset_admin_totp", targetType: "tenant", targetId: input.tenantId }));
+        return { ok: true };
+      }),
+
     /** 個別単価。null の項目はプランの値。clear で上書きをやめる */
     setPriceOverride: platformProcedure
       .input(z.object({ tenantId: z.uuid(), override: priceOverrideInput.nullable() }))

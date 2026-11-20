@@ -183,6 +183,14 @@ describe.skipIf(!url)("運営者コンソール", () => {
       expect((await ops.platform.tenants.get({ id: tenantId })).override).toBeNull();
     });
 
+    it("唯一のテナント管理者の認証アプリを運営者がリセットできる(テナント管理者以外は対象外)", async () => {
+      expect(await ops.platform.tenants.resetAdminTotp({ tenantId, email: "admin@corp.example" })).toEqual({ ok: true });
+      expect(await codeOf(ops.platform.tenants.resetAdminTotp({ tenantId, email: "nobody@corp.example" }))).toBe("NOT_FOUND");
+      const logs = await withTenant(h.db, tenantId, (tx) => tx.select().from(schema.auditLogs).where(eq(schema.auditLogs.action, "user.totp_reset")));
+      expect(logs[0]?.detail).toMatchObject({ by: "platform", operatorId });
+      expect((await audits()).some((a) => a.action === "tenant.reset_admin_totp")).toBe(true);
+    });
+
     it("テナント管理者の再招待", async () => {
       const r = await ops.platform.tenants.inviteAdmin({ tenantId, email: "second@corp.example" });
       expect(r.inviteUrl).toContain("/invite#");

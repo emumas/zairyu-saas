@@ -1,5 +1,6 @@
 import QRCode from "qrcode";
 import { useEffect, useState, type FormEvent } from "react";
+import { Link } from "react-router";
 import { messageOf } from "../api";
 import { useSession, type LoginStep } from "../session";
 import { Button, Card, Field, Message } from "../ui";
@@ -58,6 +59,7 @@ export function LoginPage() {
             <Button type="submit" busy={busy}>
               ログイン
             </Button>
+            <Link to="/forgot-password">パスワードを忘れた場合</Link>
           </form>
         )}
         {step?.kind === "totp" && (

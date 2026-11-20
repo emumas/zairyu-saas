@@ -12,11 +12,22 @@ import { randomUUID } from "node:crypto";
 import { and, eq, isNull } from "drizzle-orm";
 import type { Config } from "../config.js";
 import type { Role } from "../authz/permissions.js";
-import { findInvitation, markInvitationUsed, updateUser } from "@zairyu/db";
+import {
+  countRecentPasswordResets,
+  enqueueNotifications,
+  findInvitation,
+  findPasswordReset,
+  insertPasswordReset,
+  markInvitationUsed,
+  markPasswordResetUsed,
+  revokeUserTokens,
+  updateUser,
+} from "@zairyu/db";
+import { passwordResetNotice, securityNotice } from "@zairyu/shared";
 import { hashPassword, PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH, verifyPassword } from "./password.js";
 import type { SecretBox } from "./secretBox.js";
 import { generateTotpSecret, otpauthUri, base32Encode, verifyTotp } from "./totp.js";
-import { newRefreshToken, parseRefreshToken, signToken, verifyToken } from "./tokens.js";
+import { hashRefreshToken, newRefreshToken, parseRefreshToken, signToken, verifyToken } from "./tokens.js";
 
 const { users, tenants, refreshTokens, auditLogs } = schema;
 
@@ -205,9 +216,7 @@ export class AuthService {
    * 管理者ロールは、このあと通常のログインで確認コード(TOTP)を設定する
    */
   async acceptInvitation(token: string, password: string, meta: RequestMeta): Promise<{ email: string }> {
-    if (password.length < PASSWORD_MIN_LENGTH || password.length > PASSWORD_MAX_LENGTH) {
-      throw new TRPCError({ code: "BAD_REQUEST", message: `パスワードは ${PASSWORD_MIN_LENGTH} 文字以上にしてください` });
-    }
+    assertPasswordLength(password);
     const invalid = () => new TRPCError({ code: "BAD_REQUEST", message: "招待リンクが無効か、有効期限が切れています。管理者に再招待を依頼してください" });
     const parsed = parseRefreshToken(token);
     if (!parsed) throw invalid();
@@ -222,6 +231,140 @@ export class AuthService {
       await this.audit(tx, user.id, "auth.invitation_accepted", meta);
       return { email: user.email };
     });
+  }
+
+  // ---------------------------------------------------------------- パスワード再設定・変更、認証アプリの付け替え・リセット
+
+  /**
+   * パスワード再設定のリンクをメールで送る(本人の申請)。
+   * 登録の有無が分からないよう、結果はいつも同じ(呼び出し側は何も返さない)。同じ人への発行は 1 時間に 3 回まで
+   */
+  async requestPasswordReset(emailInput: string, meta: RequestMeta): Promise<void> {
+    const found = await lookupUserForLogin(this.db, emailInput.trim().toLowerCase());
+    if (!found) return;
+    await withTenant(this.db, found.tenant_id, async (tx) => {
+      const user = await this.loadUser(tx, found.id);
+      if (!user || user.status !== "active" || user.tenantStatus === "suspended") return;
+      if ((await countRecentPasswordResets(tx, user.id, new Date(this.now() - 3600_000))) >= 3) return;
+      await this.issuePasswordReset(tx, found.tenant_id, user.id, null);
+      await this.audit(tx, user.id, "auth.password_reset_requested", meta);
+    });
+  }
+
+  /** 再設定のリンクを発行してメールを積む(管理者の発行でも使う)。リンクを返す */
+  async issuePasswordReset(tx: Tx, tenantId: string, userId: string, createdBy: string | null): Promise<{ url: string; expiresAt: Date }> {
+    const token = newRefreshToken(tenantId);
+    const expiresAt = new Date(this.now() + this.config.passwordResetTtlSec * 1000);
+    await insertPasswordReset(tx, { userId, tokenHash: hashRefreshToken(token), expiresAt, createdBy }, new Date(this.now()));
+    // トークンは URL のフラグメントに入れる(サーバーのログやリファラーに残さない)
+    const url = `${this.config.webBaseUrl}/reset-password#${token}`;
+    const until = new Date(expiresAt.getTime() + 9 * 3600_000).toISOString().slice(0, 16).replace("T", " ");
+    await enqueueNotifications(tx, [userId], passwordResetNotice(url, until), new Date(this.now()), ["email"]);
+    return { url, expiresAt };
+  }
+
+  /**
+   * リンクから新しいパスワードを設定する。全端末のログインを失効させ、ロックも解く。
+   * 認証アプリ(TOTP)はそのまま必要(パスワードの再設定で二要素を外さない)
+   */
+  async resetPassword(token: string, password: string, meta: RequestMeta): Promise<{ email: string }> {
+    assertPasswordLength(password);
+    const invalid = () => new TRPCError({ code: "BAD_REQUEST", message: "リンクが無効か、有効期限が切れています。もう一度、再設定の手続きをしてください" });
+    const parsed = parseRefreshToken(token);
+    if (!parsed) throw invalid();
+    const passwordHash = await hashPassword(password);
+    return withTenant(this.db, parsed.tenantId, async (tx) => {
+      const r = await findPasswordReset(tx, parsed.hash);
+      if (!r || r.usedAt || r.expiresAt.getTime() <= this.now()) throw invalid();
+      const user = await this.loadUser(tx, r.userId);
+      if (!user || user.status !== "active") throw invalid();
+      if (!(await markPasswordResetUsed(tx, r.id, new Date(this.now())))) throw invalid();
+      await tx.update(users).set({ passwordHash, failedLoginCount: 0, lockedUntil: null }).where(eq(users.id, user.id));
+      await revokeUserTokens(tx, user.id, new Date(this.now()));
+      await this.audit(tx, user.id, "auth.password_reset", meta);
+      await enqueueNotifications(tx, [user.id], securityNotice("password_changed"), new Date(this.now()), ["email"]);
+      return { email: user.email };
+    });
+  }
+
+  /** ログイン中のパスワード変更。ほかの端末のログインは失効させ、この端末には新しいトークンを返す */
+  async changePassword(userId: string, tenantId: string, current: string, next: string, meta: RequestMeta): Promise<TokenPair> {
+    assertPasswordLength(next);
+    const passwordHash = await hashPassword(next);
+    const tokens = await withTenant(this.db, tenantId, async (tx) => {
+      const user = await this.loadUser(tx, userId);
+      if (!user || user.status !== "active" || this.isLocked(user)) return null;
+      if (!(await verifyPassword(user.passwordHash, current))) {
+        await this.recordFailure(tx, user.id, user.failedLoginCount);
+        await this.audit(tx, user.id, "auth.password_change_failed", meta);
+        return null;
+      }
+      await tx.update(users).set({ passwordHash, failedLoginCount: 0, lockedUntil: null }).where(eq(users.id, user.id));
+      await revokeUserTokens(tx, user.id, new Date(this.now()));
+      await this.audit(tx, user.id, "auth.password_changed", meta);
+      await enqueueNotifications(tx, [user.id], securityNotice("password_changed"), new Date(this.now()), ["email"]);
+      return this.issueTokens(tx, user.id, tenantId, randomUUID(), meta);
+    });
+    if (!tokens) throw new TRPCError({ code: "BAD_REQUEST", message: "今のパスワードが正しくありません" });
+    return tokens;
+  }
+
+  /**
+   * 認証アプリの付け替え(スマホの機種変更など、今の認証アプリが手元にある場合)の 1 段目。
+   * パスワードと今のコードを確かめ、新しい秘密鍵を返す。秘密鍵は確定まで DB に保存せず、暗号化して 5 分の署名付きトークンに入れる
+   */
+  async beginTotpChange(userId: string, tenantId: string, password: string, code: string, meta: RequestMeta) {
+    const ok = await withTenant(this.db, tenantId, async (tx) => {
+      const user = await this.loadUser(tx, userId);
+      if (!user || user.status !== "active" || this.isLocked(user)) return null;
+      const passOk = await verifyPassword(user.passwordHash, password);
+      const codeOk = !user.totpEnabled || (user.totpSecretEnc && verifyTotp(this.box.open(user.totpSecretEnc, totpAad(user.id)), code, this.now(), user.totpLastStep) !== null);
+      if (!passOk || !codeOk) {
+        await this.recordFailure(tx, user.id, user.failedLoginCount);
+        await this.audit(tx, user.id, "auth.totp_change_failed", meta);
+        return null;
+      }
+      return user;
+    });
+    if (!ok) throw new TRPCError({ code: "BAD_REQUEST", message: "パスワードまたは確認コードが正しくありません" });
+    const secret = generateTotpSecret();
+    const sealed = this.box.seal(secret, `totp_change:${userId}`).toString("base64url");
+    const changeToken = await signToken(this.config.jwtSecret, { userId, tenantId, type: "totp_change", resource: sealed }, this.config.purposeTokenTtlSec, this.nowSec());
+    return { secret: base32Encode(secret), otpauthUri: otpauthUri(secret, ok.email, this.config.totpIssuer), changeToken };
+  }
+
+  /** 付け替えの 2 段目: 新しい認証アプリのコードが合えば切り替える */
+  async confirmTotpChange(userId: string, tenantId: string, changeToken: string, code: string, meta: RequestMeta): Promise<void> {
+    const claims = await verifyToken(this.config.jwtSecret, changeToken, "totp_change", this.nowSec());
+    if (!claims || claims.userId !== userId || claims.tenantId !== tenantId || !claims.resource) throw expired();
+    const secret = this.box.open(Buffer.from(claims.resource, "base64url"), `totp_change:${userId}`);
+    const ok = await withTenant(this.db, tenantId, async (tx) => {
+      const user = await this.loadUser(tx, userId);
+      if (!user || user.status !== "active") return false;
+      const step = verifyTotp(secret, code, this.now(), null);
+      if (step === null) {
+        await this.recordFailure(tx, user.id, user.failedLoginCount);
+        return false;
+      }
+      await tx
+        .update(users)
+        .set({ totpSecretEnc: this.box.seal(secret, totpAad(user.id)), totpEnabled: true, totpLastStep: step, failedLoginCount: 0, lockedUntil: null })
+        .where(eq(users.id, user.id));
+      await this.audit(tx, user.id, "auth.totp_changed", meta);
+      await enqueueNotifications(tx, [user.id], securityNotice("totp_changed"), new Date(this.now()), ["email"]);
+      return true;
+    });
+    if (!ok) throw new TRPCError({ code: "BAD_REQUEST", message: "確認コードが正しくありません。新しい認証アプリに表示された 6 桁を入力してください" });
+  }
+
+  /**
+   * 認証アプリのリセット(スマホをなくした場合。管理者・運営者が行う)。
+   * 次のログインで設定し直す(テナント管理者・拠点管理者は設定が必須)。ログインは全端末で失効させる
+   */
+  async resetTotp(tx: Tx, userId: string): Promise<void> {
+    await tx.update(users).set({ totpSecretEnc: null, totpEnabled: false, totpLastStep: null, failedLoginCount: 0, lockedUntil: null }).where(eq(users.id, userId));
+    await revokeUserTokens(tx, userId, new Date(this.now()));
+    await enqueueNotifications(tx, [userId], securityNotice("totp_reset"), new Date(this.now()), ["email"]);
   }
 
   // ---------------------------------------------------------------- 内部
@@ -289,6 +432,12 @@ export class AuthService {
 
   private async audit(tx: Tx, actorId: string, action: string, meta: RequestMeta): Promise<void> {
     await tx.insert(auditLogs).values({ actorId, action, targetType: "user", targetId: actorId, ip: meta.ip });
+  }
+}
+
+function assertPasswordLength(password: string) {
+  if (password.length < PASSWORD_MIN_LENGTH || password.length > PASSWORD_MAX_LENGTH) {
+    throw new TRPCError({ code: "BAD_REQUEST", message: `パスワードは ${PASSWORD_MIN_LENGTH} 文字以上にしてください` });
   }
 }
 

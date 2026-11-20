@@ -40,6 +40,7 @@ describe.skipIf(!url)("認証と権限(結合)", () => {
     purposeTokenTtlSec: 300,
     maxFailedLogins: 10,
     lockoutSec: 900,
+    passwordResetTtlSec: 3600,
     // 既定は発行者の判定なし(テスト用の証明書で署名するため)。判定は cards.integration.test.ts で本物の CA を使って確かめる
     trustedIssuers: [],
     publicBaseUrl: "https://api.example.com",

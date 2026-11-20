@@ -10,7 +10,7 @@ import { jwtVerify, SignJWT } from "jose";
 const ISSUER = "zairyu-api";
 const AUDIENCE = "zairyu";
 
-export type TokenType = "access" | "totp_challenge" | "totp_setup" | "image";
+export type TokenType = "access" | "totp_challenge" | "totp_setup" | "image" | "totp_change";
 
 export interface TokenClaims {
   userId: string;

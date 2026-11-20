@@ -9,3 +9,4 @@ export * from "./billing.js";
 export * from "./platform.js";
 export * from "./purge.js";
 export * from "./postal.js";
+export * from "./passwordResets.js";

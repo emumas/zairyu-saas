@@ -33,7 +33,7 @@ export interface NotificationPayload {
   title: string;
   body: string;
   /** 通知の種類(アプリでの表示切り替え用) */
-  kind: "expiry_digest" | "needs_review" | "revoked" | "recheck_revocation" | "invite";
+  kind: "expiry_digest" | "needs_review" | "revoked" | "recheck_revocation" | "invite" | "password_reset" | "security";
 }
 
 /** 期限アラートのまとめ通知(受け取る人ごとに件数を数える) */
@@ -82,4 +82,20 @@ export function inviteNotice(url: string, expiresAt: string): NotificationPayloa
     title: "在留カード管理への招待",
     body: `在留カード管理の利用に招待されました。次のリンクからパスワードを設定してください(${expiresAt} まで有効。他の人に転送しないでください)。\n${url}`,
   };
+}
+
+export function passwordResetNotice(url: string, expiresAt: string): NotificationPayload {
+  return {
+    kind: "password_reset",
+    title: "在留カード管理 パスワードの再設定",
+    body: `パスワードの再設定を受け付けました。次のリンクから新しいパスワードを設定してください(${expiresAt} まで・1 回だけ有効。他の人に転送しないでください)。\n${url}\n心当たりがない場合は、このメールを破棄し、管理者に連絡してください。`,
+  };
+}
+
+export type SecurityEvent = "password_changed" | "totp_reset" | "totp_changed";
+
+/** アカウントの重要な変更を本人に知らせる(心当たりがなければ管理者へ) */
+export function securityNotice(event: SecurityEvent): NotificationPayload {
+  const what = { password_changed: "パスワードが変更されました", totp_reset: "管理者が認証アプリの設定をリセットしました。次のログインで設定し直してください", totp_changed: "認証アプリが付け替えられました" }[event];
+  return { kind: "security", title: "在留カード管理 アカウントの変更", body: `${what}。心当たりがない場合は、すぐに管理者に連絡してください。` };
 }

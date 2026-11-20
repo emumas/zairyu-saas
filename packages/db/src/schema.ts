@@ -248,6 +248,27 @@ export const userInvitations = pgTable(
 );
 
 /**
+ * パスワード再設定のリンク(トークンは SHA-256 だけを保存。1 時間・1 回限り。新しく発行すると前のものは使えなくなる)
+ */
+export const passwordResets = pgTable(
+  "password_resets",
+  {
+    id: id(),
+    tenantId: tenantId(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    tokenHash: bytea("token_hash").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    usedAt: timestamp("used_at", { withTimezone: true }),
+    /** 管理者が発行した場合はそのユーザー(本人の申請なら null) */
+    createdBy: uuid("created_by").references(() => users.id),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex("password_resets_hash_uq").on(t.tokenHash), index("password_resets_user_idx").on(t.tenantId, t.userId)],
+);
+
+/**
  * リフレッシュトークン(ハッシュのみ保存)。ローテーションし、同じ family で使用済みのものが
  * 再利用されたら盗用とみなして family ごと失効させる
  */

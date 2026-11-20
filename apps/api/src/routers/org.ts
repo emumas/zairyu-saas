@@ -120,6 +120,36 @@ export const orgRouter = router({
         }),
       ),
 
+    /** パスワード再設定のリンクを発行する(本人にもメールで送る。メールが届かないときは画面のリンクを伝える) */
+    issuePasswordReset: p
+      .input(z.object({ userId: z.uuid() }))
+      .output(z.object({ url: z.string(), expiresAt: z.date() }))
+      .mutation(({ ctx, input }) =>
+        ctx.tenantTx(async (tx) => {
+          const u = await getUser(tx, input.userId);
+          if (!u) throw notFound();
+          if (u.status !== "active") throw new TRPCError({ code: "BAD_REQUEST", message: "有効なユーザーだけに発行できます(招待中なら再招待してください)" });
+          const r = await ctx.services.auth.issuePasswordReset(tx, ctx.actor.tenantId, u.id, ctx.actor.userId);
+          await ctx.audit(tx, { action: "user.password_reset_issued", targetType: "user", targetId: u.id });
+          return r;
+        }),
+      ),
+
+    /** 認証アプリのリセット(スマホをなくした場合)。本人は次のログインで設定し直す */
+    resetTotp: p
+      .input(z.object({ userId: z.uuid() }))
+      .output(z.object({ userId: z.string() }))
+      .mutation(({ ctx, input }) =>
+        ctx.tenantTx(async (tx) => {
+          assertNotSelf(ctx.actor, input.userId);
+          const u = await getUser(tx, input.userId);
+          if (!u) throw notFound();
+          await ctx.services.auth.resetTotp(tx, u.id);
+          await ctx.audit(tx, { action: "user.totp_reset", targetType: "user", targetId: u.id });
+          return { userId: u.id };
+        }),
+      ),
+
     /** 招待リンクを出し直す(以前のリンクは使えなくなる) */
     reinvite: p
       .input(z.object({ userId: z.uuid() }))

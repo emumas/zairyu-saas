@@ -18,6 +18,7 @@ export function TenantDetailPage() {
   const [contract, setContract] = useState({ name: "", status: "trial" as Tenant["status"], planId: "", retentionYears: 5 });
   const [ov, setOv] = useState({ baseFee: "", mode: "none" as "none" | "per_unit" | "tiered", unitPrice: "", tiers: toRows(null) as TierRow[] });
   const [inviteEmail, setInviteEmail] = useState("");
+  const [resetEmail, setResetEmail] = useState("");
   const [invite, setInvite] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -173,6 +174,27 @@ export function TenantDetailPage() {
           </form>
         </Card>
       </div>
+      <Card title="テナント管理者の認証アプリをリセット">
+        <p className="sub">
+          唯一のテナント管理者がスマホをなくした場合などに使います。<strong>必ず電話などで本人確認をしてから</strong>行ってください。本人は次のログインで認証アプリを設定し直します。
+        </p>
+        <form
+          className="row"
+          onSubmit={(e) =>
+            void act(e, async () => {
+              if (!window.confirm(`${resetEmail} の認証アプリをリセットします。本人確認は済みましたか?`)) return "リセットしませんでした";
+              await papi.tenants.resetAdminTotp.mutate({ tenantId: id, email: resetEmail });
+              setResetEmail("");
+              return "リセットしました";
+            })
+          }
+        >
+          <input type="email" placeholder="テナント管理者のメールアドレス" value={resetEmail} onChange={(e) => setResetEmail(e.target.value)} required />
+          <Button type="submit" kind="danger">
+            リセット
+          </Button>
+        </form>
+      </Card>
       <Card title="テナント管理者の招待">
         <p className="sub">最初の管理者が招待を受け取れなかったときの再発行や、管理者の追加に使います。ユーザーの管理は、ふだんはテナント側で行います。</p>
         <form

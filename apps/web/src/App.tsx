@@ -1,14 +1,17 @@
 import { BrowserRouter, Link, Navigate, NavLink, Route, Routes } from "react-router";
+import { AccountPage } from "./pages/AccountPage";
 import { AlertsPage } from "./pages/AlertsPage";
 import { BillingPage } from "./pages/BillingPage";
 import { DashboardPage } from "./pages/DashboardPage";
 import { DuplicatesPage } from "./pages/DuplicatesPage";
+import { ForgotPasswordPage } from "./pages/ForgotPasswordPage";
 import { ImportPage } from "./pages/ImportPage";
 import { InvitePage } from "./pages/InvitePage";
 import { LoginPage } from "./pages/LoginPage";
 import { PersonDetailPage } from "./pages/PersonDetailPage";
 import { PersonsPage } from "./pages/PersonsPage";
 import { ReportsPage } from "./pages/ReportsPage";
+import { ResetPasswordPage } from "./pages/ResetPasswordPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { SitesPage } from "./pages/SitesPage";
 import { UsersPage } from "./pages/UsersPage";
@@ -62,6 +65,7 @@ function Shell() {
         <div className="nav-foot">
           <div>{me.email}</div>
           <div className="sub">{USER_ROLE_LABEL[me.role]}</div>
+          <NavLink to="/account">アカウント</NavLink>
           <button className="link" onClick={() => void session.logout()}>
             ログアウト
           </button>
@@ -74,6 +78,7 @@ function Shell() {
           <Route path="/persons" element={<PersonsPage />} />
           <Route path="/persons/:id" element={<PersonDetailPage />} />
           <Route path="/alerts" element={<AlertsPage />} />
+          <Route path="/account" element={<AccountPage />} />
           {session.can("persons.write") && <Route path="/duplicates" element={<DuplicatesPage />} />}
           {session.can("imports.run") && <Route path="/import" element={<ImportPage />} />}
           {session.can("reports.export") && <Route path="/reports" element={<ReportsPage />} />}
@@ -94,6 +99,8 @@ export function App() {
       <Routes>
         {/* 招待リンクはログイン前に開く */}
         <Route path="/invite" element={<InvitePage />} />
+        <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+        <Route path="/reset-password" element={<ResetPasswordPage />} />
         {/* 運営者コンソール(テナントとは別のログイン) */}
         <Route path="/platform/*" element={<PlatformApp />} />
         <Route
