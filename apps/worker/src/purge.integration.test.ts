@@ -4,7 +4,7 @@ import { createDb, schema, withPlatform, withTenant, type Db } from "@zairyu/db"
 import { prepareTestDatabase } from "@zairyu/db/testing";
 import { MemoryBlobStore } from "@zairyu/vault";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { purgeExpired } from "./purge.js";
+import { ORPHAN_MIN_AGE_MS, purgeExpired, sweepOrphanBlobs } from "./purge.js";
 
 const url = process.env.TEST_DATABASE_URL;
 const at = (jstDate: string) => Date.parse(`${jstDate}T01:00:00+09:00`);
@@ -101,7 +101,7 @@ describe.skipIf(!url)("退職後データの自動削除", () => {
   });
 
   it("画像ファイルを消せなくても行は消し、失敗の件数を返す", async () => {
-    const failing = { ...blobs, put: blobs.put.bind(blobs), get: blobs.get.bind(blobs), delete: async () => Promise.reject(new Error("network")) };
+    const failing = Object.assign(Object.create(blobs) as MemoryBlobStore, { delete: async () => Promise.reject(new Error("network")) });
     expect(await purgeExpired(db, failing, at("2025-06-02"))).toEqual([{ tenantId: a, persons: 1, cards: 1, images: 1, verifications: 1, blobFailures: 1 }]);
     expect((await count(a)).persons).toEqual(["A-ACTIVE"]);
   });
@@ -109,5 +109,25 @@ describe.skipIf(!url)("退職後データの自動削除", () => {
   it("在籍中の人はいつまでも消さない", async () => {
     expect(await purgeExpired(db, blobs, at("2099-01-01"))).toEqual([]);
     expect((await count(a)).persons).toEqual(["A-ACTIVE"]);
+  });
+
+  it("記録の無い画像ファイルを掃除する(記録のあるファイルと 24 時間以内のファイルは残す)", async () => {
+    // 前のテストで消せなかった A-RECENT のファイルが残っている。登録途中を想定した新しいファイルも置く
+    expect(await blobs.get(`${a}/a-recent-front`)).not.toBeNull();
+    await blobs.put(`${a}/in-progress`, Buffer.from("new"));
+    const now = Date.now();
+    expect(await sweepOrphanBlobs(db, blobs, now + ORPHAN_MIN_AGE_MS - 60_000, { dryRun: true })).toEqual([]); // まだ 24 時間たっていない
+    blobs.modified.set(`${a}/a-recent-front`, new Date(now - ORPHAN_MIN_AGE_MS - 1));
+    expect(await sweepOrphanBlobs(db, blobs, now, { dryRun: true })).toEqual([{ tenantId: a, orphans: 1, deleted: 0, failures: 0 }]);
+    expect(await blobs.get(`${a}/a-recent-front`)).not.toBeNull();
+    expect(await sweepOrphanBlobs(db, blobs, now)).toEqual([{ tenantId: a, orphans: 1, deleted: 1, failures: 0 }]);
+    expect(await blobs.get(`${a}/a-recent-front`)).toBeNull();
+    expect(await blobs.get(`${a}/in-progress`)).not.toBeNull();
+    expect(await blobs.get(`${a}/a-active-front`)).not.toBeNull(); // 記録のあるファイル
+    // 他のテナントの記録とは突き合わせない: B に A のファイルと同じ名前のものを置いても A の記録で守られない
+    await blobs.put(`${b}/a-active-front`, Buffer.from("x"));
+    blobs.modified.set(`${b}/a-active-front`, new Date(0));
+    expect(await sweepOrphanBlobs(db, blobs, now)).toEqual([{ tenantId: b, orphans: 1, deleted: 1, failures: 0 }]);
+    expect(await blobs.get(`${a}/a-active-front`)).not.toBeNull();
   });
 });

@@ -61,3 +61,13 @@ export async function deletePersonsData(tx: Tx, tenantId: string, personIds: rea
   await tx.delete(persons).where(and(eq(persons.tenantId, tenantId), inArray(persons.id, ids)));
   return { blobKeys: images.map((i) => i.blobKey), cards: cards.length, images: images.length, verifications: vs.length };
 }
+
+/** keys のうち、カード画像として記録されているもの(孤立したファイルの掃除用) */
+export async function referencedBlobKeys(tx: Tx, tenantId: string, keys: readonly string[]): Promise<Set<string>> {
+  if (keys.length === 0) return new Set();
+  const rows = await tx
+    .select({ key: cardImages.blobKey })
+    .from(cardImages)
+    .where(and(eq(cardImages.tenantId, tenantId), inArray(cardImages.blobKey, [...keys])));
+  return new Set(rows.map((r) => r.key));
+}

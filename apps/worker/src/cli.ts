@@ -2,7 +2,7 @@
  * 定期実行の入口(Azure の WebJobs / コンテナのスケジュール実行などから呼ぶ)
  *   daily: 前日の課金対象人数の記録と月次確定(1-16)、期限アラートを作る(毎日 0:30 JST ごろ)→ 続けて送信
  *   send : 送信待ちの通知を送る(5 分おき)
- *   purge: 保存期間が過ぎた退職者のデータを消す(毎日 1:00 JST ごろ。1-21)。--dry-run で件数だけ表示
+ *   purge: 保存期間が過ぎた退職者のデータを消し(1-21)、記録の無い画像ファイルを掃除する(毎日 1:00 JST ごろ)。--dry-run で件数だけ表示
  */
 import { isAbsolute, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -11,7 +11,7 @@ import { createVaultFromEnv } from "@zairyu/vault";
 import { recordDailyBilling } from "./billing.js";
 import { activeTenantIds, generateAlerts, sendNotifications } from "./jobs.js";
 import { notifierFromEnv } from "./notifiers.js";
-import { purgeExpired } from "./purge.js";
+import { purgeExpired, sweepOrphanBlobs } from "./purge.js";
 
 /* eslint-disable no-console -- ジョブのログ(件数のみ。個人情報は出さない) */
 const command = process.argv[2];
@@ -38,7 +38,13 @@ if (command === "purge") {
       );
     }
     if (results.length === 0) console.log("保存期間が過ぎた退職者はいません");
-    process.exitCode = results.some((r) => r.blobFailures > 0) ? 1 : 0;
+    // 削除ジョブで消せなかったファイルもここで拾う
+    const swept = blobs ? await sweepOrphanBlobs(db, blobs, Date.now(), { dryRun }) : [];
+    for (const s of swept) {
+      console.log(dryRun ? `tenant=${s.tenantId} orphan_files=${s.orphans} (dry-run)` : `tenant=${s.tenantId} orphan_files=${s.orphans} deleted=${s.deleted} failures=${s.failures}`);
+    }
+    if (blobs && swept.length === 0) console.log("記録の無い画像ファイルはありません");
+    process.exitCode = results.some((r) => r.blobFailures > 0) || swept.some((s) => s.failures > 0) ? 1 : 0;
   } catch (e) {
     console.error(`purge_error=${(e as Error).name}: ${(e as Error).message}`);
     process.exitCode = 1;

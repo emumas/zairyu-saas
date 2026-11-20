@@ -53,7 +53,29 @@ describe("BlobStore", () => {
       await store.delete(key);
       expect(await store.get(key)).toBeNull();
     });
+
+    it(`${name}: テナントのファイルだけを一覧する(更新日時付き)`, async () => {
+      const t1 = randomUUID();
+      const t2 = randomUUID();
+      await store.put(`${t1}/a`, Buffer.from("1"));
+      await store.put(`${t1}/b`, Buffer.from("2"));
+      await store.put(`${t2}/c`, Buffer.from("3"));
+      const list = [];
+      for await (const e of store.list(t1)) list.push(e);
+      expect(list.map((e) => e.key).sort()).toEqual([`${t1}/a`, `${t1}/b`]);
+      expect(list.every((e) => e.lastModified instanceof Date && e.lastModified.getTime() > 0)).toBe(true);
+      const none = [];
+      for await (const e of store.list(randomUUID())) none.push(e);
+      expect(none).toEqual([]);
+    });
   }
+
+  it("一覧のテナント ID は形式を確かめる(パスを抜けさせない)", async () => {
+    const store = new FsBlobStore(dir);
+    await expect(async () => {
+      for await (const _ of store.list("../x")) void _;
+    }).rejects.toThrow();
+  });
 
   it("パスを抜けるキーは拒否", () => {
     expect(() => assertBlobKey("../etc/passwd")).toThrow();

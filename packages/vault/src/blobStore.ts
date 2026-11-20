@@ -5,7 +5,7 @@
  * - MemoryBlobStore: テスト用
  * キーは "<テナントID>/<UUID>" とし、テナント単位で削除・移行できるようにする
  */
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, join, resolve, sep } from "node:path";
 import { DefaultAzureCredential, type TokenCredential } from "@azure/identity";
 import { BlobServiceClient, type ContainerClient } from "@azure/storage-blob";
@@ -15,6 +15,18 @@ export interface BlobStore {
   /** 無ければ null */
   get(key: string): Promise<Buffer | null>;
   delete(key: string): Promise<void>;
+  /** テナントのファイルの一覧(孤立したファイルの掃除に使う) */
+  list(tenantId: string): AsyncIterable<BlobEntry>;
+}
+
+export interface BlobEntry {
+  key: string;
+  lastModified: Date;
+}
+
+const TENANT_RE = /^[0-9a-f-]{36}$/;
+function assertTenantId(tenantId: string): void {
+  if (!TENANT_RE.test(tenantId)) throw new Error("テナント ID が不正です");
 }
 
 const KEY_RE = /^[0-9a-f-]{36}\/[0-9a-zA-Z_-]{1,64}$/;
@@ -25,9 +37,12 @@ export function assertBlobKey(key: string): void {
 
 export class MemoryBlobStore implements BlobStore {
   readonly data = new Map<string, Buffer>();
+  readonly modified = new Map<string, Date>();
+  constructor(private readonly now: () => number = Date.now) {}
   async put(key: string, data: Buffer) {
     assertBlobKey(key);
     this.data.set(key, Buffer.from(data));
+    this.modified.set(key, new Date(this.now()));
   }
   async get(key: string) {
     assertBlobKey(key);
@@ -36,6 +51,13 @@ export class MemoryBlobStore implements BlobStore {
   async delete(key: string) {
     assertBlobKey(key);
     this.data.delete(key);
+    this.modified.delete(key);
+  }
+  async *list(tenantId: string) {
+    assertTenantId(tenantId);
+    for (const key of [...this.data.keys()].filter((k) => k.startsWith(`${tenantId}/`))) {
+      yield { key, lastModified: this.modified.get(key) ?? new Date(0) };
+    }
   }
 }
 
@@ -66,6 +88,21 @@ export class FsBlobStore implements BlobStore {
   async delete(key: string) {
     await rm(this.path(key), { force: true });
   }
+  async *list(tenantId: string) {
+    assertTenantId(tenantId);
+    let names: string[];
+    try {
+      names = await readdir(join(this.root, tenantId));
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code === "ENOENT") return;
+      throw e;
+    }
+    for (const name of names) {
+      const key = `${tenantId}/${name}`;
+      if (!KEY_RE.test(key)) continue;
+      yield { key, lastModified: (await stat(this.path(key))).mtime };
+    }
+  }
 }
 
 export class AzureBlobStore implements BlobStore {
@@ -91,5 +128,11 @@ export class AzureBlobStore implements BlobStore {
   async delete(key: string) {
     assertBlobKey(key);
     await this.container.getBlockBlobClient(key).deleteIfExists();
+  }
+  async *list(tenantId: string) {
+    assertTenantId(tenantId);
+    for await (const b of this.container.listBlobsFlat({ prefix: `${tenantId}/` })) {
+      if (KEY_RE.test(b.name)) yield { key: b.name, lastModified: b.properties.lastModified };
+    }
   }
 }
