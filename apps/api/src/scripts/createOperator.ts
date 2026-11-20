@@ -1,7 +1,8 @@
 /**
  * 運営者アカウントを作る(1-19)。画面からは作れない。TOTP はここで設定する。
  *   pnpm --filter api platform:create-operator -- --email ops@example.com --password '12文字以上のパスワード'
- * 表示されたキー(または otpauth の URI)を認証アプリに登録すること。キーは二度と表示しない
+ * 表示されたキー(または otpauth の URI)を認証アプリに登録すること。キーは二度と表示しない。
+ * キーを登録しそびれた・端末をなくしたときは、既存のアカウントに --reset-totp を付けて実行するとキーを作り直す(パスワードも変える)
  */
 import { createDb, schema, withPlatform } from "@zairyu/db";
 import { eq } from "drizzle-orm";
@@ -20,6 +21,7 @@ const url = process.env.DATABASE_URL;
 const boxKey = process.env.AUTH_SECRET_BOX_KEY;
 const email = arg("email")?.trim().toLowerCase();
 const password = arg("password");
+const resetTotp = args.includes("--reset-totp");
 if (!url || !boxKey || !email || !password) {
   console.error("DATABASE_URL と AUTH_SECRET_BOX_KEY(apps/api/.env)、--email / --password を指定してください");
   process.exit(1);
@@ -35,17 +37,31 @@ try {
   const secret = generateTotpSecret();
   const created = await withPlatform(db, async (tx) => {
     const [existing] = await tx.select().from(schema.platformOperators).where(eq(schema.platformOperators.email, email));
-    if (existing) return false;
+    if (existing) {
+      if (!resetTotp) return false;
+      await tx
+        .update(schema.platformOperators)
+        .set({
+          passwordHash: await hashPassword(password),
+          totpSecretEnc: box.seal(secret, operatorTotpAad(existing.id)),
+          totpLastStep: null,
+          failedLoginCount: 0,
+          lockedUntil: null,
+        })
+        .where(eq(schema.platformOperators.id, existing.id));
+      await tx.insert(schema.platformAuditLogs).values({ operatorId: existing.id, action: "operator.totp_reset" });
+      return true;
+    }
     const [op] = await tx.insert(schema.platformOperators).values({ email, passwordHash: await hashPassword(password) }).returning();
     await tx.update(schema.platformOperators).set({ totpSecretEnc: box.seal(secret, operatorTotpAad(op!.id)) }).where(eq(schema.platformOperators.id, op!.id));
     await tx.insert(schema.platformAuditLogs).values({ operatorId: op!.id, action: "operator.create" });
     return true;
   });
   if (!created) {
-    console.error(`${email} は既にあります`);
+    console.error(`${email} は既にあります(認証アプリのキーを作り直すときは --reset-totp を付けてください)`);
     process.exitCode = 1;
   } else {
-    console.log(`運営者 ${email} を作成しました。認証アプリに次のキーを登録してください(この画面にだけ表示します)`);
+    console.log(`運営者 ${email} を${resetTotp ? "更新" : "作成"}しました。認証アプリに次のキーを登録してください(この画面にだけ表示します)`);
     console.log(`キー: ${base32Encode(secret)}`);
     console.log(`URI: ${otpauthUri(secret, email, process.env.AUTH_TOTP_ISSUER ?? "在留カード管理(運営)")}`);
   }
