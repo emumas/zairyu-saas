@@ -104,7 +104,8 @@ const SHA256_DIGEST_INFO_PREFIX = Buffer.from("3031300d0609608648016503040201050
 
 /**
  * チェックコードを公開鍵で復号し、ハッシュ値を取り出す。
- * 仕様書(図3-4)はパディング‖ハッシュ値(DigestInfo なし)だが、DigestInfo 付きも受け付けて形式を返す
+ * 仕様書(図3-4)はパディング‖ハッシュ値(DigestInfo なし)だが、実カード(旧様式、2026-11-20)は DigestInfo 付きだった。
+ * カードの発行時期で違う可能性があるため両方を受け付け、形式を返す
  */
 function recoverRsaHash(
   key: KeyObject,

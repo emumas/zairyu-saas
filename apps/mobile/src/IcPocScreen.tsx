@@ -23,6 +23,8 @@ interface Measurement {
   format: CardFormat;
   readMs: number;
   apduCount: number;
+  /** カードとの通信時間の合計 */
+  transceiveMs: number;
   signatureText: string;
 }
 
@@ -127,7 +129,7 @@ export function IcPocScreen() {
     setResult(null);
     let phase: "nfc" | "api" = "nfc";
     try {
-      const { raw, apduCount } = await withIsoDep(async (transceive, info) => {
+      const { raw, apduCount, transceiveMs } = await withIsoDep(async (transceive, info) => {
         const maxReadLength = maxReadLengthFor(info);
         const deliveryKey = tokuteiDeliveryKey();
         const r = await readResidenceCard(transceive, {
@@ -136,7 +138,7 @@ export function IcPocScreen() {
           ...(maxReadLength ? { maxReadLength } : {}),
           ...(deliveryKey ? { tokuteiDeliveryKey: deliveryKey } : {}),
         });
-        return { raw: r, apduCount: info.apduCount() };
+        return { raw: r, apduCount: info.apduCount(), transceiveMs: info.transceiveMs() };
       });
       phase = "api";
       const files: Record<string, string> = {};
@@ -146,6 +148,7 @@ export function IcPocScreen() {
         format: raw.format,
         readMs: raw.elapsedMs,
         apduCount,
+        transceiveMs,
         signatureText: signatureLabel(verified.signature),
       };
       setResult({ ...verified, ...m });
@@ -214,7 +217,13 @@ export function IcPocScreen() {
         <View style={styles.card}>
           <Row k="様式" v={FORMAT_LABEL[result.format]} />
           <Row k="署名" v={result.signatureText} />
-          <Row k="読取時間" v={`${result.readMs} ms(APDU ${result.apduCount} 回)`} />
+          <Row k="読取時間" v={`${result.readMs} ms(通信 ${result.transceiveMs} ms / 処理 ${result.readMs - result.transceiveMs} ms、APDU ${result.apduCount} 回)`} />
+          <Text style={styles.label}>APDU ごとの時間(診断用)</Text>
+          <Text selectable style={styles.mono}>
+            {getLastTrace()
+              .entries.map((e) => `${e.header} → ${e.sw ?? "-"} ${e.responseLength ?? "-"}B ${e.ms ?? "-"}ms`)
+              .join("\n")}
+          </Text>
           {result.cardNumber && <Row k="IC内の番号" v={result.cardNumber === cardNumber ? "券面と一致" : "券面と不一致"} />}
           {result.faceItems &&
             Object.entries(result.faceItems).map(([k, v]) => <Row key={k} k={k} v={v ?? "—"} />)}
@@ -259,7 +268,7 @@ export function IcPocScreen() {
           <Text style={styles.label}>計測履歴(個人情報は残しません)</Text>
           {history.map((h, i) => (
             <Text key={i} style={styles.mono}>
-              {FORMAT_LABEL[h.format]} {h.readMs}ms APDU{h.apduCount} {h.signatureText}
+              {FORMAT_LABEL[h.format]} {h.readMs}ms(通信{h.transceiveMs}) APDU{h.apduCount} {h.signatureText}
             </Text>
           ))}
         </View>

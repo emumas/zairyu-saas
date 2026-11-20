@@ -12,6 +12,8 @@ export interface NfcSessionInfo {
   maxTransceiveLength: number | null;
   /** 送受信した APDU の数(計測用) */
   apduCount: () => number;
+  /** カードとの送受信にかかった時間の合計(計測用) */
+  transceiveMs: () => number;
 }
 
 /**
@@ -22,6 +24,8 @@ export interface TraceEntry {
   header: string;
   sw: string | null;
   responseLength: number | null;
+  /** カードとの送受信にかかった時間(ms) */
+  ms: number | null;
   error?: string;
 }
 
@@ -73,10 +77,13 @@ export async function withIsoDep<T>(fn: (transceive: Transceive, info: NfcSessio
         header: Array.from(apdu.subarray(0, 4), hex2).join(" "),
         sw: null,
         responseLength: null,
+        ms: null,
       };
       lastTrace.push(entry);
+      const started = Date.now();
       try {
         const res = await NfcManager.isoDepHandler.transceive(Array.from(apdu));
+        entry.ms = Date.now() - started;
         entry.responseLength = res.length;
         if (res.length >= 2) entry.sw = hex2(res[res.length - 2]!) + hex2(res[res.length - 1]!);
         return Uint8Array.from(res);
@@ -85,7 +92,11 @@ export async function withIsoDep<T>(fn: (transceive: Transceive, info: NfcSessio
         throw e;
       }
     };
-    const result = await fn(transceive, { maxTransceiveLength, apduCount: () => count });
+    const result = await fn(transceive, {
+      maxTransceiveLength,
+      apduCount: () => count,
+      transceiveMs: () => lastTrace.reduce((a, e) => a + (e.ms ?? 0), 0),
+    });
     if (Platform.OS === "ios") await NfcManager.setAlertMessageIOS("読み取りが完了しました");
     return result;
   } catch (e) {

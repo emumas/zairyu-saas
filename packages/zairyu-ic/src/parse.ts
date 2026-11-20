@@ -14,7 +14,7 @@ import {
   type CardFormat,
   type CardKind,
 } from "./spec.js";
-import { encodeTlv, parseTlv, type Tlv } from "./tlv.js";
+import { parseTlv, type Tlv } from "./tlv.js";
 
 export class CardParseError extends Error {
   constructor(message: string) {
@@ -167,13 +167,8 @@ export function parseCardRead(raw: Pick<RawCardRead, "format" | "kind" | "files"
               algorithm: "rsa-pkcs1v15-sha256",
               checkCode,
               certificate,
+              // 実カードで確認済み(2026-11-20): TLV の長さは実データ長で、値を最大長まで 0x00 で埋めて連結したものが署名対象
               signedData: concatBytes(padNulls(front, LEGACY_FRONT_IMAGE_LEN), padNulls(face, FACE_LEN)),
-              alternatives: [
-                // TLV の長さ = 実データ長のカードがある(実機で券面 3398 / 顔 2205 バイトを観測)
-                { label: "exact", data: concatBytes(front, face) },
-                { label: "ef-raw", data: concatBytes(f["df1/ef01"] ?? new Uint8Array(0), f["df1/ef02"] ?? new Uint8Array(0)) },
-                { label: "tlv", data: concatBytes(encodeTlv(TAG.frontImage, front), encodeTlv(TAG.face, face)) },
-              ],
             }
           : null,
     };

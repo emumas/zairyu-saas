@@ -110,3 +110,22 @@ describe("証明書", () => {
     expect(trimDer(padNulls(rsa.certDer, 1200)).length).toBe(rsa.certDer.length);
   });
 });
+
+describe("実カードの形(旧様式、2026-11-20 に Galaxy S23 で確認)", () => {
+  it("TLV は実データ長・EF の残りは 0x00、署名は DigestInfo 付きでも検証できる", async () => {
+    const { parseCardRead } = await import("../src/parse.js");
+    const { encodeTlv } = await import("../src/tlv.js");
+    const front = new Uint8Array(3354).fill(7);
+    const face = new Uint8Array(2214).fill(9);
+    const signedData = concatBytes(padNulls(front, 7000), padNulls(face, 3000));
+    const checkCode = sign("sha256", signedData, rsa.key); // DigestInfo 付き
+    const files = {
+      "df1/ef01": padNulls(encodeTlv(0xd0, front), 7004),
+      "df1/ef02": padNulls(encodeTlv(0xd1, face), 3004),
+      "df3/ef01": padNulls(concatBytes(encodeTlv(0xda, checkCode), encodeTlv(0xdb, rsa.certDer)), 1464),
+    };
+    const parsed = parseCardRead({ format: "legacy", kind: "residence", files });
+    expect(parsed.images.front?.length).toBe(3354);
+    expect(verifyCardSignature(parsed.signature)).toMatchObject({ status: "valid", matched: "spec", hashFormat: "digestInfo" });
+  });
+});
