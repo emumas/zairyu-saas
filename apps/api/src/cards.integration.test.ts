@@ -401,6 +401,50 @@ describe.skipIf(!url)("カード登録", () => {
     });
   });
 
+  describe("カード番号による同一人物の確認", () => {
+    it("退職者のカード(過去のカードも)と同じ番号なら、前回の退職理由を示して再入社に誘導する", async () => {
+      const old = await newPerson("SC1");
+      const n = "AR12345678CD";
+      const legacy = (num: string) => icPayload({ format: "legacy", kind: "residence", signer: rsa, cardNumber: num, backAddress: null });
+      await tokyoAdmin.cards.register({ personId: old, cardNumber: n, ic: legacy(n), manual: { expiryDate: "2029-06-20" } });
+      // 後でカードが更新され、n は過去のカードになった
+      const n2 = "AS12345678CD";
+      await tokyoAdmin.cards.register({ personId: old, cardNumber: n2, ic: legacy(n2), manual: { expiryDate: "2032-06-20" } });
+      await tokyoAdmin.persons.retire({ id: old, retiredAt: "2026-03-31", reasonCode: "self", reasonNote: "帰国のため" });
+
+      const fresh = await newPerson("SC2");
+      const v = await tokyoAdmin.cards.verifyIcRead({ personId: fresh, cardNumber: n, ic: legacy(n), manual: {} });
+      expect(v.sameCard).toEqual([
+        { personId: old, employeeCode: "SC1", name: "SC1", siteName: "東京", status: "retired", retiredAt: "2026-03-31", isCurrentCard: false, lastEmployment: { retiredAt: "2026-03-31", reasonCode: "self", reasonNote: "帰国のため" } },
+      ]);
+      const err = await tokyoAdmin.cards.register({ personId: fresh, cardNumber: n, ic: legacy(n), manual: { expiryDate: "2029-06-20" } }).catch((e: TRPCError) => e);
+      expect(err).toMatchObject({ code: "CONFLICT" });
+      expect((err as TRPCError).message).toContain("再入社");
+      expect((err as TRPCError).message).toContain("帰国のため");
+      // 担当外の拠点の人は社員番号と拠点名だけ
+      const osakaPerson = await newPerson("SC3", osaka);
+      const fromOsaka = await osakaAdmin.cards.verifyIcRead({ personId: osakaPerson, cardNumber: n, ic: legacy(n), manual: {} });
+      expect(fromOsaka.sameCard[0]).toMatchObject({ personId: null, name: null, employeeCode: "SC1", lastEmployment: null });
+      // 再入社すれば、元の登録者には登録できる
+      await tokyoAdmin.persons.reactivate({ id: old });
+      await tokyoAdmin.cards.register({ personId: old, cardNumber: n2, ic: legacy(n2), manual: { expiryDate: "2032-06-20" } });
+    });
+
+    it("在籍中の別の登録者の過去のカードと同じ番号でも二重登録として止める。アーカイブ済みは止めない", async () => {
+      const a = await newPerson("SC4");
+      const n = "AT12345678CD";
+      await tokyoAdmin.cards.register({ personId: a, cardNumber: n, ic: icPayload({ format: "gen2", kind: "residence", signer: ec, cardNumber: n }), manual: {} });
+      const n2 = "AU12345678CD";
+      await tokyoAdmin.cards.register({ personId: a, cardNumber: n2, ic: icPayload({ format: "gen2", kind: "residence", signer: ec, cardNumber: n2 }), manual: {} });
+      const b = await newPerson("SC5");
+      const err = await tokyoAdmin.cards.register({ personId: b, cardNumber: n, ic: icPayload({ format: "gen2", kind: "residence", signer: ec, cardNumber: n }), manual: {} }).catch((e: TRPCError) => e);
+      expect((err as TRPCError).message).toContain("二重登録の疑い");
+
+      await admin.persons.archive({ id: a });
+      await tokyoAdmin.cards.register({ personId: b, cardNumber: n2, ic: icPayload({ format: "gen2", kind: "residence", signer: ec, cardNumber: n2 }), manual: {} });
+    });
+  });
+
   it("権限と拠点の範囲", async () => {
     const personId = await newPerson("P001");
     const ic = icPayload({ format: "gen2", kind: "residence", signer: ec });

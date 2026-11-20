@@ -1,26 +1,33 @@
 /** カード・画像・確認履歴のリポジトリ(withTenant のトランザクションで呼ぶこと) */
 import { and, desc, eq, inArray, ne } from "drizzle-orm";
 import type { Tx } from "../client.js";
-import { cardImages, persons, residenceCards, verifications } from "../schema.js";
+import { cardImages, persons, residenceCards, sites, verifications } from "../schema.js";
 
 export type NewCard = Omit<typeof residenceCards.$inferInsert, "id" | "tenantId" | "personId" | "isCurrent" | "createdAt" | "updatedAt">;
 
 /** 別の登録者の「現在のカード」に同じ番号(HMAC)があるか */
-export async function findOtherPersonWithCard(tx: Tx, cardNumberHmac: Buffer, personId: string): Promise<string | null> {
-  const [row] = await tx
-    .select({ personId: residenceCards.personId })
+/**
+ * 同じ在留カード番号(HMAC)のカードを持つ、ほかの登録者。今のカードだけでなく過去のカードも、
+ * 退職者・アーカイブも含めて探す(カード番号は 1 枚ごとに違うので、一致すれば同一人物)
+ */
+export async function findPersonsWithCard(tx: Tx, cardNumberHmac: Buffer, personId: string) {
+  return tx
+    .selectDistinctOn([persons.id], {
+      personId: persons.id,
+      siteId: persons.siteId,
+      siteName: sites.name,
+      employeeCode: persons.employeeCode,
+      name: persons.name,
+      status: persons.status,
+      retiredAt: persons.retiredAt,
+      isCurrentCard: residenceCards.isCurrent,
+    })
     .from(residenceCards)
     .innerJoin(persons, eq(persons.id, residenceCards.personId))
-    .where(
-      and(
-        eq(residenceCards.cardNumberHmac, cardNumberHmac),
-        eq(residenceCards.isCurrent, true),
-        ne(residenceCards.personId, personId),
-        ne(persons.status, "archived"),
-      ),
-    )
-    .limit(1);
-  return row?.personId ?? null;
+    .innerJoin(sites, eq(sites.id, persons.siteId))
+    .where(and(eq(residenceCards.cardNumberHmac, cardNumberHmac), ne(residenceCards.personId, personId)))
+    .orderBy(persons.id, desc(residenceCards.isCurrent))
+    .limit(10);
 }
 
 /** 現在のカードを置き換える(以前のカードは履歴として残す) */

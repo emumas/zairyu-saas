@@ -9,7 +9,8 @@
 import {
   alertRecipients,
   enqueueNotifications,
-  findOtherPersonWithCard,
+  findPersonsWithCard,
+  listEmployments,
   getCardState,
   fillPersonFromCard,
   getCardWithSite,
@@ -24,12 +25,12 @@ import {
   replaceCurrentCard,
   type Tx,
 } from "@zairyu/db";
-import { cardDetailsUpdateInput, cardRegisterInput, cardVerifyInput, icReadPayload, jstDate, needsReviewNotice } from "@zairyu/shared";
+import { cardDetailsUpdateInput, cardRegisterInput, cardVerifyInput, RETIRE_REASON_LABEL, RETIRE_REASONS, type RetireReason, icReadPayload, jstDate, needsReviewNotice } from "@zairyu/shared";
 import { cardNumberHmac, decryptAddress, decryptCardNumber, encryptAddress, encryptCardNumber, putEncryptedBlob } from "@zairyu/vault";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { assertSiteAccess } from "../authz/guards.js";
-import type { Actor } from "../authz/permissions.js";
+import { canAccessSite, type Actor } from "../authz/permissions.js";
 import { diffFields, evaluateIc, judgeSignature, mergeFields } from "../cards/evaluate.js";
 import { toDisplayImage } from "../imageConvert.js";
 import { getDisplayImage, issueImageUrl } from "../images.js";
@@ -94,6 +95,66 @@ export function maskCardNumber(n: string): string {
 
 /** 再検証で IC から更新する項目(カードの交付後に IC へ追記されるもの) */
 const REVERIFY_FIELDS = ["pendingApplication", "outsideActivity", "outsideActivityUntil"] as const;
+
+const sameCardOutput = z.object({
+  /** 担当外の拠点の人は null(社員番号・拠点名・状態だけ) */
+  personId: z.string().nullable(),
+  employeeCode: z.string(),
+  name: z.string().nullable(),
+  siteName: z.string(),
+  status: z.enum(["active", "retired", "archived"]),
+  retiredAt: z.string().nullable(),
+  /** そのカードがその人の今のカードか(false なら過去のカード) */
+  isCurrentCard: z.boolean(),
+  /** 前回の退職(担当外の拠点の人は null) */
+  lastEmployment: z.object({ retiredAt: z.string(), reasonCode: z.enum(RETIRE_REASONS), reasonNote: z.string().nullable() }).nullable(),
+});
+type SameCard = z.infer<typeof sameCardOutput>;
+
+/** 同じカード番号を持つほかの登録者(番号はカード 1 枚ごとに違うので、一致すれば同一人物) */
+async function sameCardPersons(tx: Tx, actor: Actor, numberHmac: Buffer, personId: string): Promise<SameCard[]> {
+  const rows = await findPersonsWithCard(tx, numberHmac, personId);
+  const visibleIds = rows.filter((r) => canAccessSite(actor, r.siteId)).map((r) => r.personId);
+  const employments = await listEmployments(tx, visibleIds);
+  return rows.map((r) => {
+    const visible = canAccessSite(actor, r.siteId);
+    const last = visible ? employments.find((e) => e.personId === r.personId) : undefined;
+    return {
+      personId: visible ? r.personId : null,
+      employeeCode: r.employeeCode,
+      name: visible ? r.name : null,
+      siteName: r.siteName,
+      status: r.status,
+      retiredAt: r.retiredAt,
+      isCurrentCard: r.isCurrentCard,
+      lastEmployment: last ? { retiredAt: last.retiredAt, reasonCode: last.reasonCode as RetireReason, reasonNote: last.reasonNote } : null,
+    };
+  });
+}
+
+/**
+ * 在籍中の別の登録者のカードなら二重登録、退職者のカードなら再入社として扱うよう止める。
+ * アーカイブ済み(保存期間内の古い記録)は参考にとどめ、止めない
+ */
+function assertNoSameCardConflict(matches: readonly SameCard[]) {
+  const active = matches.find((m) => m.status === "active");
+  if (active) {
+    throw new TRPCError({
+      code: "CONFLICT",
+      message: `二重登録の疑い: この在留カードは在籍中の登録者(${active.siteName} ${active.employeeCode})に登録されています。異動の場合は、その登録者の拠点を変更してください`,
+    });
+  }
+  const retired = matches.find((m) => m.status === "retired");
+  if (retired) {
+    const reason = retired.lastEmployment
+      ? `(前回の退職: ${retired.lastEmployment.retiredAt}・${RETIRE_REASON_LABEL[retired.lastEmployment.reasonCode]}${retired.lastEmployment.reasonNote ? `・${retired.lastEmployment.reasonNote}` : ""})`
+      : "";
+    throw new TRPCError({
+      code: "CONFLICT",
+      message: `この在留カードは以前在籍していた方(${retired.siteName} ${retired.employeeCode})のものです${reason}。新しい登録者ではなく、その登録者を再入社にしてからカードを登録してください`,
+    });
+  }
+}
 
 export const cardsRouter = router({
   /** IC 再検証(1-8)の準備: IC の認証に使う番号を返す(番号の表示として監査ログに残す) */
@@ -205,12 +266,15 @@ export const cardsRouter = router({
         icImages: z.array(z.object({ kind: z.string(), contentType: z.string(), data: z.string(), width: z.number(), height: z.number() })),
         /** 裏面に追記された住居地(旧様式の IC。あれば保存時にこちらを採用する) */
         icBackAddress: z.object({ address: z.string(), writtenAt: z.string().nullable() }).nullable(),
+        /** 同じカード番号を持つほかの登録者(今のカード・過去のカード) */
+        sameCard: z.array(sameCardOutput),
       }),
     )
     .mutation(({ ctx, input }) =>
       ctx.tenantTx(async (tx) => {
         await loadActivePerson(tx, ctx.actor, input.personId);
         const ic = evaluateIc(input.ic, ctx.services.config.trustedIssuers);
+        const sameCard = await sameCardPersons(tx, ctx.actor, await cardNumberHmac(requireVault(ctx.services).keyring, ctx.actor.tenantId, input.cardNumber), input.personId);
         // 住居地イメージは照合に使わないので返さない(通信量を抑える)
         const icImages = await Promise.all(
           ic.images
@@ -241,6 +305,7 @@ export const cardsRouter = router({
           diffs: diffFields(ic, input.cardNumber, input.manual),
           icImages: icImages.flat(),
           icBackAddress: ic.backAddress,
+          sameCard,
         };
       }),
     ),
@@ -297,9 +362,8 @@ export const cardsRouter = router({
 
       return ctx.tenantTx(async (tx) => {
         const person = await loadActivePerson(tx, ctx.actor, input.personId);
-        if (await findOtherPersonWithCard(tx, numberHmac, input.personId)) {
-          throw new TRPCError({ code: "CONFLICT", message: "同じ在留カード番号が別の登録者に登録されています" });
-        }
+        // 同じカード番号(今のカード・過去のカード)を持つほかの登録者がいれば同一人物
+        assertNoSameCardConflict(await sameCardPersons(tx, ctx.actor, numberHmac, input.personId));
         const today = jstDate(ctx.services.now());
         // 郵便番号: 入力が無ければ住居地から引く(1 つに決まったときだけ)
         const postalCode = input.manual.postalCode ?? (address ? (await lookupPostalCode(tx, address.address)).postalCode : null);

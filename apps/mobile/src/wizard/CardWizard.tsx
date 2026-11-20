@@ -7,6 +7,7 @@
 import {
   ADDRESS_SOURCE_LABEL,
   chooseAddress,
+  RETIRE_REASON_LABEL,
   isValidCardNumber,
   normalizeCardNumberInput,
   WORK_RESTRICTION_LABEL,
@@ -187,10 +188,13 @@ export function CardWizard({ personId, personName, onClose, onDone }: { personId
   const addressSource: AddressSource | null = icBackAddress ? "ic_back" : addressEdit !== null ? "manual" : (autoAddress?.source ?? null);
 
   const needsReason = (verify?.diffs.length ?? 0) > 0;
+  /** 在籍中・退職した別の登録者と同じカードなら、保存してもサーバーが止めるので先に進めない */
+  const blockedBySameCard = !!verify?.sameCard.some((m) => m.status === "active" || m.status === "retired");
   const manualNeeded = !hasIcText; // 旧様式・IC なしは満了日などを入力する
   const permanent = noStayLimit || verify?.kind === "special_permanent";
   const canSave =
     numberOk &&
+    !blockedBySameCard &&
     (!needsReason || diffReason.trim().length > 0) &&
     (!manualNeeded || (permanent ? !!manual.cardValidUntil : !!manual.expiryDate));
 
@@ -391,6 +395,30 @@ export function CardWizard({ personId, personName, onClose, onDone }: { personId
                   <Text>裏面に「在留期間更新等許可申請中」の記載がある</Text>
                 </View>
               )}
+            </Card>
+          )}
+
+          {verify && verify.sameCard.length > 0 && (
+            <Card>
+              <Text style={{ fontWeight: "700", color: blockedBySameCard ? color.danger : color.warn }}>
+                同じ在留カード番号のほかの登録者がいます(同一人物)
+              </Text>
+              {verify.sameCard.map((m, i) => (
+                <View key={i} style={{ gap: 2 }}>
+                  <Text style={{ fontWeight: "600" }}>
+                    {m.name ?? "(担当外の拠点)"} {m.employeeCode}・{m.siteName}・{m.status === "active" ? "在籍中" : m.status === "retired" ? `退職(${m.retiredAt ?? ""})` : "アーカイブ済み"}
+                    {m.isCurrentCard ? "" : "(過去のカード)"}
+                  </Text>
+                  {m.status === "active" && <Text style={{ color: color.danger }}>二重登録の疑いです。異動の場合は、その登録者の拠点を変更してください。</Text>}
+                  {m.status === "retired" && (
+                    <Text style={{ color: color.danger }}>
+                      以前在籍していた方です。新しい登録者ではなく、その登録者を「再入社」にしてからカードを登録してください。
+                      {m.lastEmployment ? `\n前回の退職: ${m.lastEmployment.retiredAt}・${RETIRE_REASON_LABEL[m.lastEmployment.reasonCode]}${m.lastEmployment.reasonNote ? `・${m.lastEmployment.reasonNote}` : ""}` : ""}
+                    </Text>
+                  )}
+                  {m.status === "archived" && <Text style={{ color: color.sub }}>アーカイブ済みの古い記録です(登録はできます)。</Text>}
+                </View>
+              ))}
             </Card>
           )}
 
