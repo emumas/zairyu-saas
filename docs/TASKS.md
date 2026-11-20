@@ -44,7 +44,7 @@
 - [ ] **1-7 カード登録ウィザード(アプリ)**: 表面撮影 → 番号確認 → IC読取 → サーバーで署名検証と照合 → 裏面撮影 → 保存。例外(IC読めない/署名失敗/差分あり)の分岐
   - 進捗: サーバー側は完了(`apps/api/src/routers/cards.ts`、`cards/evaluate.ts`)。`cards.verifyIcRead`(照合結果。保存しない)、`cards.register`(サーバーで再検証して保存)、`cards.listForPerson`。署名失敗は要確認、差分は理由必須、IC 読取不可は理由必須で IC 未検証、他の登録者と同じ番号は CONFLICT。発行者証明書が未入手の間は署名一致だけで検証済みとする。アプリのウィザード画面も実装(`apps/mobile/src/wizard/CardWizard.tsx`。表面撮影・OCR → 番号確認 → IC 読取 → 照合結果(旧様式は券面の項目を入力、差分は理由入力)→ 裏面撮影 → 保存)。Android 実機・旧様式の実カードで登録まで確認(2026-11-20)。旧様式の永住者は在留期間満了日ではなくカードの有効期限を入力させる(取り違えはサーバーでも拒否)。残り: 要確認時のテナント管理者への即時通知(1-13)、登録失敗時に残った Blob の掃除
 - [ ] **1-8 IC再検証**
-  - 進捗: 実装済み。API `cards.reverifyStart`(IC の認証に使う番号。監査ログ)・`cards.reverifyIc`(署名検証、別のカードの検出、IC に追記された更新申請中・資格外活動の反映、確認履歴への追記、NG なら要確認と通知)。アプリは `ReverifyScreen`。IC の読み取りは `apps/mobile/src/ic/readIc.tsx` に共通化。実機での確認待ち
+  - 進捗: 実装済み。API `cards.reverifyStart`(IC の認証に使う番号。監査ログ)・`cards.reverifyIc`(署名検証、別のカードの検出、IC に追記された更新申請中・資格外活動の反映、確認履歴への追記、NG なら要確認と通知)。アプリは `ReverifyScreen`。IC の読み取りは `apps/mobile/src/ic/readIc.tsx` に共通化。Android 実機・旧様式で確認(2026-11-20)
 - [ ] **1-7b IC 画像の表示**(追加): IC の券面・氏名イメージ(MMR TIFF)と顔画像(JPEG2000)をサーバーで PNG/JPEG に変換して表示
   - 進捗: `apps/api/src/imageConvert.ts`(sharp と OpenJPEG の WebAssembly 版。外部に送らない)、`cards.getImage`(データで返す。端末のキャッシュに残さないため)、登録時の照合画面で撮影画像と IC 画像を並べて表示、登録者の詳細で表示(閲覧は監査ログ)。旧様式の実カードの券面イメージ・顔画像で表示を確認(2026-11-20)。旧様式はカードの見た目で組み立てて表示(券面イメージは白を透明にした PNG、項目名はアプリで描画、配置は `apps/mobile/src/ui/cardLayout.ts`。実カードで位置の合わせ込みが必要)。第2世代の氏名イメージ・カード表示は未対応
 - [ ] **1-9 失効照会(半自動)**: アプリ内ブラウザで照会ページを開き、番号と満了日を表示、結果を記録。交付当日は翌日再照会アラート。スクレイピングはしない
@@ -67,6 +67,6 @@
 
 ### リリース準備
 - [ ] **1-20 端末保護**: 送信後の一時ファイル削除、FLAG_SECURE、iOS のバックグラウンドぼかし
-  - 進捗: 実装済み(`apps/mobile/src/ui/PrivacyShield.tsx`)。expo-screen-capture でスクリーンショット・画面録画を禁止(Android は FLAG_SECURE)、iOS のアプリ切り替え画面のぼかし、前面でないときは画面全体を無地で覆う。一時ファイルは撮影直後に削除(`photo.ts`)、画像はデータ URI で表示しディスクのキャッシュに残さない。開発用ビルドのみ `EXPO_PUBLIC_ALLOW_SCREENSHOTS=1` で無効化可。実機での確認待ち
+  - 進捗: 実装済み(`apps/mobile/src/ui/PrivacyShield.tsx`)。expo-screen-capture でスクリーンショット・画面録画を禁止(Android は FLAG_SECURE)、iOS のアプリ切り替え画面のぼかし、前面でないときは画面全体を無地で覆う。一時ファイルは撮影直後に削除(`photo.ts`)、画像はデータ URI で表示しディスクのキャッシュに残さない。開発用ビルドのみ `EXPO_PUBLIC_ALLOW_SCREENSHOTS=1` で無効化可。Android 実機でスクリーンショット禁止を確認(2026-11-20)
 - [ ] **1-21 退職後データの自動削除ジョブ**(テナント設定の保存期間)
 - [ ] **1-22 App Store / Google Play 申請準備**: アプリ内に購入導線がないことを確認、審査用デモテナントと審査メモ(法人契約のみ・Webで契約)
