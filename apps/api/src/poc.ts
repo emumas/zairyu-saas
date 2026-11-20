@@ -4,11 +4,10 @@
  * - 保存はしない(PoC は検証結果を返すだけ)
  * - フェーズ1 で cards.submitIcRead(認証・テナント固定・保存・監査ログ)に置き換える
  */
-import { X509Certificate } from "node:crypto";
-import { readFileSync } from "node:fs";
 import { describeFiles, parseCardRead, type EfPath } from "@zairyu/zairyu-ic";
 import { verifyCardSignature } from "@zairyu/zairyu-ic/verify";
 import { z } from "zod";
+import { trustedIssuers } from "./trust.js";
 
 const EF_PATHS = [
   "mf/ef01", "mf/ef02",
@@ -46,27 +45,13 @@ export const verifyIcReadOutput = z.object({
   structure: z.record(z.string(), z.string()),
 });
 
-let trustedIssuers: X509Certificate[] | undefined;
-
-/**
- * 信頼する発行者証明書(入管庁)。未入手のため環境変数 ZAIRYU_TRUSTED_ISSUERS(DER/PEM ファイルのパス、カンマ区切り)で与える。
- * 未設定なら issuerTrusted は null(未確認)になる
- */
-function loadTrustedIssuers(): X509Certificate[] {
-  if (!trustedIssuers) {
-    const paths = (process.env.ZAIRYU_TRUSTED_ISSUERS ?? "").split(",").filter(Boolean);
-    trustedIssuers = paths.map((p) => new X509Certificate(readFileSync(p.trim())));
-  }
-  return trustedIssuers;
-}
-
 export function verifyIcRead(input: z.infer<typeof verifyIcReadInput>): z.infer<typeof verifyIcReadOutput> {
   const files: Partial<Record<EfPath, Uint8Array>> = {};
   for (const [path, b64] of Object.entries(input.files)) files[path as EfPath] = Buffer.from(b64, "base64");
   const parsed = parseCardRead({ format: input.format, kind: input.kind, files });
   const { format: _format, ...back } = parsed.back;
   return {
-    signature: verifyCardSignature(parsed.signature, { trustedIssuers: loadTrustedIssuers() }),
+    signature: verifyCardSignature(parsed.signature, { trustedIssuers: trustedIssuers() }),
     cardNumber: parsed.cardNumber,
     faceItems: parsed.faceItems ? { ...parsed.faceItems } : null,
     back,

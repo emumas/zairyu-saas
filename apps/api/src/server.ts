@@ -12,6 +12,8 @@ const services = createServices(config);
 
 const trpc = createHTTPHandler({
   basePath: "/trpc/",
+  // カード登録で撮影画像(表裏 各 3MB まで、base64)を受け取るため
+  maxBodySize: 12 * 1024 * 1024,
   router: appRouter,
   createContext: ({ req }) => {
     const header = req.headers.authorization;
