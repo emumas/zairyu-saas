@@ -33,7 +33,7 @@ export interface NotificationPayload {
   title: string;
   body: string;
   /** 通知の種類(アプリでの表示切り替え用) */
-  kind: "expiry_digest" | "needs_review";
+  kind: "expiry_digest" | "needs_review" | "revoked" | "recheck_revocation";
 }
 
 /** 期限アラートのまとめ通知(受け取る人ごとに件数を数える) */
@@ -56,5 +56,21 @@ export function needsReviewNotice(): NotificationPayload {
     kind: "needs_review",
     title: "要確認のカードが登録されました",
     body: "電子署名の検証に失敗したカードが登録されました(偽造の疑い)。アプリで確認し、入管局・労働局に相談してください。",
+  };
+}
+
+export function revokedNotice(): NotificationPayload {
+  return {
+    kind: "revoked",
+    title: "失効したカード番号が見つかりました",
+    body: "失効情報照会で「失効」と記録されたカードがあります。アプリで確認し、本人への確認と入管局・労働局への相談を行ってください。",
+  };
+}
+
+export function recheckRevocationNotice(): NotificationPayload {
+  return {
+    kind: "recheck_revocation",
+    title: "失効情報の再照会のお願い",
+    body: "昨日の失効情報照会で結果が出なかったカード(交付当日の可能性)があります。アプリから再照会してください。",
   };
 }

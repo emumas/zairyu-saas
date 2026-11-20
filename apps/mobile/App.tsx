@@ -9,6 +9,7 @@ import { AlertsScreen } from "./src/screens/AlertsScreen";
 import { HomeScreen } from "./src/screens/HomeScreen";
 import { PersonCreateScreen } from "./src/screens/PersonCreateScreen";
 import { PersonScreen } from "./src/screens/PersonScreen";
+import { RevocationCheckScreen } from "./src/screens/RevocationCheckScreen";
 import { Button } from "./src/ui/kit";
 import { PrivacyShield } from "./src/ui/PrivacyShield";
 import { CardWizard } from "./src/wizard/CardWizard";
@@ -19,6 +20,7 @@ type Route =
   | { name: "wizard"; personId: string; personName: string }
   | { name: "personCreate" }
   | { name: "alerts" }
+  | { name: "revocation"; cardId: string; personId: string; personName: string }
   | { name: "poc" };
 
 function Main() {
@@ -47,6 +49,17 @@ function Main() {
           </View>
         </View>
       );
+    case "revocation":
+      return (
+        <RevocationCheckScreen
+          cardId={route.cardId}
+          personName={route.personName}
+          onDone={() => {
+            setReloadKey((k) => k + 1);
+            setRoute({ name: "person", id: route.personId });
+          }}
+        />
+      );
     case "alerts":
       return <AlertsScreen onBack={() => setRoute({ name: "home" })} onOpenPerson={(id) => setRoute({ name: "person", id })} />;
     case "personCreate":
@@ -58,6 +71,7 @@ function Main() {
           personId={route.id}
           onBack={() => setRoute({ name: "home" })}
           onRegisterCard={(personName) => setRoute({ name: "wizard", personId: route.id, personName })}
+          onRevocationCheck={(cardId, personName) => setRoute({ name: "revocation", cardId, personId: route.id, personName })}
         />
       );
     case "wizard":

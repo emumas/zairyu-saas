@@ -9,6 +9,7 @@ import { cardsRouter } from "./routers/cards.js";
 import { dashboardRouter } from "./routers/dashboard.js";
 import { meRouter } from "./routers/me.js";
 import { personsRouter } from "./routers/persons.js";
+import { verificationsRouter } from "./routers/verifications.js";
 import { publicProcedure, router } from "./trpc.js";
 
 export const appRouter = router({
@@ -19,6 +20,7 @@ export const appRouter = router({
   dashboard: dashboardRouter,
   alerts: alertsRouter,
   devices: devicesRouter,
+  verifications: verificationsRouter,
 
   health: publicProcedure.output(z.object({ status: z.literal("ok") })).query(() => ({ status: "ok" as const })),
 

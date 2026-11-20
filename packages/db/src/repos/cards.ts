@@ -107,3 +107,26 @@ export async function listCardsForPerson(tx: Tx, personId: string) {
     verifications: vers.filter((v) => v.cardId === c.id),
   }));
 }
+
+/** カードと、その登録者の拠点(権限の確認用) */
+export async function getCardWithSite(tx: Tx, cardId: string) {
+  const [row] = await tx
+    .select({
+      id: residenceCards.id,
+      personId: residenceCards.personId,
+      siteId: persons.siteId,
+      cardFormat: residenceCards.cardFormat,
+      cardNumberEnc: residenceCards.cardNumberEnc,
+      expiryDate: residenceCards.expiryDate,
+      cardValidUntil: residenceCards.cardValidUntil,
+      isCurrent: residenceCards.isCurrent,
+    })
+    .from(residenceCards)
+    .innerJoin(persons, eq(persons.id, residenceCards.personId))
+    .where(eq(residenceCards.id, cardId));
+  return row ?? null;
+}
+
+export async function markCardNeedsReview(tx: Tx, cardId: string): Promise<void> {
+  await tx.update(residenceCards).set({ needsReview: true, updatedAt: new Date() }).where(eq(residenceCards.id, cardId));
+}

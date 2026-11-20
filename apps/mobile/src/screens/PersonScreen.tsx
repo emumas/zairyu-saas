@@ -12,7 +12,17 @@ import { bucketTone, FORMAT_LABEL, METHOD_LABEL, RESULT_LABEL } from "./format";
 type Person = Awaited<ReturnType<typeof api.persons.get.query>>;
 type Cards = Awaited<ReturnType<typeof api.cards.listForPerson.query>>;
 
-export function PersonScreen({ personId, onBack, onRegisterCard }: { personId: string; onBack: () => void; onRegisterCard: (personName: string) => void }) {
+export function PersonScreen({
+  personId,
+  onBack,
+  onRegisterCard,
+  onRevocationCheck,
+}: {
+  personId: string;
+  onBack: () => void;
+  onRegisterCard: (personName: string) => void;
+  onRevocationCheck: (cardId: string, personName: string) => void;
+}) {
   const session = useSession();
   const [person, setPerson] = useState<Person | null>(null);
   const [cards, setCards] = useState<Cards>([]);
@@ -132,6 +142,9 @@ export function PersonScreen({ personId, onBack, onRegisterCard }: { personId: s
         </Card>
       ) : null}
       <Message text={error} />
+      {c && session.can("verifications.write") && (
+        <Button label="失効情報照会" kind="secondary" onPress={() => onRevocationCheck(c.id, person.name)} />
+      )}
       {session.can("cards.write") && person.status === "active" && (
         <Button label={c ? "新しいカードを登録" : "カードを登録"} onPress={() => onRegisterCard(person.name)} />
       )}
