@@ -17,11 +17,13 @@ export function PersonScreen({
   onBack,
   onRegisterCard,
   onRevocationCheck,
+  onReverify,
 }: {
   personId: string;
   onBack: () => void;
   onRegisterCard: (personName: string) => void;
   onRevocationCheck: (cardId: string, personName: string) => void;
+  onReverify: (cardId: string, personName: string) => void;
 }) {
   const session = useSession();
   const [person, setPerson] = useState<Person | null>(null);
@@ -142,6 +144,9 @@ export function PersonScreen({
         </Card>
       ) : null}
       <Message text={error} />
+      {c && session.can("cards.write") && person.status === "active" && (
+        <Button label="IC を再検証" kind="secondary" onPress={() => onReverify(c.id, person.name)} />
+      )}
       {c && session.can("verifications.write") && (
         <Button label="失効情報照会" kind="secondary" onPress={() => onRevocationCheck(c.id, person.name)} />
       )}

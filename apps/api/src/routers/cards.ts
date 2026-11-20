@@ -10,6 +10,10 @@ import {
   alertRecipients,
   enqueueNotifications,
   findOtherPersonWithCard,
+  getCardState,
+  getCardWithSite,
+  updateCard,
+  type CardPatch,
   insertAlertsIfAbsent,
   findPersonSite,
   insertCardImage,
@@ -18,8 +22,8 @@ import {
   replaceCurrentCard,
   type Tx,
 } from "@zairyu/db";
-import { cardRegisterInput, cardVerifyInput, jstDate, needsReviewNotice } from "@zairyu/shared";
-import { cardNumberHmac, encryptCardNumber, putEncryptedBlob } from "@zairyu/vault";
+import { cardRegisterInput, cardVerifyInput, icReadPayload, jstDate, needsReviewNotice } from "@zairyu/shared";
+import { cardNumberHmac, decryptCardNumber, encryptCardNumber, putEncryptedBlob } from "@zairyu/vault";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { assertSiteAccess } from "../authz/guards.js";
@@ -70,7 +74,98 @@ const diffOutput = z.object({
   input: z.union([z.string(), z.boolean()]).nullable(),
 });
 
+async function loadCurrentCardForWrite(tx: Tx, actor: Actor, cardId: string) {
+  const card = await getCardWithSite(tx, cardId);
+  if (!card) throw notFound();
+  assertSiteAccess(actor, card.siteId);
+  if (!card.isCurrent) throw new TRPCError({ code: "BAD_REQUEST", message: "現在のカードだけ再検証できます" });
+  return card;
+}
+
+/** 再検証で IC から更新する項目(カードの交付後に IC へ追記されるもの) */
+const REVERIFY_FIELDS = ["pendingApplication", "outsideActivity", "outsideActivityUntil"] as const;
+
 export const cardsRouter = router({
+  /** IC 再検証(1-8)の準備: IC の認証に使う番号を返す(番号の表示として監査ログに残す) */
+  reverifyStart: permissionProcedure("cards.write")
+    .input(z.object({ cardId: z.uuid() }))
+    .output(z.object({ cardNumber: z.string(), cardFormat: z.enum(["legacy", "gen2", "tokutei"]) }))
+    .mutation(({ ctx, input }) =>
+      ctx.tenantTx(async (tx) => {
+        const card = await loadCurrentCardForWrite(tx, ctx.actor, input.cardId);
+        const cardNumber = await decryptCardNumber(requireVault(ctx.services).keyring, ctx.actor.tenantId, card.cardNumberEnc);
+        await ctx.audit(tx, { action: "card.reveal_number", targetType: "residence_card", targetId: card.id, detail: { purpose: "ic_reverify" } });
+        return { cardNumber, cardFormat: card.cardFormat };
+      }),
+    ),
+
+  /**
+   * IC 再検証(1-8): 登録済みのカードの IC を読み直して署名を検証し、確認履歴に追記する。
+   * 交付後に IC へ追記される項目(更新申請中・資格外活動)が変わっていればカードに反映する
+   */
+  reverifyIc: permissionProcedure("cards.write")
+    .input(z.object({ cardId: z.uuid(), ic: icReadPayload, deviceId: z.string().max(100).optional() }))
+    .output(
+      z.object({
+        signature: z.enum(["valid", "invalid", "absent"]),
+        icVerified: z.boolean(),
+        needsReview: z.boolean(),
+        changes: z.array(z.object({ field: z.string(), before: z.union([z.string(), z.boolean()]).nullable(), after: z.union([z.string(), z.boolean()]).nullable() })),
+      }),
+    )
+    .mutation(({ ctx, input }) =>
+      ctx.tenantTx(async (tx) => {
+        const card = await loadCurrentCardForWrite(tx, ctx.actor, input.cardId);
+        const ic = evaluateIc(input.ic);
+        // 別のカードを読んでいないか(第2世代・特定は IC 内の番号で確かめる。旧様式は番号による IC の認証が通ったことで確かめられる)
+        const stored = await decryptCardNumber(requireVault(ctx.services).keyring, ctx.actor.tenantId, card.cardNumberEnc);
+        if (ic.format !== card.cardFormat || (ic.cardNumber !== null && ic.cardNumber !== stored)) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "登録済みのカードと違うカードが読み取られました" });
+        }
+        const judged = judgeSignature(ic.signature);
+        const current = (await getCardState(tx, card.id))!;
+        const patch: CardPatch = {};
+        const changes: { field: string; before: string | boolean | null; after: string | boolean | null }[] = [];
+        // 署名が NG の IC の内容は信用しないので、項目は更新しない
+        if (judged.result !== "failed") {
+          for (const f of REVERIFY_FIELDS) {
+            const after = ic.fields[f];
+            if (after === null || after === current[f]) continue;
+            changes.push({ field: f, before: current[f], after });
+            (patch as Record<string, unknown>)[f] = after;
+          }
+          if (patch.pendingApplication === true) patch.pendingApplicationSince = jstDate(ctx.services.now());
+          if (patch.pendingApplication === false) patch.pendingApplicationSince = null;
+        }
+        if (judged.icVerified) patch.icVerified = true;
+        if (judged.needsReview) {
+          patch.icVerified = false;
+          patch.needsReview = true;
+        }
+        if (Object.keys(patch).length > 0) await updateCard(tx, card.id, patch);
+        await insertVerification(tx, {
+          cardId: card.id,
+          method: "ic_signature",
+          result: judged.result,
+          diffJson: { signature: ic.signature, reverify: true, ...(changes.length ? { changes } : {}) },
+          performedBy: ctx.actor.userId,
+          deviceId: input.deviceId ?? null,
+        });
+        if (judged.needsReview) {
+          await insertAlertsIfAbsent(tx, [{ personId: card.personId, cardId: card.id, type: "needs_review", dueDate: jstDate(ctx.services.now()) }]);
+          const recipients = (await alertRecipients(tx, card.siteId)).map((r) => r.id);
+          await enqueueNotifications(tx, recipients, needsReviewNotice(), new Date(ctx.services.now()));
+        }
+        await ctx.audit(tx, {
+          action: "card.ic_reverify",
+          targetType: "residence_card",
+          targetId: card.id,
+          detail: { signature: ic.signature.status, changed: changes.map((c) => c.field) },
+        });
+        return { signature: ic.signature.status, icVerified: judged.icVerified, needsReview: judged.needsReview, changes };
+      }),
+    ),
+
   /** 登録前の確認: 署名検証と券面との照合(保存しない) */
   verifyIcRead: permissionProcedure("cards.write")
     .input(cardVerifyInput)

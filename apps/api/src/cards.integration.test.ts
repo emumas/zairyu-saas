@@ -197,6 +197,67 @@ describe.skipIf(!url)("カード登録", () => {
     expect(await codeOf(viewer.cards.getImage({ imageId: card!.images[0]!.id }))).toBe("FORBIDDEN");
   });
 
+  describe("IC 再検証(1-8)", () => {
+    it("読み直して確認履歴に追記し、IC に追記された更新申請中を反映する", async () => {
+      const personId = await newPerson("RV01");
+      const { cardId } = await tokyoAdmin.cards.register({
+        personId,
+        cardNumber: "AB10000001CD",
+        ic: icPayload({ format: "gen2", kind: "residence", signer: ec, cardNumber: "AB10000001CD", renewalApplying: false }),
+      });
+      const start = await tokyoAdmin.cards.reverifyStart({ cardId });
+      expect(start).toEqual({ cardNumber: "AB10000001CD", cardFormat: "gen2" });
+
+      // 更新を申請した後のカード(IC に「申請中」が追記されている)
+      const r = await tokyoAdmin.cards.reverifyIc({
+        cardId,
+        ic: icPayload({ format: "gen2", kind: "residence", signer: ec, cardNumber: "AB10000001CD", renewalApplying: true }),
+      });
+      expect(r).toMatchObject({ signature: "valid", icVerified: true, needsReview: false });
+      expect(r.changes).toEqual([{ field: "pendingApplication", before: false, after: true }]);
+      const p = await tokyoAdmin.persons.get({ id: personId });
+      expect(p.card?.pendingApplication).toBe(true);
+      const [card] = await tokyoAdmin.cards.listForPerson({ personId });
+      expect(card!.verifications.filter((v) => v.method === "ic_signature")).toHaveLength(2);
+    });
+
+    it("別のカードを読んだら拒否する", async () => {
+      const personId = await newPerson("RV02");
+      const { cardId } = await tokyoAdmin.cards.register({
+        personId,
+        cardNumber: "AB10000002CD",
+        ic: icPayload({ format: "gen2", kind: "residence", signer: ec, cardNumber: "AB10000002CD" }),
+      });
+      const other = icPayload({ format: "gen2", kind: "residence", signer: ec, cardNumber: "AB10000099CD" });
+      expect(await codeOf(tokyoAdmin.cards.reverifyIc({ cardId, ic: other }))).toBe("BAD_REQUEST");
+      const legacy = icPayload({ format: "legacy", kind: "residence", signer: rsa });
+      expect(await codeOf(tokyoAdmin.cards.reverifyIc({ cardId, ic: legacy }))).toBe("BAD_REQUEST");
+    });
+
+    it("署名が NG なら要確認にし、IC の内容では更新しない", async () => {
+      const personId = await newPerson("RV03");
+      const { cardId } = await tokyoAdmin.cards.register({
+        personId,
+        cardNumber: "AB10000003CD",
+        ic: icPayload({ format: "gen2", kind: "residence", signer: ec, cardNumber: "AB10000003CD", renewalApplying: false }),
+      });
+      const tampered = icPayload({ format: "gen2", kind: "residence", signer: ec, cardNumber: "AB10000003CD", renewalApplying: true }, (f) => {
+        f["df1/ef02"]![5]! ^= 1;
+      });
+      const r = await tokyoAdmin.cards.reverifyIc({ cardId, ic: tampered });
+      expect(r).toMatchObject({ signature: "invalid", icVerified: false, needsReview: true, changes: [] });
+      const p = await tokyoAdmin.persons.get({ id: personId });
+      expect(p.card).toMatchObject({ pendingApplication: false, icVerified: false, needsReview: true });
+    });
+
+    it("閲覧者・担当外は再検証できない", async () => {
+      const personId = await newPerson("RV04");
+      const { cardId } = await tokyoAdmin.cards.register({ personId, cardNumber: "AB10000004CD", ic: null, icFailureReason: "other" });
+      expect(await codeOf(viewer.cards.reverifyStart({ cardId }))).toBe("FORBIDDEN");
+      expect(await codeOf(osakaAdmin.cards.reverifyStart({ cardId }))).toBe("NOT_FOUND");
+    });
+  });
+
   it("権限と拠点の範囲", async () => {
     const personId = await newPerson("P001");
     const ic = icPayload({ format: "gen2", kind: "residence", signer: ec });

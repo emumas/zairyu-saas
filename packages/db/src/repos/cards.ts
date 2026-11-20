@@ -130,3 +130,28 @@ export async function getCardWithSite(tx: Tx, cardId: string) {
 export async function markCardNeedsReview(tx: Tx, cardId: string): Promise<void> {
   await tx.update(residenceCards).set({ needsReview: true, updatedAt: new Date() }).where(eq(residenceCards.id, cardId));
 }
+
+export type CardPatch = Partial<
+  Pick<
+    typeof residenceCards.$inferInsert,
+    "pendingApplication" | "pendingApplicationSince" | "outsideActivity" | "outsideActivityUntil" | "icVerified" | "needsReview"
+  >
+>;
+
+export async function updateCard(tx: Tx, cardId: string, patch: CardPatch): Promise<void> {
+  await tx.update(residenceCards).set({ ...patch, updatedAt: new Date() }).where(eq(residenceCards.id, cardId));
+}
+
+/** 再検証で比べるための現在の値 */
+export async function getCardState(tx: Tx, cardId: string) {
+  const [row] = await tx
+    .select({
+      pendingApplication: residenceCards.pendingApplication,
+      outsideActivity: residenceCards.outsideActivity,
+      outsideActivityUntil: residenceCards.outsideActivityUntil,
+      icVerified: residenceCards.icVerified,
+    })
+    .from(residenceCards)
+    .where(eq(residenceCards.id, cardId));
+  return row ?? null;
+}

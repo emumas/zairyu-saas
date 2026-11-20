@@ -12,12 +12,10 @@ import {
   type CardManualFields,
   type IcReadPayload,
 } from "@zairyu/shared";
-import { CardNumberMismatchError, CardReadError, readResidenceCard, toBase64, type EfPath } from "@zairyu/zairyu-ic";
 import { useState } from "react";
-import { Switch, Text, Vibration, View } from "react-native";
+import { Switch, Text, View } from "react-native";
 import { api, messageOf } from "../api";
-import { randomBytes, tokuteiDeliveryKey } from "../config";
-import { maxReadLengthFor, withIsoDep } from "../nfc";
+import { IcProgressView, icErrorMessage, isCardReadError, readIcPayload, type IcProgress } from "../ic/readIc";
 import { compressForUpload, deleteFile, recognizeCardNumber } from "../photo";
 import { FORMAT_LABEL } from "../screens/format";
 import { Button, Card, Choice, color, Field, Message, Row, Screen } from "../ui/kit";
@@ -45,16 +43,6 @@ const IC_FAILURE: { value: IcFailure; label: string }[] = [
   { value: "other", label: "その他" },
 ];
 
-function icErrorMessage(e: unknown): string {
-  if (e instanceof CardNumberMismatchError) return "在留カード番号が一致しません。番号を確認してください。";
-  if (e instanceof CardReadError) {
-    if (e.step === "mutual_authenticate") return "カードとの認証に失敗しました。番号が正しいか確認してください。";
-    if (e.step === "set_session_key") return "特定在留カードは現在読み取れません(配送鍵が未設定)。";
-    return "読み取りに失敗しました。カードを端末の背面に当て、動かさずにもう一度お試しください。";
-  }
-  return "読み取りに失敗しました。もう一度お試しください。";
-}
-
 export function CardWizard({ personId, personName, onClose, onDone }: { personId: string; personName: string; onClose: () => void; onDone: () => void }) {
   const [step, setStep] = useState<Step>("front");
   const [camera, setCamera] = useState<"front" | "back" | null>(null);
@@ -71,7 +59,7 @@ export function CardWizard({ personId, personName, onClose, onDone }: { personId
   const [noStayLimit, setNoStayLimit] = useState(false);
   const [busy, setBusy] = useState(false);
   /** IC 読み取りの進み具合(カードとやり取りした回数) */
-  const [icProgress, setIcProgress] = useState<{ phase: "wait" | "reading" | "checking"; apdus: number } | null>(null);
+  const [icProgress, setIcProgress] = useState<IcProgress>(null);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<{ icVerified: boolean; needsReview: boolean } | null>(null);
 
@@ -104,35 +92,14 @@ export function CardWizard({ personId, personName, onClose, onDone }: { personId
   async function readIc() {
     setBusy(true);
     setError(null);
-    setIcProgress({ phase: "wait", apdus: 0 });
     try {
-      const raw = await withIsoDep(async (rawTransceive, info) => {
-        const maxReadLength = maxReadLengthFor(info);
-        const deliveryKey = tokuteiDeliveryKey();
-        let n = 0;
-        const transceive = async (apdu: Uint8Array) => {
-          setIcProgress({ phase: "reading", apdus: ++n });
-          return rawTransceive(apdu);
-        };
-        return readResidenceCard(transceive, {
-          cardNumber,
-          randomBytes,
-          ...(maxReadLength ? { maxReadLength } : {}),
-          ...(deliveryKey ? { tokuteiDeliveryKey: deliveryKey } : {}),
-        });
-      });
-      // 読み取りが終わったら振動で知らせる(カードを離してよい)
-      Vibration.vibrate(150);
-      setIcProgress({ phase: "checking", apdus: 0 });
-      const files: Partial<Record<EfPath, string>> = {};
-      for (const [path, data] of Object.entries(raw.files)) if (data) files[path as EfPath] = toBase64(data);
-      const payload: IcReadPayload = { format: raw.format, kind: raw.kind, files };
+      const payload = await readIcPayload(cardNumber, setIcProgress);
       setIc(payload);
       setIcFailure(null);
       setVerify(await api.cards.verifyIcRead.mutate({ personId, cardNumber, ic: payload, manual: {} }));
       setStep("confirm");
     } catch (e) {
-      setError(e instanceof CardReadError ? icErrorMessage(e) : messageOf(e, icErrorMessage(e)));
+      setError(isCardReadError(e) ? icErrorMessage(e) : messageOf(e, icErrorMessage(e)));
     } finally {
       setBusy(false);
       setIcProgress(null);
@@ -238,17 +205,7 @@ export function CardWizard({ personId, personName, onClose, onDone }: { personId
           <Text style={{ fontWeight: "700" }}>3. IC の読み取り</Text>
           <Text>ボタンを押してから、カードを端末の背面(iPhone は上部)に当て、読み取りが終わるまで動かさないでください(5 秒ほど)。金属の机の上では読めないことがあります。</Text>
           <Button label="IC を読み取る" busy={busy} onPress={readIc} />
-          {icProgress?.phase === "wait" && <Message text="カードを端末の背面に当ててください" tone="warn" />}
-          {icProgress?.phase === "reading" && (
-            <View style={{ gap: 4 }}>
-              <Message text="読み取り中… カードを動かさないでください" tone="warn" />
-              {/* 旧様式で約 16 回、第2世代で約 20 回のやり取り */}
-              <View style={{ height: 6, backgroundColor: color.muted, borderRadius: 3 }}>
-                <View style={{ height: 6, borderRadius: 3, backgroundColor: color.primary, width: `${Math.min(95, (icProgress.apdus / 20) * 100)}%` }} />
-              </View>
-            </View>
-          )}
-          {icProgress?.phase === "checking" && <Message text="読み取り完了。カードを離して大丈夫です。サーバーで確認しています…" tone="ok" />}
+          <IcProgressView progress={icProgress} />
           <Message text={error} />
           <Text style={{ color: color.sub, marginTop: 8 }}>IC が読めない場合</Text>
           <Choice options={IC_FAILURE} value={icFailure} onChange={setIcFailure} />
