@@ -66,5 +66,6 @@
 
 ### リリース準備
 - [ ] **1-20 端末保護**: 送信後の一時ファイル削除、FLAG_SECURE、iOS のバックグラウンドぼかし
+  - 進捗: 実装済み(`apps/mobile/src/ui/PrivacyShield.tsx`)。expo-screen-capture でスクリーンショット・画面録画を禁止(Android は FLAG_SECURE)、iOS のアプリ切り替え画面のぼかし、前面でないときは画面全体を無地で覆う。一時ファイルは撮影直後に削除(`photo.ts`)、画像はデータ URI で表示しディスクのキャッシュに残さない。開発用ビルドのみ `EXPO_PUBLIC_ALLOW_SCREENSHOTS=1` で無効化可。実機での確認待ち
 - [ ] **1-21 退職後データの自動削除ジョブ**(テナント設定の保存期間)
 - [ ] **1-22 App Store / Google Play 申請準備**: アプリ内に購入導線がないことを確認、審査用デモテナントと審査メモ(法人契約のみ・Webで契約)

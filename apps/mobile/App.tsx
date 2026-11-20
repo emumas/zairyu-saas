@@ -10,6 +10,7 @@ import { HomeScreen } from "./src/screens/HomeScreen";
 import { PersonCreateScreen } from "./src/screens/PersonCreateScreen";
 import { PersonScreen } from "./src/screens/PersonScreen";
 import { Button } from "./src/ui/kit";
+import { PrivacyShield } from "./src/ui/PrivacyShield";
 import { CardWizard } from "./src/wizard/CardWizard";
 
 type Route =
@@ -85,9 +86,11 @@ function Main() {
 
 export default function App() {
   return (
-    <SessionProvider>
-      <Main />
-      <StatusBar style="dark" />
-    </SessionProvider>
+    <PrivacyShield>
+      <SessionProvider>
+        <Main />
+        <StatusBar style="dark" />
+      </SessionProvider>
+    </PrivacyShield>
   );
 }
