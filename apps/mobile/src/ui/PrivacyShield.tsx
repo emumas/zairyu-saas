@@ -34,8 +34,12 @@ export function PrivacyShield({ children }: { children: ReactNode }) {
   const [covered, setCovered] = useState(false);
 
   useEffect(() => {
-    const ScreenCapture = allowScreenshots ? null : loadScreenCapture();
-    if (ScreenCapture) {
+    const ScreenCapture = loadScreenCapture();
+    if (ScreenCapture && allowScreenshots) {
+      // 再読み込み前の禁止状態が残らないよう、明示的に解除する(開発用ビルドのみ)
+      ScreenCapture.allowScreenCaptureAsync("zairyu").catch(() => {});
+      ScreenCapture.disableAppSwitcherProtectionAsync().catch(() => {});
+    } else if (ScreenCapture) {
       ScreenCapture.preventScreenCaptureAsync("zairyu").catch(() => {});
       ScreenCapture.enableAppSwitcherProtectionAsync(0.9).catch(() => {});
     }
