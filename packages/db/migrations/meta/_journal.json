@@ -106,6 +106,20 @@
       "when": 1795169161449,
       "tag": "0014_person_kana_phone",
       "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1795169520732,
+      "tag": "0015_postal_codes",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1795169521280,
+      "tag": "0016_postal_codes_security",
+      "breakpoints": true
     }
   ]
 }

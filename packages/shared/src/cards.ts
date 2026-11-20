@@ -1,6 +1,17 @@
 /** カード登録 API の入出力(mobile / web / api で共有) */
 import { z } from "zod";
 import { addressInput } from "./address.js";
+import { normalizePostalCode } from "./postal.js";
+
+/** 郵便番号(〒・ハイフン・全角を許し、7 桁にそろえる) */
+const postalCodeInput = z
+  .string()
+  .transform((s, ctx) => {
+    if (s.trim() === "") return null;
+    const v = normalizePostalCode(s);
+    if (!v) ctx.addIssue({ code: "custom", message: "郵便番号は 7 桁の数字で入力してください" });
+    return v;
+  });
 import { CARD_NUMBER_PATTERN } from "./cardNumber.js";
 import { dateString } from "./persons.js";
 
@@ -57,6 +68,8 @@ export const cardManualFields = z.object({
   /** 住居地(撮影画像の端末内 OCR か手入力。IC に裏面の記載があればサーバーはそちらを採用する) */
   address: addressInput.nullish(),
   addressSource: z.enum(["back_photo", "front_photo", "manual"]).nullish(),
+  /** 郵便番号(省略すると住居地から自動で引く) */
+  postalCode: postalCodeInput.nullish(),
 });
 export type CardManualFields = z.infer<typeof cardManualFields>;
 
@@ -98,6 +111,8 @@ export const cardDetailsUpdateInput = z.object({
   nationality: z.string().trim().max(50).nullable().optional(),
   address: addressInput.nullable().optional(),
   addressSource: z.enum(["back_photo", "front_photo", "manual"]).optional(),
+  /** 郵便番号(null で消す。住居地を変えて郵便番号を省略すると自動で引き直す) */
+  postalCode: postalCodeInput.nullable().optional(),
   /** 旧様式のみ(IC に文字情報が無いため) */
   statusOfResidence: z.string().trim().max(50).nullable().optional(),
   expiryDate: dateString.nullable().optional(),

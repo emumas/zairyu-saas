@@ -19,6 +19,7 @@ import {
   findPersonSite,
   insertCardImage,
   insertVerification,
+  lookupPostalCode,
   listCardsForPerson,
   replaceCurrentCard,
   type Tx,
@@ -153,6 +154,7 @@ export const cardsRouter = router({
               patch.addressEnc = await encryptAddress(keyring, ctx.actor.tenantId, ic.backAddress.address);
               patch.addressSource = "ic_back";
               patch.addressWrittenAt = ic.backAddress.writtenAt;
+              patch.postalCode = (await lookupPostalCode(tx, ic.backAddress.address)).postalCode;
               changes.push({ field: "address", before: null, after: null });
             }
           }
@@ -299,7 +301,10 @@ export const cardsRouter = router({
           throw new TRPCError({ code: "CONFLICT", message: "同じ在留カード番号が別の登録者に登録されています" });
         }
         const today = jstDate(ctx.services.now());
+        // 郵便番号: 入力が無ければ住居地から引く(1 つに決まったときだけ)
+        const postalCode = input.manual.postalCode ?? (address ? (await lookupPostalCode(tx, address.address)).postalCode : null);
         const cardId = await replaceCurrentCard(tx, input.personId, {
+          postalCode,
           cardFormat: ic?.format ?? "legacy",
           cardKind: ic?.kind ?? "residence",
           cardNumberEnc: numberEnc,
@@ -374,6 +379,8 @@ export const cardsRouter = router({
           address: z.string().nullable(),
           addressSource: z.string().nullable(),
           addressWrittenAt: z.string().nullable(),
+          /** 郵便番号(7 桁) */
+          postalCode: z.string().nullable(),
           images: z.array(z.object({ id: z.string(), kind: z.string() })),
           verifications: z.array(
             z.object({
@@ -446,8 +453,12 @@ export const cardsRouter = router({
             patch.addressSource = input.address ? (input.addressSource ?? "manual") : null;
             patch.addressWrittenAt = null;
             changed.push("address");
+            // 住居地を変えて郵便番号の指定が無ければ、新しい住居地から引き直す
+            if (input.postalCode === undefined) patch.postalCode = input.address ? (await lookupPostalCode(tx, input.address)).postalCode : null;
           }
         }
+        if (input.postalCode !== undefined && input.postalCode !== card.postalCode) patch.postalCode = input.postalCode;
+        if (patch.postalCode !== undefined && patch.postalCode !== card.postalCode) changed.push("postalCode");
         if (changed.length === 0) throw new TRPCError({ code: "BAD_REQUEST", message: "変更された項目がありません" });
         await updateCard(tx, card.id, patch);
         await insertVerification(tx, {

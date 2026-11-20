@@ -11,7 +11,8 @@
     "test": "vitest run",
     "dev:init-env": "tsx src/scripts/initEnv.ts",
     "dev:setup": "tsx --env-file-if-exists=.env src/scripts/devSetup.ts",
-    "platform:create-operator": "tsx --env-file-if-exists=.env src/scripts/createOperator.ts"
+    "platform:create-operator": "tsx --env-file-if-exists=.env src/scripts/createOperator.ts",
+    "postal:load": "tsx --env-file-if-exists=.env src/scripts/loadPostalCodes.ts"
   },
   "dependencies": {
     "@cornerstonejs/codec-openjpeg": "1.3.6",
@@ -22,6 +23,7 @@
     "@zairyu/vault": "workspace:*",
     "@zairyu/zairyu-ic": "workspace:*",
     "drizzle-orm": "^0.45.4",
+    "fflate": "0.8.2",
     "jose": "6.2.15",
     "sharp": "0.35.5",
     "zod": "^4.6.7"

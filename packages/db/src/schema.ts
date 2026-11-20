@@ -322,6 +322,8 @@ export const residenceCards = pgTable(
     nationality: text("nationality"),
     /** 住居地(テナントの鍵で暗号化。検索しない) */
     addressEnc: bytea("address_enc"),
+    /** 住居地の郵便番号(7 桁。住所から自動で引くか手入力) */
+    postalCode: text("postal_code"),
     /** 住居地の出どころ: ic_back(IC の裏面追記)/ back_photo / front_photo / manual */
     addressSource: text("address_source"),
     /** 裏面に住居地が記載された日(IC の裏面追記の日付) */
@@ -538,4 +540,25 @@ export const auditLogs = pgTable(
     at: timestamp("at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("audit_logs_tenant_at_idx").on(t.tenantId, t.at)],
+);
+
+// ---------------------------------------------------------------- 参照データ(テナントに属さない)
+
+/**
+ * 郵便番号データ(日本郵便の KEN_ALL)。住所から郵便番号を引くための参照データで、個人情報は含まない。
+ * 全テナント共通なので tenant_id を持たない(アプリは参照のみ。投入は管理ユーザーのスクリプト)
+ */
+export const postalCodes = pgTable(
+  "postal_codes",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    code: text("code").notNull(),
+    pref: text("pref").notNull(),
+    city: text("city").notNull(),
+    /** 表示用の町域名(かっこ書きを除く。「以下に掲載がない場合」は空) */
+    town: text("town").notNull(),
+    /** 照合用(空白を除き、ヶ をケに、全角数字を半角に) */
+    townKey: text("town_key").notNull(),
+  },
+  (t) => [index("postal_codes_pref_city_idx").on(t.pref, t.city), index("postal_codes_code_idx").on(t.code)],
 );

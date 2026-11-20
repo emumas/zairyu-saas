@@ -10,3 +10,4 @@ export * from "./csv.js";
 export * from "./personImport.js";
 export * from "./billing.js";
 export * from "./address.js";
+export * from "./postal.js";

@@ -5,7 +5,7 @@
  * - 画像の取得は閲覧として監査ログに残る
  * - 第2世代の記載事項と、IC の裏面追記から取った住居地は IC の値なので変えない(表示のみ)
  */
-import { ADDRESS_SOURCE_LABEL, chooseAddress, type AddressSource, type FrontOcrFields } from "@zairyu/shared";
+import { ADDRESS_SOURCE_LABEL, chooseAddress, formatPostalCode, type AddressSource, type FrontOcrFields } from "@zairyu/shared";
 import { useEffect, useState } from "react";
 import { Switch, Text, View } from "react-native";
 import { api, messageOf } from "../api";
@@ -21,6 +21,7 @@ type Form = {
   expiryDate: string;
   cardValidUntil: string;
   address: string;
+  postalCode: string;
 };
 
 const fromCard = (c: CardRow): Form => ({
@@ -31,6 +32,7 @@ const fromCard = (c: CardRow): Form => ({
   expiryDate: c.expiryDate ?? "",
   cardValidUntil: c.cardValidUntil ?? "",
   address: c.address ?? "",
+  postalCode: c.postalCode ? formatPostalCode(c.postalCode) : "",
 });
 
 const orNull = (s: string) => (s.trim() ? s.trim() : null);
@@ -47,6 +49,7 @@ export function CardDetailsScreen({ personId, personName, onClose, onSaved }: { 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
+  const [postal, setPostal] = useState<{ message: string | null; candidates: { code: string; label: string }[] }>({ message: null, candidates: [] });
 
   useEffect(() => {
     api.cards.listForPerson.query({ personId }).then(
@@ -108,6 +111,22 @@ export function CardDetailsScreen({ personId, personName, onClose, onSaved }: { 
     }
   }
 
+  /** 住所から郵便番号を探す(1 つに決まれば入れる。決まらなければ候補を出す) */
+  async function findPostal() {
+    if (!form?.address.trim()) return;
+    try {
+      const r = await api.postal.lookup.query({ address: form.address.trim() });
+      if (!r.loaded) return setPostal({ message: "郵便番号データが未登録です。運用担当者に連絡してください", candidates: [] });
+      if (r.postalCode) {
+        setForm((f) => (f ? { ...f, postalCode: formatPostalCode(r.postalCode) } : f));
+        return setPostal({ message: r.level === "city" ? "町域が見つからないため、市区町村全体の郵便番号を入れました" : null, candidates: [] });
+      }
+      setPostal({ message: r.candidates.length ? "候補から選んでください" : "見つかりませんでした。郵便番号を入力してください", candidates: r.candidates });
+    } catch (e) {
+      setError(messageOf(e));
+    }
+  }
+
   async function save() {
     if (!card || !form) return;
     setBusy(true);
@@ -127,6 +146,7 @@ export function CardDetailsScreen({ personId, personName, onClose, onSaved }: { 
         input.address = orNull(form.address);
         input.addressSource = addressSource && addressSource !== "ic_back" ? addressSource : "manual";
       }
+      if (form.postalCode !== (card.postalCode ? formatPostalCode(card.postalCode) : "")) input.postalCode = form.postalCode.trim() ? form.postalCode : null;
       const r = await api.cards.updateDetails.mutate(input);
       setMsg(`保存しました(${r.changed.length} 項目)`);
       onSaved();
@@ -223,10 +243,31 @@ export function CardDetailsScreen({ personId, personName, onClose, onSaved }: { 
             {readDone && !front?.address && !backAddress && <Text style={{ color: color.sub, fontSize: 12 }}>写真から住居地を読み取れませんでした。</Text>}
           </>
         )}
+        <Field
+          label="郵便番号(空欄なら住居地から自動で入れます)"
+          value={form.postalCode}
+          onChangeText={(v) => setForm({ ...form, postalCode: v })}
+          placeholder="160-0023"
+          keyboardType="numbers-and-punctuation"
+          maxLength={10}
+        />
+        <Button label="住所から郵便番号を探す" kind="secondary" disabled={!form.address.trim()} onPress={() => void findPostal()} />
+        {postal.message && <Text style={{ color: color.sub, fontSize: 12 }}>{postal.message}</Text>}
+        {postal.candidates.map((c) => (
+          <Button
+            key={c.code}
+            label={`〒${formatPostalCode(c.code)} ${c.label}`}
+            kind="secondary"
+            onPress={() => {
+              setForm({ ...form, postalCode: formatPostalCode(c.code) });
+              setPostal({ message: null, candidates: [] });
+            }}
+          />
+        ))}
       </Card>
       <Message text={error} />
       <Message text={msg} tone="ok" />
-      <Button label="保存する" busy={busy} disabled={!legacy && addressFromIc} onPress={() => void save()} />
+      <Button label="保存する" busy={busy} onPress={() => void save()} />
     </Screen>
   );
 }

@@ -1,5 +1,5 @@
 /** 登録者の詳細: 現在のカード・期限・カード履歴と確認履歴 */
-import { ADDRESS_SOURCE_LABEL, EXPIRY_BUCKET_LABEL, WORK_RESTRICTION_LABEL } from "@zairyu/shared";
+import { ADDRESS_SOURCE_LABEL, EXPIRY_BUCKET_LABEL, formatPostalCode, WORK_RESTRICTION_LABEL } from "@zairyu/shared";
 import { useCallback, useEffect, useState } from "react";
 import { Text } from "react-native";
 import { api, messageOf } from "../api";
@@ -143,7 +143,7 @@ export function PersonScreen({
             <Row k="生年月日" v={cur.birthDate ?? "—"} />
             <Row k="性別" v={cur.sex === "M" ? "男" : cur.sex === "F" ? "女" : "—"} />
             <Row k="国籍・地域" v={cur.nationality ?? "—"} />
-            <Row k="住居地" v={cur.address ?? "—"} />
+            <Row k="住居地" v={cur.address ? `${cur.postalCode ? `〒${formatPostalCode(cur.postalCode)} ` : ""}${cur.address}` : "—"} />
             {cur.address && cur.addressSource && (
               <Text style={{ color: color.sub, fontSize: 12 }}>
                 {ADDRESS_SOURCE_LABEL[cur.addressSource as keyof typeof ADDRESS_SOURCE_LABEL] ?? cur.addressSource}

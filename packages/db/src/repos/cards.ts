@@ -84,6 +84,7 @@ export async function listCardsForPerson(tx: Tx, personId: string) {
       addressEnc: residenceCards.addressEnc,
       addressSource: residenceCards.addressSource,
       addressWrittenAt: residenceCards.addressWrittenAt,
+      postalCode: residenceCards.postalCode,
       icVerified: residenceCards.icVerified,
       needsReview: residenceCards.needsReview,
       isCurrent: residenceCards.isCurrent,
@@ -129,6 +130,7 @@ export async function getCardWithSite(tx: Tx, cardId: string) {
       addressEnc: residenceCards.addressEnc,
       addressSource: residenceCards.addressSource,
       addressWrittenAt: residenceCards.addressWrittenAt,
+      postalCode: residenceCards.postalCode,
       birthDate: residenceCards.birthDate,
       sex: residenceCards.sex,
       nationality: residenceCards.nationality,
@@ -159,6 +161,7 @@ export type CardPatch = Partial<
     | "addressEnc"
     | "addressSource"
     | "addressWrittenAt"
+    | "postalCode"
     | "birthDate"
     | "sex"
     | "nationality"

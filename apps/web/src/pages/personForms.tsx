@@ -1,5 +1,6 @@
 /** 登録者詳細の編集フォーム(登録者の情報、カード記載事項の手入力) */
 import { useState, type FormEvent } from "react";
+import { formatPostalCode } from "@zairyu/shared";
 import { api, messageOf } from "../api";
 import { useSession } from "../session";
 import { Button, Message } from "../ui";
@@ -108,7 +109,25 @@ export function CardDetailsForm({ card, onDone }: { card: CardRow; onDone: () =>
     expiryDate: card.expiryDate ?? "",
     cardValidUntil: card.cardValidUntil ?? "",
     address: card.address ?? "",
+    postalCode: card.postalCode ? formatPostalCode(card.postalCode) : "",
   });
+  const [postal, setPostal] = useState<{ message: string | null; candidates: { code: string; label: string }[] }>({ message: null, candidates: [] });
+
+  /** 住所から郵便番号を探す(1 つに決まれば入れる。決まらなければ候補を出す) */
+  async function findPostal() {
+    if (!f.address.trim()) return;
+    try {
+      const r = await api.postal.lookup.query({ address: f.address.trim() });
+      if (!r.loaded) return setPostal({ message: "郵便番号データが未登録です(運用担当者に postal:load の実行を依頼してください)", candidates: [] });
+      if (r.postalCode) {
+        setF((x) => ({ ...x, postalCode: formatPostalCode(r.postalCode) }));
+        return setPostal({ message: r.level === "city" ? "町域が見つからないため、市区町村全体の郵便番号を入れました" : null, candidates: [] });
+      }
+      setPostal({ message: r.candidates.length ? "候補から選んでください" : "見つかりませんでした。住所を確かめるか、郵便番号を入力してください", candidates: r.candidates });
+    } catch (err) {
+      setError(messageOf(err));
+    }
+  }
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -128,6 +147,7 @@ export function CardDetailsForm({ card, onDone }: { card: CardRow; onDone: () =>
       input.address = v(f.address);
       input.addressSource = "manual";
     }
+    if (f.postalCode !== (card.postalCode ? formatPostalCode(card.postalCode) : "")) input.postalCode = f.postalCode.trim() ? f.postalCode : null;
     if (Object.keys(input).length === 1) return onDone();
     setBusy(true);
     try {
@@ -184,6 +204,33 @@ export function CardDetailsForm({ card, onDone }: { card: CardRow; onDone: () =>
           <span>住居地</span>
           <input value={f.address} onChange={(e) => setF({ ...f, address: e.target.value })} placeholder="東京都新宿区西新宿2-8-1" maxLength={200} />
         </label>
+      )}
+      <div className="row">
+        <label className="field">
+          <span>郵便番号(空欄なら住居地から自動で入れます)</span>
+          <input value={f.postalCode} onChange={(e) => setF({ ...f, postalCode: e.target.value })} placeholder="160-0023" maxLength={10} />
+        </label>
+        <Button kind="secondary" type="button" onClick={() => void findPostal()} disabled={!f.address.trim()}>
+          住所から探す
+        </Button>
+      </div>
+      {postal.message && <p className="sub">{postal.message}</p>}
+      {postal.candidates.length > 0 && (
+        <div className="row wrap">
+          {postal.candidates.map((c) => (
+            <Button
+              key={c.code}
+              kind="secondary"
+              type="button"
+              onClick={() => {
+                setF({ ...f, postalCode: formatPostalCode(c.code) });
+                setPostal({ message: null, candidates: [] });
+              }}
+            >
+              〒{formatPostalCode(c.code)} {c.label}
+            </Button>
+          ))}
+        </div>
       )}
       <Message text={error} />
       <div className="row">

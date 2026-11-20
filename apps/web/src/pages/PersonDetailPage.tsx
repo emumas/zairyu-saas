@@ -1,6 +1,7 @@
 import {
   ADDRESS_SOURCE_LABEL,
   EXPIRY_BUCKET_LABEL,
+  formatPostalCode,
   WORK_RESTRICTION_LABEL,
 } from "@zairyu/shared";
 import { useEffect, useState } from "react";
@@ -256,7 +257,7 @@ export function PersonDetailPage() {
                 <dd>{cur.nationality ?? "—"}</dd>
                 <dt>住居地</dt>
                 <dd>
-                  {cur.address ?? "—"}
+                  {cur.postalCode ? `〒${formatPostalCode(cur.postalCode)} ` : ""}{cur.address ?? "—"}
                   {cur.address && cur.addressSource && (
                     <span className="sub">
                       (
