@@ -264,7 +264,7 @@ describe.skipIf(!url)("カード登録", () => {
       h.services.config.trustedIssuers = [];
     });
 
-    it("旧様式(RSA): 本物の CA で発行されていない証明書は要確認(偽造の疑い)。第2世代(ECDSA)は CA が無いので未確認のまま検証済み", async () => {
+    it("本物の CA(旧様式 RSA・第2世代 ECDSA)で発行されていない証明書は要確認(偽造の疑い)", async () => {
       h.services.config.trustedIssuers = trustedIssuers({});
       const legacyPerson = await newPerson("CA1");
       const n1 = "AJ12345678CD";
@@ -274,8 +274,8 @@ describe.skipIf(!url)("カード登録", () => {
       const gen2Person = await newPerson("CA2");
       const n2 = "AK12345678CD";
       const v = await tokyoAdmin.cards.verifyIcRead({ personId: gen2Person, cardNumber: n2, ic: icPayload({ format: "gen2", kind: "residence", signer: ec, cardNumber: n2 }), manual: {} });
-      expect(v.signature).toMatchObject({ status: "valid", issuerTrusted: null });
-      expect(v).toMatchObject({ icVerified: true, needsReview: false });
+      expect(v.signature).toMatchObject({ status: "valid", issuerTrusted: false });
+      expect(v).toMatchObject({ icVerified: false, needsReview: true });
     });
   });
 

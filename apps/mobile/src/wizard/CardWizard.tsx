@@ -278,7 +278,7 @@ export function CardWizard({ personId, personName, onClose, onDone }: { personId
                 {verify.signature.status === "valid" && (
                   <Row
                     k="発行者"
-                    v={verify.signature.issuerTrusted === true ? "入管庁の証明書で確認済み" : verify.signature.issuerTrusted === false ? "入管庁の証明書と一致しない" : "未確認(第2世代)"}
+                    v={verify.signature.issuerTrusted === true ? "入管庁の証明書で確認済み" : verify.signature.issuerTrusted === false ? "入管庁の証明書と一致しない" : "未確認(該当する証明書なし)"}
                     tone={verify.signature.issuerTrusted === true ? "ok" : verify.signature.issuerTrusted === false ? "danger" : "warn"}
                   />
                 )}
