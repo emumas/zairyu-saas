@@ -120,6 +120,18 @@ const LABELS = /氏名|NAME|生年月日|DATE OF BIRTH|性別|SEX|国籍・地�
 const valueOf = (s: string) => s.replace(LABELS, " ").replace(/[()()]/g, " ").replace(/\s+/g, " ").trim();
 
 /**
+ * 国籍・地域の欄から国名だけを取り出す。項目名の一部が読み違えられて残ることがある
+ * (例:「国籍・地域」→「·地滅」)ので、カタカナ・漢字だけの語のうち最後のもの(項目名の後に書かれる値)を使う
+ */
+export function countryName(s: string): string | null {
+  const words = valueOf(s)
+    .split(/[\s·･]+/)
+    .map((w) => w.replace(/^[・:：]+|[・:：]+$/g, ""))
+    .filter((w) => /^[\p{Script=Katakana}\p{Script=Han}ー・]{2,}$/u.test(w) && !/^(国籍|地域|地.)$/.test(w));
+  return words.at(-1) ?? null;
+}
+
+/**
  * 旧様式の表面の OCR から記載事項を取り出す(端末で確認・修正してもらう前提の候補)。
  * 項目名の行(と次の行)から値を探す
  */
@@ -135,9 +147,9 @@ export function frontFieldsFromOcr(lines: readonly OcrLine[]): FrontOcrFields {
   const sexLine = near(/性別|SEX/i).join(" ");
   const sex = /女|\bF\b/.test(sexLine) ? "F" : /男|\bM\b/.test(sexLine) ? "M" : null;
 
-  const natLine = sorted.find((t) => /国籍|NATIONALITY/i.test(t));
-  let nationality = natLine ? valueOf(natLine.slice(natLine.search(/国籍|NATIONALITY/i))) : "";
-  if (!nationality) nationality = valueOf(near(/国籍|NATIONALITY/i)[1] ?? "");
+  const natLines = near(/国籍|地域|NATIONALITY|REGION/i);
+  let nationality = countryName(natLines[0] ? natLines[0].slice(natLines[0].search(/国籍|地域|NATIONALITY|REGION/i)) : "");
+  if (!nationality) nationality = countryName(natLines[1] ?? "");
 
   const statusLines = near(/在留資格|STATUS/i);
   let status = statusLines[0] ? valueOf(statusLines[0].slice(statusLines[0].search(/在留資格|STATUS/i))) : "";
@@ -146,7 +158,7 @@ export function frontFieldsFromOcr(lines: readonly OcrLine[]): FrontOcrFields {
   return {
     birthDate: firstDate(near(/生年月日|DATE OF BIRTH/i)),
     sex,
-    nationality: nationality && nationality.length <= 30 && !/\d/.test(nationality) ? nationality : null,
+    nationality: nationality && nationality.length <= 30 ? nationality : null,
     statusOfResidence: status && status.length <= 30 ? status.replace(/\s/g, "") : null,
     expiryDate: firstDate(near(/在留期間|満了日|EXPIRATION/i)),
     cardValidUntil: firstDate(sorted.filter((t) => /まで有効|有効/.test(t))),

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addressFromFrontOcr, chooseAddress, cleanAddress, frontFieldsFromOcr, japaneseDate, latestAddressFromBackOcr } from "./address.js";
+import { addressFromFrontOcr, chooseAddress, cleanAddress, countryName, frontFieldsFromOcr, japaneseDate, latestAddressFromBackOcr } from "./address.js";
 
 describe("addressFromFrontOcr", () => {
   it("住居地の欄を取り出す(項目名を除き、続きの行をつなぐ)", () => {
@@ -79,6 +79,19 @@ describe("frontFieldsFromOcr(旧様式の表面)", () => {
     ]);
     expect(r).toMatchObject({ birthDate: "1988-12-31", sex: "F", nationality: null, statusOfResidence: null, expiryDate: null, address: null });
   });
+  it("国籍は項目名の読み違いが残っても国名だけを取る", () => {
+    expect(countryName("国籍・地域 フィリピン")).toBe("フィリピン");
+    expect(countryName("·地滅 フィリピン")).toBe("フィリピン");
+    expect(countryName("国籍・地域 NATIONALITY/REGION 中国")).toBe("中国");
+    expect(countryName("NATIONALITY/REGION ベトナム")).toBe("ベトナム");
+    expect(countryName("国籍・地域")).toBeNull();
+    const r = frontFieldsFromOcr([
+      { text: "生年月日 1990年1月1日 性別 女 F", top: 100 },
+      { text: "国籍·地滅 フィリピン", top: 120 },
+    ]);
+    expect(r.nationality).toBe("フィリピン");
+  });
+
   it("japaneseDate は存在しない日付を拒否する", () => {
     expect(japaneseDate("2025年2月30日")).toBeNull();
     expect(japaneseDate("2024年2月29日")).toBe("2024-02-29");
