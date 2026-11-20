@@ -429,6 +429,8 @@ export const auditLogs = pgTable(
     action: text("action").notNull(),
     targetType: text("target_type"),
     targetId: text("target_id"),
+    /** 補足(変更した項目名など)。値(個人情報)は入れない */
+    detail: jsonb("detail"),
     ip: inet("ip"),
     at: timestamp("at", { withTimezone: true }).notNull().defaultNow(),
   },

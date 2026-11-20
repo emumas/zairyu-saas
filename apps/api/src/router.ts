@@ -5,12 +5,14 @@ import { verifyIcRead, verifyIcReadInput, verifyIcReadOutput } from "./poc.js";
 import { authRouter } from "./routers/auth.js";
 import { cardsRouter } from "./routers/cards.js";
 import { meRouter } from "./routers/me.js";
+import { personsRouter } from "./routers/persons.js";
 import { publicProcedure, router } from "./trpc.js";
 
 export const appRouter = router({
   auth: authRouter,
   me: meRouter,
   cards: cardsRouter,
+  persons: personsRouter,
 
   health: publicProcedure.output(z.object({ status: z.literal("ok") })).query(() => ({ status: "ok" as const })),
 

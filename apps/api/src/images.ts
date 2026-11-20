@@ -20,7 +20,7 @@ export async function issueImageUrl(
   tx: Tx,
   actor: Actor,
   imageId: string,
-  ip: string | null,
+  audit: (tx: Tx, e: { action: string; targetType: string; targetId: string }) => Promise<void>,
 ): Promise<{ url: string; expiresIn: number }> {
   const [row] = await tx
     .select({ id: schema.cardImages.id, siteId: schema.persons.siteId })
@@ -30,7 +30,7 @@ export async function issueImageUrl(
     .where(eq(schema.cardImages.id, imageId));
   if (!row) throw notFound();
   assertSiteAccess(actor, row.siteId);
-  await tx.insert(schema.auditLogs).values({ actorId: actor.userId, action: "card_image.view", targetType: "card_image", targetId: imageId, ip });
+  await audit(tx, { action: "card_image.view", targetType: "card_image", targetId: imageId });
   const ttl = services.config.imageUrlTtlSec;
   const token = await signToken(
     services.config.jwtSecret,

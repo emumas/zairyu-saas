@@ -8,5 +8,5 @@ export const cardsRouter = router({
   getImageUrl: permissionProcedure("cards.viewImage")
     .input(z.object({ imageId: z.uuid() }))
     .output(z.object({ url: z.string(), expiresIn: z.number() }))
-    .mutation(({ ctx, input }) => ctx.tenantTx((tx) => issueImageUrl(ctx.services, tx, ctx.actor, input.imageId, ctx.ip))),
+    .mutation(({ ctx, input }) => ctx.tenantTx((tx) => issueImageUrl(ctx.services, tx, ctx.actor, input.imageId, ctx.audit))),
 });

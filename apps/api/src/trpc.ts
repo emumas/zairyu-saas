@@ -1,4 +1,4 @@
-import { withTenant, schema, type Db, type Tx } from "@zairyu/db";
+import { insertAudit, withTenant, schema, type AuditEntry, type Db, type Tx } from "@zairyu/db";
 import type { Vault } from "@zairyu/vault";
 import { initTRPC, TRPCError } from "@trpc/server";
 import { and, eq } from "drizzle-orm";
@@ -54,7 +54,7 @@ const unauthorized = () => new TRPCError({ code: "UNAUTHORIZED", message: "ロ�
  * 認証: アクセストークンを検証し、ユーザー・ロール・担当拠点を DB から引き直す
  * (ロール変更や停止をトークンの有効期限を待たずに反映するため)
  */
-const authed = t.middleware(async ({ ctx, next }) => {
+const authed = t.middleware(async ({ ctx, next, type, path }) => {
   const services = requireServices(ctx);
   if (!ctx.accessToken) throw unauthorized();
   const claims = await verifyToken(services.config.jwtSecret, ctx.accessToken, "access", Math.floor(services.now() / 1000));
@@ -79,13 +79,33 @@ const authed = t.middleware(async ({ ctx, next }) => {
   }
 
   const actor: Actor = { userId: claims.userId, tenantId: claims.tenantId, role: loaded.role, siteIds: loaded.siteIds };
+  let auditCount = 0;
   return next({
     ctx: {
       ...ctx,
       services,
       actor,
-      /** このユーザーのテナントに固定したトランザクション */
-      tenantTx: <T>(fn: (tx: Tx) => Promise<T>) => withTenant(services.db, actor.tenantId, fn),
+      /**
+       * 監査ログを書く(1-5)。変更系の手続きは tenantTx の中で必ず 1 件以上書くこと。
+       * detail には変更した項目名などだけを入れ、値(個人情報)は入れない
+       */
+      audit: async (tx: Tx, entry: Omit<AuditEntry, "actorId" | "ip">) => {
+        await insertAudit(tx, { ...entry, actorId: actor.userId, ip: ctx.ip });
+        auditCount++;
+      },
+      /**
+       * このユーザーのテナントに固定したトランザクション。
+       * mutation で監査ログを書かずに終わろうとしたら、エラーにして変更ごとロールバックする
+       */
+      tenantTx: <T>(fn: (tx: Tx) => Promise<T>) =>
+        withTenant(services.db, actor.tenantId, async (tx) => {
+          const before = auditCount;
+          const result = await fn(tx);
+          if (type === "mutation" && auditCount === before) {
+            throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: `監査ログが記録されていません(${path})` });
+          }
+          return result;
+        }),
     },
   });
 });

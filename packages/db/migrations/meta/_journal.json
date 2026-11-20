@@ -43,6 +43,13 @@
       "when": 1795132813340,
       "tag": "0005_tenant_keys_security",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1795133166672,
+      "tag": "0006_audit_detail",
+      "breakpoints": true
     }
   ]
 }
