@@ -18,7 +18,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "db:generate": "drizzle-kit generate",
-    "db:migrate": "tsx src/migrate.ts"
+    "db:migrate": "tsx --env-file-if-exists=../../apps/api/.env src/migrate.ts"
   },
   "dependencies": {
     "@zairyu/shared": "workspace:*",
