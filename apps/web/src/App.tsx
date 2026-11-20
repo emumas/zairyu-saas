@@ -1,10 +1,12 @@
 import { BrowserRouter, Navigate, NavLink, Route, Routes } from "react-router";
 import { AlertsPage } from "./pages/AlertsPage";
 import { DashboardPage } from "./pages/DashboardPage";
+import { ImportPage } from "./pages/ImportPage";
 import { InvitePage } from "./pages/InvitePage";
 import { LoginPage } from "./pages/LoginPage";
 import { PersonDetailPage } from "./pages/PersonDetailPage";
 import { PersonsPage } from "./pages/PersonsPage";
+import { ReportsPage } from "./pages/ReportsPage";
 import { SitesPage } from "./pages/SitesPage";
 import { UsersPage } from "./pages/UsersPage";
 import { SessionProvider, useSession } from "./session";
@@ -24,6 +26,8 @@ function Shell() {
         </NavLink>
         <NavLink to="/persons">登録者</NavLink>
         {session.can("alerts.read") && <NavLink to="/alerts">アラート</NavLink>}
+        {session.can("imports.run") && <NavLink to="/import">CSV 取込</NavLink>}
+        {session.can("reports.export") && <NavLink to="/reports">履歴の出力</NavLink>}
         {session.can("org.manage") && (
           <>
             <span className="nav-head">組織</span>
@@ -45,6 +49,8 @@ function Shell() {
           <Route path="/persons" element={<PersonsPage />} />
           <Route path="/persons/:id" element={<PersonDetailPage />} />
           <Route path="/alerts" element={<AlertsPage />} />
+          {session.can("imports.run") && <Route path="/import" element={<ImportPage />} />}
+          {session.can("reports.export") && <Route path="/reports" element={<ReportsPage />} />}
           {session.can("org.manage") && <Route path="/org/sites" element={<SitesPage />} />}
           {session.can("org.manage") && <Route path="/org/users" element={<UsersPage />} />}
           <Route path="*" element={<Navigate to="/" replace />} />

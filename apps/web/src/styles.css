@@ -78,3 +78,18 @@ dd { margin: 0; }
 .cardface-label { color: #4a5a4a; white-space: pre; line-height: 1.2; }
 .cardface img { -webkit-user-drag: none; pointer-events: none; }
 .hint { color: var(--sub, #667); font-size: 12px; margin: 4px 0 0; }
+.print-only { display: none; }
+@media print {
+  @page { size: A4 landscape; margin: 12mm; }
+  body { background: #fff; }
+  .layout > nav, .no-print { display: none !important; }
+  .layout { display: block; }
+  .layout > main { padding: 0; max-width: none; }
+  .print-only { display: block; }
+  .print-only h1 { font-size: 16pt; margin: 0 0 4px; }
+  .print-only p { font-size: 9pt; margin: 0 0 8px; }
+  .print-table { font-size: 8pt; width: 100%; }
+  .print-table th, .print-table td { padding: 3px 4px; border: 1px solid #999; }
+  .print-table thead { display: table-header-group; }
+  .print-table tr { break-inside: avoid; }
+}

@@ -198,3 +198,20 @@ export async function countByExpiry(tx: Tx, scope: SiteScope, today: string, sit
     total: flags?.total ?? 0,
   };
 }
+
+/** CSV 取込(1-10)用。社員番号で既存の登録者を引く(全拠点。範囲は呼び出し側で確かめる) */
+export async function findPersonsByEmployeeCodes(tx: Tx, codes: readonly string[]) {
+  if (codes.length === 0) return [];
+  return tx
+    .select({
+      id: persons.id,
+      siteId: persons.siteId,
+      employeeCode: persons.employeeCode,
+      name: persons.name,
+      nationality: persons.nationality,
+      birthDate: persons.birthDate,
+      status: persons.status,
+    })
+    .from(persons)
+    .where(inArray(persons.employeeCode, [...codes]));
+}

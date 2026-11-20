@@ -3,16 +3,14 @@ import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router";
 import { api, messageOf } from "../api";
 import { CardFaceView, type ImageData } from "../CardFaceView";
+import { FORMAT_LABEL, METHOD_LABEL, RESULT_LABEL } from "../labels";
 import { useSession } from "../session";
 import { Button, Card, fmtDateTime, Message } from "../ui";
 
 type Person = Awaited<ReturnType<typeof api.persons.get.query>>;
 type Cards = Awaited<ReturnType<typeof api.cards.listForPerson.query>>;
 
-const METHOD: Record<string, string> = { ic_signature: "IC 署名検証", ocr: "OCR", visual: "目視確認", revocation_check: "失効照会" };
-const RESULT: Record<string, string> = { ok: "OK", mismatch: "差分あり", failed: "NG", revoked: "失効", unverifiable: "検証不可" };
 const IMAGE: Record<string, string> = { front: "撮影した表面", back: "撮影した裏面", ic_front: "IC の券面イメージ", ic_face: "IC の顔写真", ic_name: "IC の氏名イメージ", ic_address: "IC の住居地イメージ" };
-const FORMAT = { legacy: "旧様式", gen2: "第2世代", tokutei: "特定在留カード" } as const;
 
 export function PersonDetailPage() {
   const { id = "" } = useParams();
@@ -85,7 +83,7 @@ export function PersonDetailPage() {
             {p.card && (
               <>
                 <dt>様式</dt>
-                <dd>{FORMAT[p.card.cardFormat]}</dd>
+                <dd>{FORMAT_LABEL[p.card.cardFormat]}</dd>
                 <dt>在留資格</dt>
                 <dd>{p.card.statusOfResidence ?? "—"}</dd>
                 <dt>就労制限</dt>
@@ -99,7 +97,7 @@ export function PersonDetailPage() {
         </Card>
       </div>
       {cards.map((c) => (
-        <Card key={c.id} title={`${FORMAT[c.cardFormat]} ・ ${fmtDateTime(c.createdAt)} 登録${c.isCurrent ? "(現在)" : ""}`}>
+        <Card key={c.id} title={`${FORMAT_LABEL[c.cardFormat]} ・ ${fmtDateTime(c.createdAt)} 登録${c.isCurrent ? "(現在)" : ""}`}>
           {faces[c.id] && <CardFaceView front={faces[c.id]!.front} face={faces[c.id]!.face} />}
           {session.can("cards.viewImage") && c.images.length > 0 && (
             <div className="row wrap">
@@ -131,8 +129,8 @@ export function PersonDetailPage() {
               {c.verifications.map((v) => (
                 <tr key={v.id}>
                   <td>{fmtDateTime(v.performedAt)}</td>
-                  <td>{METHOD[v.method] ?? v.method}</td>
-                  <td>{RESULT[v.result] ?? v.result}</td>
+                  <td>{METHOD_LABEL[v.method] ?? v.method}</td>
+                  <td>{RESULT_LABEL[v.result] ?? v.result}</td>
                   <td>{v.note ?? ""}</td>
                 </tr>
               ))}

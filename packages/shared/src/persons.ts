@@ -8,21 +8,21 @@ export const dateString = z.string().refine(isValidDate, "日付は YYYY-MM-DD �
 export const PERSON_STATUSES = ["active", "retired", "archived"] as const;
 export type PersonStatus = (typeof PERSON_STATUSES)[number];
 
-const name = z.string().trim().min(1, "氏名を入力してください").max(200);
-const employeeCode = z
+export const personNameSchema = z.string().trim().min(1, "氏名を入力してください").max(200);
+export const employeeCodeSchema = z
   .string()
   .trim()
   .min(1, "社員番号を入力してください")
   .max(50)
   .regex(/^[\x21-\x7E]+$/, "社員番号は半角英数記号で入力してください");
 /** 国籍・地域(ISO 3166-1 alpha-3 相当の英大文字 3 文字) */
-const nationality = z.string().regex(/^[A-Z]{3}$/, "国籍は英大文字 3 文字(例: VNM)で入力してください");
+export const nationalitySchema = z.string().regex(/^[A-Z]{3}$/, "国籍は英大文字 3 文字(例: VNM)で入力してください");
 
 export const personCreateInput = z.object({
   siteId: z.uuid(),
-  employeeCode,
-  name,
-  nationality: nationality.nullish(),
+  employeeCode: employeeCodeSchema,
+  name: personNameSchema,
+  nationality: nationalitySchema.nullish(),
   birthDate: dateString.nullish(),
 });
 export type PersonCreateInput = z.infer<typeof personCreateInput>;
@@ -30,9 +30,9 @@ export type PersonCreateInput = z.infer<typeof personCreateInput>;
 export const personUpdateInput = z.object({
   id: z.uuid(),
   siteId: z.uuid().optional(),
-  employeeCode: employeeCode.optional(),
-  name: name.optional(),
-  nationality: nationality.nullish(),
+  employeeCode: employeeCodeSchema.optional(),
+  name: personNameSchema.optional(),
+  nationality: nationalitySchema.nullish(),
   birthDate: dateString.nullish(),
 });
 export type PersonUpdateInput = z.infer<typeof personUpdateInput>;
