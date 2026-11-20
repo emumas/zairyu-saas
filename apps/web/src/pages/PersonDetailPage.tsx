@@ -2,6 +2,7 @@ import { EXPIRY_BUCKET_LABEL, WORK_RESTRICTION_LABEL } from "@zairyu/shared";
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router";
 import { api, messageOf } from "../api";
+import { CardFaceView, type ImageData } from "../CardFaceView";
 import { useSession } from "../session";
 import { Button, Card, fmtDateTime, Message } from "../ui";
 
@@ -19,6 +20,9 @@ export function PersonDetailPage() {
   const [p, setP] = useState<Person | null>(null);
   const [cards, setCards] = useState<Cards>([]);
   const [error, setError] = useState<string | null>(null);
+  /** カードごとの組み立て表示(画像はメモリ上だけに持ち、ブラウザのキャッシュに残さない) */
+  const [faces, setFaces] = useState<Record<string, { front: ImageData; face: ImageData | null }>>({});
+  const [loadingFace, setLoadingFace] = useState<string | null>(null);
 
   useEffect(() => {
     api.persons.get.query({ id }).then(setP, (e) => setError(messageOf(e)));
@@ -32,6 +36,22 @@ export function PersonDetailPage() {
       window.open(new URL(url).pathname, "_blank", "noopener,noreferrer");
     } catch (e) {
       setError(messageOf(e));
+    }
+  }
+
+  /** IC の券面イメージと顔写真から、カードの見た目で表示する(旧様式。閲覧は監査ログに記録される) */
+  async function showCardFace(cardId: string, frontId: string, faceId: string | undefined) {
+    setLoadingFace(cardId);
+    try {
+      const [front, face] = await Promise.all([
+        api.cards.getImage.mutate({ imageId: frontId }),
+        faceId ? api.cards.getImage.mutate({ imageId: faceId }) : Promise.resolve(null),
+      ]);
+      setFaces((f) => ({ ...f, [cardId]: { front, face } }));
+    } catch (e) {
+      setError(messageOf(e));
+    } finally {
+      setLoadingFace(null);
     }
   }
 
@@ -80,8 +100,17 @@ export function PersonDetailPage() {
       </div>
       {cards.map((c) => (
         <Card key={c.id} title={`${FORMAT[c.cardFormat]} ・ ${fmtDateTime(c.createdAt)} 登録${c.isCurrent ? "(現在)" : ""}`}>
+          {faces[c.id] && <CardFaceView front={faces[c.id]!.front} face={faces[c.id]!.face} />}
           {session.can("cards.viewImage") && c.images.length > 0 && (
-            <div className="row">
+            <div className="row wrap">
+              {c.cardFormat === "legacy" && !faces[c.id] && c.images.some((i) => i.kind === "ic_front") && (
+                <Button
+                  busy={loadingFace === c.id}
+                  onClick={() => void showCardFace(c.id, c.images.find((i) => i.kind === "ic_front")!.id, c.images.find((i) => i.kind === "ic_face")?.id)}
+                >
+                  カードの見た目で表示
+                </Button>
+              )}
               {c.images.map((img) => (
                 <Button key={img.id} kind="secondary" onClick={() => void openImage(img.id)}>
                   {IMAGE[img.kind] ?? img.kind}

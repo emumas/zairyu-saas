@@ -4,7 +4,7 @@
  */
 import { useState } from "react";
 import { Image, Text, View } from "react-native";
-import { LABEL_EN_SIZE, LABEL_SIZE, LEGACY_BANDS, LEGACY_FACE_BOX, LEGACY_FRONT_LABELS } from "./cardLayout";
+import { LABEL_EN_SIZE, LABEL_SIZE, LEGACY_BANDS, LEGACY_FACE_BOX, LEGACY_FRONT_LABELS } from "@zairyu/shared";
 import { color } from "./kit";
 
 export interface ImageData {

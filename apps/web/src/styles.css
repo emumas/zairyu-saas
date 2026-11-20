@@ -71,3 +71,10 @@ dd { margin: 0; }
   .layout { grid-template-columns: 1fr; }
   .grid2 { grid-template-columns: 1fr; }
 }
+.cardface-wrap { max-width: 640px; margin-bottom: 12px; }
+.cardface { position: relative; width: 100%; container-type: inline-size; background: #edf5e9; border: 1px solid var(--border); border-radius: 12px; overflow: hidden; user-select: none; }
+.cardface > * { position: absolute; }
+.cardface-band { background: #d7e8f3; }
+.cardface-label { color: #4a5a4a; white-space: pre; line-height: 1.2; }
+.cardface img { -webkit-user-drag: none; pointer-events: none; }
+.hint { color: var(--sub, #667); font-size: 12px; margin: 4px 0 0; }

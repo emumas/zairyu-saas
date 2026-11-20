@@ -5,3 +5,4 @@ export * from "./jst.js";
 export * from "./expiry.js";
 export * from "./persons.js";
 export * from "./revocation.js";
+export * from "./cardLayout.js";
