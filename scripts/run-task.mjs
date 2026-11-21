@@ -14,7 +14,20 @@ if (!["build", "test", "typecheck", "dev"].includes(task ?? "")) {
   process.exit(1);
 }
 
-const run = (cmd, args) => spawnSync(cmd, args, { stdio: "inherit", shell: process.platform === "win32" }).status ?? 1;
+/**
+ * シェルを通さずに起動する(Windows では「C:\\Program Files\\nodejs\\node.exe」のように空白を含むパスが
+ * シェルで分割されるため)。pnpm は、pnpm から呼ばれたときに渡される本体のパス(npm_execpath)を node で動かす
+ */
+const run = (cmd, args) => spawnSync(cmd, args, { stdio: "inherit" }).status ?? 1;
+const pnpm = (args) => {
+  const execPath = process.env.npm_execpath;
+  if (execPath && /pnpm/i.test(execPath)) {
+    // pnpm.cjs などは node で、単体の pnpm.exe はそのまま起動する
+    return /\.(c|m)?js$/i.test(execPath) ? run(process.execPath, [execPath, ...args]) : run(execPath, args);
+  }
+  // pnpm の外から直接実行されたとき(Windows の pnpm は pnpm.cmd なのでシェルが要る)
+  return spawnSync("pnpm", args, { stdio: "inherit", shell: process.platform === "win32" }).status ?? 1;
+};
 
 function turboWorks() {
   try {
@@ -34,18 +47,18 @@ if (turbo) {
 
 console.warn(`[run-task] Turbo を起動できないため、pnpm で順に実行します(${task})`);
 // ライブラリ(packages/*)を依存の順にビルドする(pnpm -r は依存関係の順に実行する)
-const buildPackages = () => run("pnpm", ["-r", "--filter", "./packages/**", "run", "build"]);
+const buildPackages = () => pnpm(["-r", "--filter", "./packages/**", "run", "build"]);
 let code;
 switch (task) {
   case "build":
-    code = run("pnpm", ["-r", "run", "build", ...extra]);
+    code = pnpm(["-r", "run", "build", ...extra]);
     break;
   case "test":
   case "typecheck":
-    code = buildPackages() || run("pnpm", ["-r", "run", task, ...extra]);
+    code = buildPackages() || pnpm(["-r", "run", task, ...extra]);
     break;
   case "dev":
-    code = buildPackages() || run("pnpm", ["--filter", "api", "run", "dev", ...extra]);
+    code = buildPackages() || pnpm(["--filter", "api", "run", "dev", ...extra]);
     break;
 }
 process.exit(code);
