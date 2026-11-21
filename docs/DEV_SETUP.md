@@ -115,3 +115,7 @@ pnpm postal:load
 ```
 
 日本郵便のサイトから取得して全件を入れ替えます(数十秒)。自動で取得できない場合(サイトの構成変更など)は、ブラウザで日本郵便の「郵便番号データダウンロード」ページから「全国一括」の zip(UTF-8 版・Shift_JIS 版のどちらでも可)を保存し、`pnpm postal:load -- --file <保存した zip のパス>` で入れます。データは毎月更新されるので、本番では月 1 回の定期実行にします。
+
+## トラブル: `pnpm build` で `spawn UNKNOWN`
+
+ビルドを取りまとめるツール(Turbo)が Windows のセキュリティ機能などで起動できない場合でも、`pnpm build` / `pnpm test` / `pnpm typecheck` / `pnpm dev` は自動で pnpm の順次実行に切り替わります(「Turbo を起動できないため、pnpm で順に実行します」と表示)。速さは落ちますが結果は同じです。Turbo を直すには `pnpm install --force` を試し、それでもだめなら Windows セキュリティの保護の履歴を確認してください。

@@ -12,4 +12,10 @@ export default tseslint.config(
       "no-console": "error",
     },
   },
+  {
+    // 開発用の Node スクリプト(ビルドの実行など。個人情報は扱わない)
+    files: ["scripts/**/*.mjs"],
+    languageOptions: { globals: { process: "readonly", console: "readonly" } },
+    rules: { "no-console": "off" },
+  },
 );

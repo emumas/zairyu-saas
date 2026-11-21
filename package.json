@@ -6,10 +6,10 @@
     "node": ">=22"
   },
   "scripts": {
-    "dev": "turbo run dev --filter=api",
-    "build": "turbo run build",
-    "test": "turbo run test",
-    "typecheck": "turbo run typecheck",
+    "dev": "node scripts/run-task.mjs dev",
+    "build": "node scripts/run-task.mjs build",
+    "test": "node scripts/run-task.mjs test",
+    "typecheck": "node scripts/run-task.mjs typecheck",
     "lint": "eslint .",
     "db:generate": "pnpm --filter @zairyu/db db:generate",
     "db:migrate": "pnpm --filter @zairyu/db db:migrate"
