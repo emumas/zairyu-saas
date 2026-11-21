@@ -52,6 +52,22 @@ export function DashboardPage() {
             <span>{t.label}</span>
           </Link>
         ))}
+        {s && (
+          <>
+            <Link to={`/persons?work=ng${siteQuery}`} className={`tile ${s.work.ng ? "tile-danger" : ""}`}>
+              <strong>{s.work.ng}</strong>
+              <span>就労不可</span>
+            </Link>
+            <Link to={`/persons?work=check${siteQuery}`} className={`tile ${s.work.check ? "tile-warn" : ""}`}>
+              <strong>{s.work.check}</strong>
+              <span>就労 要確認</span>
+            </Link>
+            <Link to={`/persons?work=conditional${siteQuery}`} className="tile">
+              <strong>{s.work.conditional}</strong>
+              <span>条件付きで就労可</span>
+            </Link>
+          </>
+        )}
         {s && s.duplicateGroups !== null && (
           <Link to="/duplicates" className={`tile ${s.duplicateGroups ? "tile-warn" : ""}`}>
             <strong>{s.duplicateGroups}</strong>

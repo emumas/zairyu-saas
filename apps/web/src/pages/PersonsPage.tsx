@@ -1,4 +1,4 @@
-import { EXPIRY_BUCKET_LABEL, EXPIRY_BUCKETS, type ExpiryBucket } from "@zairyu/shared";
+import { EXPIRY_BUCKET_LABEL, EXPIRY_BUCKETS, WORK_LEVEL_LABEL, WORK_LEVELS, type ExpiryBucket, type WorkLevel } from "@zairyu/shared";
 import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router";
 import { api, messageOf } from "../api";
@@ -13,6 +13,7 @@ export function PersonsPage() {
   const bucket = params.get("bucket") as ExpiryBucket | null;
   const flag = params.get("flag");
   const siteId = params.get("siteId");
+  const work = params.get("work") as WorkLevel | null;
   const sites = useSession().me?.sites ?? [];
   const [q, setQ] = useState(params.get("q") ?? "");
   const [offset, setOffset] = useState(0);
@@ -26,6 +27,7 @@ export function PersonsPage() {
           ...(q.trim() ? { q: q.trim() } : {}),
           ...(bucket ? { expiryBuckets: [bucket] } : {}),
           ...(siteId ? { siteId } : {}),
+          ...(work && WORK_LEVELS.includes(work) ? { workLevels: [work] } : {}),
           ...(flag === "icUnverified" ? { icUnverified: true } : {}),
           ...(flag === "needsReview" ? { needsReview: true } : {}),
           sort: bucket || flag ? "expiryDate" : "employeeCode",
@@ -35,7 +37,7 @@ export function PersonsPage() {
         .then(setList, (e) => setError(messageOf(e)));
     }, 250);
     return () => clearTimeout(t);
-  }, [q, bucket, flag, siteId, offset]);
+  }, [q, bucket, flag, siteId, work, offset]);
 
   return (
     <>
@@ -44,12 +46,13 @@ export function PersonsPage() {
         <div className="row">
           <input placeholder="氏名・フリガナ・社員番号で検索" value={q} onChange={(e) => { setQ(e.target.value); setOffset(0); }} />
           <select
-            value={bucket ?? flag ?? ""}
+            value={bucket ?? flag ?? (work ? `work:${work}` : "")}
             onChange={(e) => {
               const v = e.target.value;
               const next = new URLSearchParams();
               if (siteId) next.set("siteId", siteId);
               if (EXPIRY_BUCKETS.includes(v as ExpiryBucket)) next.set("bucket", v);
+              else if (v.startsWith("work:")) next.set("work", v.slice(5));
               else if (v) next.set("flag", v);
               setParams(next);
               setOffset(0);
@@ -63,6 +66,11 @@ export function PersonsPage() {
             ))}
             <option value="icUnverified">IC未検証</option>
             <option value="needsReview">要確認</option>
+            {WORK_LEVELS.map((l) => (
+              <option key={l} value={`work:${l}`}>
+                就労可否: {WORK_LEVEL_LABEL[l]}
+              </option>
+            ))}
           </select>
           {sites.length > 1 && (
             <select
@@ -95,6 +103,7 @@ export function PersonsPage() {
             <th>期限区分</th>
             <th>期限</th>
             <th>在留資格</th>
+            <th>就労可否</th>
             <th>状態</th>
           </tr>
         </thead>
@@ -114,6 +123,7 @@ export function PersonsPage() {
               </td>
               <td>{p.expiry.deadline ? `${p.expiry.deadline}(${p.expiry.daysLeft}日)` : "—"}</td>
               <td>{p.card?.statusOfResidence ?? "—"}</td>
+              <td className={`w-${p.work.level}`}>{WORK_LEVEL_LABEL[p.work.level]}</td>
               <td>{{ active: "在籍", retired: "退職", archived: "アーカイブ" }[p.status]}</td>
             </tr>
           ))}

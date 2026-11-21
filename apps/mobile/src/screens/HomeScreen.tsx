@@ -3,7 +3,7 @@
  * - 件数を押すとその区分で絞り込む。拠点が複数あれば拠点で切り替えられる
  * - 引っ張って更新。登録者の詳細から戻っても、絞り込み・検索・拠点はそのまま
  */
-import { EXPIRY_BUCKET_LABEL, RESTRICTED_MESSAGE, type ExpiryBucket } from "@zairyu/shared";
+import { EXPIRY_BUCKET_LABEL, RESTRICTED_MESSAGE, WORK_LEVEL_LABEL, type ExpiryBucket, type WorkLevel } from "@zairyu/shared";
 import { useCallback, useEffect, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { api, messageOf } from "../api";
@@ -14,7 +14,7 @@ import { bucketTone } from "./format";
 type Summary = Awaited<ReturnType<typeof api.dashboard.summary.query>>;
 type PersonItem = Awaited<ReturnType<typeof api.persons.list.query>>["items"][number];
 type Flag = "icUnverified" | "needsReview";
-type Tile = { bucket?: ExpiryBucket; flag?: Flag; label: string; tone: "danger" | "warn" };
+type Tile = { bucket?: ExpiryBucket; flag?: Flag; work?: WorkLevel; label: string; tone: "danger" | "warn" };
 
 const TILES: Tile[] = [
   { bucket: "expired", label: "期限切れ", tone: "danger" },
@@ -24,6 +24,9 @@ const TILES: Tile[] = [
   { flag: "needsReview", label: "要確認", tone: "danger" },
   { flag: "icUnverified", label: "IC未検証", tone: "warn" },
   { bucket: "noCard", label: EXPIRY_BUCKET_LABEL.noCard, tone: "warn" },
+  { work: "ng", label: "就労不可", tone: "danger" },
+  { work: "check", label: "就労 要確認", tone: "warn" },
+  { work: "conditional", label: "条件付き就労", tone: "warn" },
 ];
 const PAGE = 50;
 
@@ -68,6 +71,7 @@ export function HomeScreen({
         ...(tile?.bucket ? { expiryBuckets: [tile.bucket] } : {}),
         ...(tile?.flag === "icUnverified" ? { icUnverified: true } : {}),
         ...(tile?.flag === "needsReview" ? { needsReview: true } : {}),
+        ...(tile?.work ? { workLevels: [tile.work] } : {}),
         sort: tile ? "expiryDate" : "employeeCode",
         limit: PAGE,
         offset,
@@ -111,7 +115,7 @@ export function HomeScreen({
     }
   }
 
-  const count = (t: Tile) => (summary ? (t.bucket ? summary.buckets[t.bucket] : summary[t.flag!]) : null);
+  const count = (t: Tile) => (summary ? (t.work ? summary.work[t.work] : t.bucket ? summary.buckets[t.bucket] : summary[t.flag!]) : null);
 
   return (
     <Screen
@@ -174,6 +178,7 @@ export function HomeScreen({
               {p.expiry.deadline ? ` ・ 期限 ${p.expiry.deadline}(残り ${p.expiry.daysLeft} 日)` : ""}
               {p.expiry.icUnverified ? " ・ IC未検証" : ""}
               {p.expiry.needsReview ? " ・ 要確認" : ""}
+              {` ・ ${WORK_LEVEL_LABEL[p.work.level]}`}
               {p.status === "retired" ? " ・ 退職" : ""}
             </Text>
           </Card>

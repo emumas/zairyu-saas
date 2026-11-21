@@ -88,6 +88,8 @@ export const personListInput = z.object({
   expiryBuckets: z.array(z.enum(EXPIRY_BUCKETS)).min(1).optional(),
   icUnverified: z.boolean().optional(),
   needsReview: z.boolean().optional(),
+  /** 就労可否の区分で絞り込む(在籍中のみ) */
+  workLevels: z.array(z.enum(["ok", "conditional", "ng", "check"])).min(1).optional(),
   sort: z.enum(["employeeCode", "name", "expiryDate"]).default("employeeCode"),
   limit: z.number().int().min(1).max(100).default(50),
   offset: z.number().int().min(0).max(100_000).default(0),

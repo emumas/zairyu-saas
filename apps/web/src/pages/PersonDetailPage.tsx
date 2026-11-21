@@ -2,6 +2,7 @@ import {
   ADDRESS_SOURCE_LABEL,
   EXPIRY_BUCKET_LABEL,
   formatPostalCode,
+  WORK_LEVEL_LABEL,
   WORK_RESTRICTION_LABEL,
 } from "@zairyu/shared";
 import { useEffect, useState } from "react";
@@ -218,6 +219,25 @@ export function PersonDetailPage() {
           </dl>
         </Card>
       </div>
+      <Card title="就労可否">
+        <p className={`work-level w-${p.work.level}`}>{WORK_LEVEL_LABEL[p.work.level]}</p>
+        <ul>
+          {p.work.reasons.map((r, i) => (
+            <li key={i}>{r}</li>
+          ))}
+        </ul>
+        {p.work.checks.length > 0 && (
+          <>
+            <h3>確認すること</h3>
+            <ul>
+              {p.work.checks.map((c, i) => (
+                <li key={i}>{c}</li>
+              ))}
+            </ul>
+          </>
+        )}
+        <p className="sub">在留カードの記載による判定です。業務内容が在留資格の範囲に入るかなど、雇用の可否の最終判断は雇用主が行ってください。</p>
+      </Card>
       <EmploymentSection person={p} onChanged={reload} />
       {(() => {
         const cur = cards.find((c) => c.isCurrent);

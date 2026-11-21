@@ -5,7 +5,7 @@
 import { toKatakana, type ExpiryBucket } from "@zairyu/shared";
 import { and, asc, count, desc, eq, ilike, inArray, isNotNull, isNull, ne, or, sql, type SQL } from "drizzle-orm";
 import type { Tx } from "../client.js";
-import { personEmployments, persons, residenceCards, sites } from "../schema.js";
+import { personEmployments, persons, residenceCards, sites, verifications } from "../schema.js";
 import { expiryBucketSql, icUnverifiedSql, needsReviewSql } from "./expiry.js";
 
 /** null は全拠点、配列はその拠点だけ(空なら何も見えない) */
@@ -52,9 +52,13 @@ const summaryColumns = (today: string) => ({
     cardValidUntil: residenceCards.cardValidUntil,
     workRestriction: residenceCards.workRestriction,
     outsideActivity: residenceCards.outsideActivity,
+    outsideActivityUntil: residenceCards.outsideActivityUntil,
+    cardKind: residenceCards.cardKind,
     pendingApplication: residenceCards.pendingApplication,
     icVerified: residenceCards.icVerified,
     needsReview: residenceCards.needsReview,
+    /** 最新の失効照会の結果(就労可否の判定に使う) */
+    revocationResult: sql<string | null>`(select v.result::text from ${verifications} v where v.card_id = ${residenceCards.id} and v.method = 'revocation_check' order by v.performed_at desc limit 1)`,
   },
 });
 
@@ -356,4 +360,14 @@ export async function listDuplicateGroups(tx: Tx, scope: SiteScope) {
     out.push({ members: members.map(({ key: _k, kanaKey: _kk, ...m }) => m) });
   }
   return out;
+}
+
+/** 在籍中の登録者と今のカード(ダッシュボードの就労可否の件数用。ページングしない) */
+export async function activePersonCards(tx: Tx, scope: SiteScope, today: string, siteId?: string) {
+  return tx
+    .select(summaryColumns(today))
+    .from(persons)
+    .innerJoin(sites, eq(sites.id, persons.siteId))
+    .leftJoin(residenceCards, currentCardJoin)
+    .where(and(eq(persons.status, "active"), scopeCondition(scope), siteId ? eq(persons.siteId, siteId) : undefined));
 }

@@ -1,5 +1,5 @@
 /** 登録者の詳細: 現在のカード・期限・カード履歴と確認履歴 */
-import { ADDRESS_SOURCE_LABEL, EXPIRY_BUCKET_LABEL, formatPostalCode, WORK_RESTRICTION_LABEL } from "@zairyu/shared";
+import { ADDRESS_SOURCE_LABEL, EXPIRY_BUCKET_LABEL, formatPostalCode, WORK_LEVEL_LABEL, WORK_RESTRICTION_LABEL } from "@zairyu/shared";
 import { useCallback, useEffect, useState } from "react";
 import { Text } from "react-native";
 import { api, messageOf } from "../api";
@@ -9,6 +9,8 @@ import { CardFaceView, type ImageData } from "../ui/CardFaceView";
 import { CardImage, IMAGE_KIND_LABEL } from "../ui/CardImage";
 import { Button, Card, color, Message, Row, Screen } from "../ui/kit";
 import { bucketTone, FORMAT_LABEL, METHOD_LABEL, RESULT_LABEL } from "./format";
+
+const WORK_TONE = { ok: "ok", conditional: "warn", ng: "danger", check: "warn" } as const;
 
 export type Person = Awaited<ReturnType<typeof api.persons.get.query>>;
 type Cards = Awaited<ReturnType<typeof api.cards.listForPerson.query>>;
@@ -113,6 +115,21 @@ export function PersonScreen({
         {session.can("persons.write") && person.status !== "archived" && (
           <Button label="登録者の情報を編集" kind="secondary" onPress={() => onEditPerson(person)} />
         )}
+      </Card>
+
+      <Card>
+        <Text style={{ fontWeight: "700" }}>就労可否</Text>
+        <Text style={{ fontSize: 18, fontWeight: "700", color: color[WORK_TONE[person.work.level]] }}>{WORK_LEVEL_LABEL[person.work.level]}</Text>
+        {person.work.reasons.map((r, i) => (
+          <Text key={`r${i}`}>・{r}</Text>
+        ))}
+        {person.work.checks.length > 0 && <Text style={{ fontWeight: "600", marginTop: 4 }}>確認すること</Text>}
+        {person.work.checks.map((c, i) => (
+          <Text key={`c${i}`} style={{ color: color.sub }}>
+            ・{c}
+          </Text>
+        ))}
+        <Text style={{ color: color.sub, fontSize: 11, marginTop: 4 }}>在留カードの記載による判定で、雇用の可否の最終判断は雇用主が行います。</Text>
       </Card>
 
       <EmploymentCard person={person} onChanged={() => void load()} />

@@ -98,3 +98,7 @@ dd { margin: 0; }
 .bar-peak { background: var(--primary); }
 .banner { border: 1px solid currentColor; border-radius: 8px; padding: 10px 14px; margin: 0 0 16px; background: #fffbea; }
 .banner.msg-danger { background: #fff0f0; }
+.w-ok { color: var(--ok); font-weight: 600; }
+.w-conditional, .w-check { color: var(--warn); font-weight: 600; }
+.w-ng { color: var(--danger); font-weight: 600; }
+.work-level { font-size: 16pt; margin: 0 0 6px; }

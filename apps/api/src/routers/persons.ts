@@ -20,6 +20,8 @@ import {
 } from "@zairyu/db";
 import {
   classifyExpiry,
+  judgeWorkEligibility,
+  WORK_LEVELS,
   EXPIRY_BUCKETS,
   jstDate,
   personCreateInput,
@@ -75,6 +77,13 @@ const personOutput = z.object({
   /** 入社日(今の在籍期間) */
   hiredAt: z.string().nullable(),
   card: cardSummary,
+  /** 就労可否(カードの記載による判定。雇用主の確認の補助) */
+  work: z.object({
+    level: z.enum(WORK_LEVELS),
+    reasons: z.array(z.string()),
+    checks: z.array(z.string()),
+    weeklyHoursLimit: z.number().nullable(),
+  }),
   /** 期限区分(1-11) */
   expiry: z.object({
     bucket: z.enum(EXPIRY_BUCKETS),
@@ -133,6 +142,7 @@ async function similarPersons(tx: Tx, actor: Actor, q: { name: string; nameKana?
 
 function present(row: PersonRow, role: Role, today: string): z.infer<typeof personOutput> {
   const hidePersonal = role === "viewer";
+  const expiry = classifyExpiry(row.card, today);
   return {
     id: row.id,
     siteId: row.siteId,
@@ -147,7 +157,8 @@ function present(row: PersonRow, role: Role, today: string): z.infer<typeof pers
     retiredAt: row.retiredAt,
     hiredAt: row.hiredAt,
     card: row.card,
-    expiry: classifyExpiry(row.card, today),
+    expiry,
+    work: judgeWorkEligibility(row.card, expiry, today),
   };
 }
 
@@ -184,7 +195,14 @@ export const personsRouter = router({
     .query(({ ctx, input }) =>
       ctx.tenantTx(async (tx) => {
         const today = jstDate(ctx.services.now());
-        const r = await listPersons(tx, { ...input, scope: siteScope(ctx.actor), today });
+        const { workLevels, ...q } = input;
+        if (workLevels) {
+          // 就労可否はアプリ側で判定するので、条件に合う在籍者をまとめて取って絞り込み、ここでページ分けする
+          const all = await listPersons(tx, { ...q, statuses: q.statuses ?? ["active"], limit: 100_000, offset: 0, scope: siteScope(ctx.actor), today });
+          const hit = all.items.map((p) => present(p, ctx.actor.role, today)).filter((p) => workLevels.includes(p.work.level));
+          return { items: hit.slice(input.offset, input.offset + input.limit), total: hit.length };
+        }
+        const r = await listPersons(tx, { ...q, scope: siteScope(ctx.actor), today });
         return { items: r.items.map((p) => present(p, ctx.actor.role, today)), total: r.total };
       }),
     ),
