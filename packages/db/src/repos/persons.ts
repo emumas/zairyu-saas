@@ -371,3 +371,22 @@ export async function activePersonCards(tx: Tx, scope: SiteScope, today: string,
     .leftJoin(residenceCards, currentCardJoin)
     .where(and(eq(persons.status, "active"), scopeCondition(scope), siteId ? eq(persons.siteId, siteId) : undefined));
 }
+
+/** CSV 取込の同一人物の確認用: 生年月日が birthDates のどれかの登録者(アーカイブを除く) */
+export async function personsByBirthDates(tx: Tx, birthDates: readonly string[]) {
+  if (birthDates.length === 0) return [];
+  return tx
+    .select({
+      id: persons.id,
+      employeeCode: persons.employeeCode,
+      siteName: sites.name,
+      status: persons.status,
+      retiredAt: persons.retiredAt,
+      birthDate: persons.birthDate,
+      nameKana: persons.nameKana,
+      matchName: matchNameSql,
+    })
+    .from(persons)
+    .innerJoin(sites, eq(sites.id, persons.siteId))
+    .where(and(ne(persons.status, "archived"), inArray(persons.birthDate, [...birthDates])));
+}

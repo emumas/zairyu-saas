@@ -8,6 +8,7 @@ import { ForgotPasswordPage } from "./pages/ForgotPasswordPage";
 import { ImportPage } from "./pages/ImportPage";
 import { InvitePage } from "./pages/InvitePage";
 import { LoginPage } from "./pages/LoginPage";
+import { PersonCreatePage } from "./pages/PersonCreatePage";
 import { PersonDetailPage } from "./pages/PersonDetailPage";
 import { PersonsPage } from "./pages/PersonsPage";
 import { ReportsPage } from "./pages/ReportsPage";
@@ -76,6 +77,7 @@ function Shell() {
         <Routes>
           <Route path="/" element={<DashboardPage />} />
           <Route path="/persons" element={<PersonsPage />} />
+          {session.can("persons.write") && <Route path="/persons/new" element={<PersonCreatePage />} />}
           <Route path="/persons/:id" element={<PersonDetailPage />} />
           <Route path="/alerts" element={<AlertsPage />} />
           <Route path="/account" element={<AccountPage />} />

@@ -14,7 +14,9 @@ export function PersonsPage() {
   const flag = params.get("flag");
   const siteId = params.get("siteId");
   const work = params.get("work") as WorkLevel | null;
-  const sites = useSession().me?.sites ?? [];
+  const session = useSession();
+  const sites = session.me?.sites ?? [];
+  const canWrite = session.can("persons.write");
   const [q, setQ] = useState(params.get("q") ?? "");
   const [offset, setOffset] = useState(0);
   const [list, setList] = useState<List | null>(null);
@@ -41,7 +43,14 @@ export function PersonsPage() {
 
   return (
     <>
-      <h1>登録者</h1>
+      <div className="card-head">
+        <h1>登録者</h1>
+        {canWrite && (
+          <Link to="/persons/new" className="btn btn-primary">
+            登録者を追加
+          </Link>
+        )}
+      </div>
       <Card>
         <div className="row">
           <input placeholder="氏名・フリガナ・社員番号で検索" value={q} onChange={(e) => { setQ(e.target.value); setOffset(0); }} />

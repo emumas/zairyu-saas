@@ -89,6 +89,26 @@ describe.skipIf(!url)("CSV 一括取込と出力", () => {
     expect(JSON.stringify(logs)).not.toContain("NEW NAME");
   });
 
+  it("新しく追加する行で同一人物を見つける(在籍中=二重登録の疑い、退職者=前回の退職理由)。同じファイル内の重複も", async () => {
+    await admin.persons.create({ siteId: tokyo, employeeCode: "S1", name: "PHAM VAN C", birthDate: "1992-02-02" });
+    const gone = await admin.persons.create({ siteId: tokyo, employeeCode: "S2", name: "LE THI D", birthDate: "1993-03-03", nameKana: "レ ティ ドー" });
+    await admin.persons.retire({ id: gone.id, retiredAt: "2025-12-31", reasonCode: "contract_end", reasonNote: "再雇用可" });
+    const rows = [
+      { ...row(2, "N1", "Pham  Van C", "大阪", "", "1992/2/2") }, // 在籍中と同じ(表記ゆれ)
+      { ...row(3, "N2", "LE T D", "東京", "", "1993-03-03"), nameKana: "れ てぃ どー" }, // フリガナと生年月日で退職者と一致
+      { ...row(4, "N3", "NEW ONE", "東京", "", "2000-01-01") },
+      { ...row(5, "N4", "new one", "東京", "", "2000-01-01") }, // ファイル内の重複
+      { ...row(6, "N5", "PHAM VAN C", "東京") }, // 生年月日なしは確認しない
+    ];
+    const { rows: r } = await admin.imports.previewPersons({ rows });
+    expect(r.map((x) => x.action)).toEqual(["error", "error", "create", "error", "create"]);
+    expect(r[0]!.errors[0]).toContain("二重登録の疑い");
+    expect(r[0]!.errors[0]).toContain("S1");
+    expect(r[1]!.errors[0]).toContain("以前在籍していた方");
+    expect(r[1]!.errors[0]).toContain("契約期間満了・再雇用可");
+    expect(r[3]!.errors[0]).toContain("4 行目");
+  });
+
   it("他のテナントの拠点名・社員番号とは突き合わせない", async () => {
     const { rows } = await otherAdmin.imports.previewPersons({ rows: [row(2, "E1", "X", "東京"), row(3, "E2", "Y", "大阪")] });
     expect(rows.map((r) => r.action)).toEqual(["create", "error"]);
