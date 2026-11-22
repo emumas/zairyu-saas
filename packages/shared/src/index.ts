@@ -12,3 +12,4 @@ export * from "./billing.js";
 export * from "./address.js";
 export * from "./postal.js";
 export * from "./work.js";
+export * from "./workHours.js";

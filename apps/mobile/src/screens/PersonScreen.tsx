@@ -5,6 +5,7 @@ import { Text } from "react-native";
 import { api, messageOf } from "../api";
 import { useSession } from "../auth/session";
 import { EmploymentCard } from "./EmploymentCard";
+import { WeeklyHoursCard } from "./WeeklyHoursCard";
 import { CardFaceView, type ImageData } from "../ui/CardFaceView";
 import { CardImage, IMAGE_KIND_LABEL } from "../ui/CardImage";
 import { Button, Card, color, Message, Row, Screen } from "../ui/kit";
@@ -131,6 +132,8 @@ export function PersonScreen({
         ))}
         <Text style={{ color: color.sub, fontSize: 11, marginTop: 4 }}>在留カードの記載による判定で、雇用の可否の最終判断は雇用主が行います。</Text>
       </Card>
+
+      <WeeklyHoursCard personId={person.id} />
 
       <EmploymentCard person={person} onChanged={() => void load()} />
 

@@ -1,10 +1,11 @@
 /** ダッシュボード(1-12 の API 部分): 期限区分ごとの件数。一覧は persons.list の expiryBuckets で取る */
 import { activePersonCards, countByExpiry, countOpenAlerts, listDuplicateGroups } from "@zairyu/db";
-import { classifyExpiry, EXPIRY_BUCKETS, jstDate, judgeWorkEligibility, WORK_LEVELS, type WorkLevel } from "@zairyu/shared";
+import { addDays, classifyExpiry, EXPIRY_BUCKETS, jstDate, judgeWorkEligibility, WORK_LEVELS, type WorkLevel } from "@zairyu/shared";
 import { z } from "zod";
 import { assertSiteAccess } from "../authz/guards.js";
 import { can, siteScope } from "../authz/permissions.js";
 import { permissionProcedure, router } from "../trpc.js";
+import { weeklyChecks } from "./workHours.js";
 
 export const dashboardRouter = router({
   summary: permissionProcedure("dashboard.read")
@@ -24,6 +25,8 @@ export const dashboardRouter = router({
         duplicateGroups: z.number().nullable(),
         /** 就労可否の区分ごとの件数(在籍中) */
         work: z.record(z.enum(WORK_LEVELS), z.number()),
+        /** 週28時間の確認(今日までの 4 週間): 超過・注意の人数 */
+        weeklyHours: z.object({ over: z.number(), near: z.number(), targets: z.number() }),
       }),
     )
     .query(({ ctx, input }) =>
@@ -38,7 +41,13 @@ export const dashboardRouter = router({
         for (const p of await activePersonCards(tx, siteScope(ctx.actor), today, input.siteId)) {
           work[judgeWorkEligibility(p.card, classifyExpiry(p.card, today), today).level]++;
         }
-        return { today, total: r.total, buckets, icUnverified: r.icUnverified, needsReview: r.needsReview, openAlerts, duplicateGroups, work };
+        const checks = await weeklyChecks(tx, ctx.actor, today, { from: addDays(today, -27), to: today }, input.siteId);
+        const weeklyHours = {
+          over: checks.filter((c) => c.check.status === "over").length,
+          near: checks.filter((c) => c.check.status === "near").length,
+          targets: checks.length,
+        };
+        return { weeklyHours, today, total: r.total, buckets, icUnverified: r.icUnverified, needsReview: r.needsReview, openAlerts, duplicateGroups, work };
       }),
     ),
 });

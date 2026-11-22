@@ -68,6 +68,15 @@ export function DashboardPage() {
             </Link>
           </>
         )}
+        {s && s.weeklyHours.targets > 0 && (
+          <Link to="/work-hours" className={`tile ${s.weeklyHours.over ? "tile-danger" : s.weeklyHours.near ? "tile-warn" : ""}`}>
+            <strong>
+              {s.weeklyHours.over}
+              {s.weeklyHours.near > 0 && <small> / 注意 {s.weeklyHours.near}</small>}
+            </strong>
+            <span>週28時間超過(4 週間)</span>
+          </Link>
+        )}
         {s && s.duplicateGroups !== null && (
           <Link to="/duplicates" className={`tile ${s.duplicateGroups ? "tile-warn" : ""}`}>
             <strong>{s.duplicateGroups}</strong>

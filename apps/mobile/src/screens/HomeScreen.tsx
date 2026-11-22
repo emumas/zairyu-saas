@@ -154,6 +154,12 @@ export function HomeScreen({
       {session.can("alerts.read") && (
         <Button label={summary?.openAlerts ? `アラート(未対応 ${summary.openAlerts} 件)を見る` : "アラートを見る"} kind={summary?.openAlerts ? "primary" : "secondary"} onPress={onOpenAlerts} />
       )}
+      {summary?.weeklyHours.over || summary?.weeklyHours.near ? (
+        <Message
+          text={`週28時間: 超過 ${summary.weeklyHours.over} 人・注意(24時間以上)${summary.weeklyHours.near} 人(直近 4 週間)。Web の「週28時間」で確認してください。`}
+          tone={summary.weeklyHours.over ? "danger" : "warn"}
+        />
+      ) : null}
       {summary?.duplicateGroups ? (
         <Message text={`二重登録の疑いが ${summary.duplicateGroups} 組あります(同じ氏名・生年月日の在籍者)。Web の「二重登録の疑い」で確認してください。`} tone="warn" />
       ) : null}

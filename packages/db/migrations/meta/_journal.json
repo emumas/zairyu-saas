@@ -148,6 +148,20 @@
       "when": 1795174602941,
       "tag": "0020_password_resets_security",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1795305390891,
+      "tag": "0021_work_days",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1795305391436,
+      "tag": "0022_work_days_security",
+      "breakpoints": true
     }
   ]
 }

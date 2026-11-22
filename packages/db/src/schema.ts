@@ -535,6 +535,46 @@ export const workHours = pgTable(
   (t) => [primaryKey({ columns: [t.personId, t.weekStart] }), check("work_hours_minutes_ck", sql`${t.minutes} >= 0`)],
 );
 
+/**
+ * 日ごとの労働時間(勤怠 CSV から取り込む。週28時間の確認に使う)。
+ * 週28時間は「どの曜日から起算しても」なので、日単位で持って任意の連続 7 日で合計する
+ */
+export const workDays = pgTable(
+  "work_days",
+  {
+    tenantId: tenantId(),
+    personId: uuid("person_id")
+      .notNull()
+      .references(() => persons.id),
+    workDate: date("work_date").notNull(),
+    /** 分単位(浮動小数点を避ける) */
+    minutes: integer("minutes").notNull(),
+    importedAt: timestamp("imported_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.personId, t.workDate] }),
+    index("work_days_tenant_date_idx").on(t.tenantId, t.workDate),
+    check("work_days_minutes_ck", sql`${t.minutes} between 0 and 1440`),
+  ],
+);
+
+/** 学則で定める長期休業期間(留学生は 1 日 8 時間まで働ける。週28時間の確認から外す) */
+export const studyBreaks = pgTable(
+  "study_breaks",
+  {
+    id: id(),
+    tenantId: tenantId(),
+    personId: uuid("person_id")
+      .notNull()
+      .references(() => persons.id),
+    fromDate: date("from_date").notNull(),
+    toDate: date("to_date").notNull(),
+    note: text("note"),
+    createdAt: createdAt(),
+  },
+  (t) => [index("study_breaks_person_idx").on(t.tenantId, t.personId), check("study_breaks_range_ck", sql`${t.fromDate} <= ${t.toDate}`)],
+);
+
 // ---------------------------------------------------------------- 課金
 
 export const dailyCounts = pgTable(

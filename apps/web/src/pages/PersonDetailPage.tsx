@@ -12,6 +12,7 @@ import { CardFaceView, type ImageData } from "../CardFaceView";
 import { FORMAT_LABEL, METHOD_LABEL, RESULT_LABEL } from "../labels";
 import { useSession } from "../session";
 import { EmploymentSection } from "./EmploymentSection";
+import { WorkHoursSection } from "./WorkHoursSection";
 import { CardDetailsForm, PersonEditForm } from "./personForms";
 import { Button, Card, fmtDateTime, Message } from "../ui";
 
@@ -238,6 +239,7 @@ export function PersonDetailPage() {
         )}
         <p className="sub">在留カードの記載による判定です。業務内容が在留資格の範囲に入るかなど、雇用の可否の最終判断は雇用主が行ってください。</p>
       </Card>
+      <WorkHoursSection personId={p.id} editable={p.status === "active"} />
       <EmploymentSection person={p} onChanged={reload} />
       {(() => {
         const cur = cards.find((c) => c.isCurrent);
