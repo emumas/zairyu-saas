@@ -7,6 +7,7 @@ import { Link } from "react-router";
 import { api, messageOf } from "../api";
 import { downloadText, readCsvFile } from "../download";
 import { useSession } from "../session";
+import { CsvExample } from "../CsvExample";
 import { Button, Card, Message } from "../ui";
 
 type List = Awaited<ReturnType<typeof api.workHours.list.query>>;
@@ -98,6 +99,26 @@ function ImportCard({ onImported }: { onImported: () => void }) {
         </Button>
         {fileName && <span className="sub">{fileName}</span>}
       </div>
+      <CsvExample
+        columns={[
+          { header: "社員番号", required: true, note: "登録済みの社員番号" },
+          { header: "日付", required: true, note: "2026/04/01 または 2026-04-01" },
+          { header: "労働時間", note: "6:30・6.5・390分・6時間30分" },
+          { header: "出勤", note: "9:00 の形(労働時間が空欄のとき)" },
+          { header: "退勤", note: "17:30 の形。日をまたぐ勤務も可" },
+          { header: "休憩", note: "分(30)か 1:00 の形" },
+        ]}
+        rows={[
+          ["E0001", "2026/04/01", "4:30", "", "", ""],
+          ["E0001", "2026/04/02", "", "18:00", "22:30", "30"],
+          ["E0002", "2026/04/02", "6.5", "", "", ""],
+        ]}
+        notes={[
+          "労働時間の列か、出勤・退勤(・休憩)の列のどちらかで書きます。両方あれば労働時間を使います。",
+          "同じ人・同じ日の行が複数あれば合計します(1 日 2 回の勤務など)。取り込み済みの日は上書きします。",
+          "労働時間も出勤・退勤も空欄の行は、その日を 0 時間(休み)として扱います。",
+        ]}
+      />
       <Message text={error} />
       <Message text={done} tone="ok" />
       {busy && <Message text="処理中…" tone="warn" />}

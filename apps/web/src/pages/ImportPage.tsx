@@ -7,9 +7,25 @@ import { useState } from "react";
 import { Link } from "react-router";
 import { api, messageOf } from "../api";
 import { downloadText, readCsvFile } from "../download";
+import { CsvExample } from "../CsvExample";
 import { Button, Card, Message } from "../ui";
 
 type Preview = Awaited<ReturnType<typeof api.imports.previewPersons.mutate>>["rows"];
+const EXAMPLE_COLUMNS = [
+  { header: "社員番号", required: true, note: "登録済みなら更新、無ければ新規" },
+  { header: "氏名", required: true, note: "在留カードの表記(ローマ字は大文字)" },
+  { header: "フリガナ", note: "カタカナ(ひらがなも可)" },
+  { header: "拠点", required: true, note: "登録済みの拠点名" },
+  { header: "国籍", note: "英大文字 3 文字(VNM・PHL など)" },
+  { header: "生年月日", note: "1995/04/01 または 1995-04-01" },
+  { header: "電話番号", note: "ハイフンあり・なしどちらも可" },
+  { header: "入社日", note: "2024/04/01 または 2024-04-01" },
+];
+const EXAMPLE_ROWS = [
+  ["E0001", "NGUYEN VAN A", "グエン ヴァン アー", "本社", "VNM", "1995/04/01", "090-1234-5678", "2024/04/01"],
+  ["E0002", "SANTOS MARIA", "サントス マリア", "大阪工場", "PHL", "1998-10-15", "", ""],
+];
+
 const ACTION = { create: "新規", update: "更新", unchanged: "変更なし", error: "エラー" } as const;
 
 export function ImportPage() {
@@ -93,6 +109,11 @@ export function ImportPage() {
           {fileName && <span className="sub">{fileName}</span>}
         </div>
         <p className="sub">文字コードは UTF-8 と Shift_JIS(Excel で保存した CSV)に対応しています。一度に 2,000 行まで。</p>
+        <CsvExample
+          columns={EXAMPLE_COLUMNS}
+          rows={EXAMPLE_ROWS}
+          notes={["任意の列(必須でない列)は空欄でも取り込めます。登録済みの人の空欄の項目は変更しません。", "列の順番は自由です。見出しの名前で列を判断します。", "Excel で作る場合は「CSV(コンマ区切り)」で保存してください。"]}
+        />
       </Card>
       <Message text={error} />
       <Message text={done} tone="ok" />
