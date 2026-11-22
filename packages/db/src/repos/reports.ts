@@ -48,3 +48,24 @@ export async function listAuditLogsForExport(tx: Tx, q: { from: Date; to: Date }
     .orderBy(asc(auditLogs.at), asc(auditLogs.id))
     .limit(EXPORT_LIMIT + 1);
 }
+
+/** 年末調整などの申告書の入力用: 在籍者の氏名・フリガナ・生年月日と、今のカードの住居地(暗号文)・郵便番号 */
+export async function listDeclarationBasics(tx: Tx, q: { siteId?: string | undefined }) {
+  return tx
+    .select({
+      id: persons.id,
+      employeeCode: persons.employeeCode,
+      name: persons.name,
+      nameKana: persons.nameKana,
+      birthDate: persons.birthDate,
+      siteName: sites.name,
+      postalCode: residenceCards.postalCode,
+      addressEnc: residenceCards.addressEnc,
+    })
+    .from(persons)
+    .innerJoin(sites, eq(sites.id, persons.siteId))
+    .leftJoin(residenceCards, and(eq(residenceCards.personId, persons.id), eq(residenceCards.isCurrent, true)))
+    .where(and(eq(persons.status, "active"), q.siteId ? eq(persons.siteId, q.siteId) : undefined))
+    .orderBy(asc(persons.employeeCode))
+    .limit(EXPORT_LIMIT + 1);
+}

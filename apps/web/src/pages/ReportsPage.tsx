@@ -6,6 +6,7 @@ import { addDays, jstDate, toCsv } from "@zairyu/shared";
 import { useEffect, useState } from "react";
 import { api, messageOf } from "../api";
 import { downloadText } from "../download";
+import { DeclarationExportCard } from "./DeclarationExportCard";
 import { FORMAT_LABEL, METHOD_LABEL, RESULT_LABEL } from "../labels";
 import { Button, Card, fmtDateTime, Message } from "../ui";
 
@@ -124,6 +125,7 @@ export function ReportsPage() {
             </Button>
           </div>
         </Card>
+        <DeclarationExportCard siteId={siteId} suffix={jstDate(Date.now()).replaceAll("-", "")} />
         <Card title="監査ログ">
           <p className="sub">ログイン、登録者の変更、カード画像の閲覧、出力などの操作の記録です(値は含みません)。</p>
           <Button

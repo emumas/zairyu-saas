@@ -13,6 +13,7 @@ import { FORMAT_LABEL, METHOD_LABEL, RESULT_LABEL } from "../labels";
 import { useSession } from "../session";
 import { EmploymentSection } from "./EmploymentSection";
 import { WorkHoursSection } from "./WorkHoursSection";
+import { DeclarationCopyCard } from "./DeclarationCopyCard";
 import { CardDetailsForm, PersonEditForm } from "./personForms";
 import { Button, Card, fmtDateTime, Message } from "../ui";
 
@@ -318,6 +319,11 @@ export function PersonDetailPage() {
           </Card>
         );
       })()}
+      {p.status === "active" &&
+        (() => {
+          const cur = cards.find((c) => c.isCurrent);
+          return <DeclarationCopyCard name={p.name} nameKana={p.nameKana} birthDate={p.birthDate} postalCode={cur?.postalCode ?? null} address={cur?.address ?? null} />;
+        })()}
       {cards.map((c) => (
         <Card
           key={c.id}

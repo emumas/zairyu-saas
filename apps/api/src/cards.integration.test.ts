@@ -311,6 +311,18 @@ describe.skipIf(!url)("カード登録", () => {
       expect((await admin.persons.get({ id: personId })).birthDate).toBe("1995-04-01");
     });
 
+    it("申告書の入力用に、在籍者の氏名・フリガナ・郵便番号・住居地を出力できる(テナント管理者のみ。監査ログに件数だけ)", async () => {
+      const { rows } = await admin.reports.declarationBasics();
+      expect(rows.find((r) => r.employeeCode === "ADDR1")).toMatchObject({ name: "ADDR1", nameKana: null, birthDate: "1995-04-01", siteName: expect.any(String), address: "埼玉県さいたま市浦和区高砂3-15-1" });
+      // カードの無い在籍者も出す(住所は空)
+      expect(rows.find((r) => r.address === null)).toBeTruthy();
+      await expect(tokyoAdmin.reports.declarationBasics()).rejects.toThrow();
+      await expect(viewer.reports.declarationBasics()).rejects.toThrow();
+      const logs = await withTenant(h.db, tenant, (tx) => tx.select().from(schema.auditLogs).where(eq(schema.auditLogs.action, "report.declaration_basics_export")));
+      expect(logs.at(-1)?.detail).toMatchObject({ count: rows.length });
+      expect(JSON.stringify(logs)).not.toContain("さいたま");
+    });
+
     it("裏面の追記が無ければ、端末の読み取り(裏面 > 表面)の値を使う", async () => {
       const personId = await newPerson("ADDR2");
       const n = "AE12345678CD";
