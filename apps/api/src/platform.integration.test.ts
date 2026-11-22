@@ -2,6 +2,7 @@
 import { schema, withPlatform, withTenant } from "@zairyu/db";
 import { TRPCError } from "@trpc/server";
 import { eq } from "drizzle-orm";
+import { addDays } from "@zairyu/shared";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { hashPassword } from "./auth/password.js";
 import { operatorTotpAad } from "./auth/platformAuth.js";
@@ -197,6 +198,33 @@ describe.skipIf(!url)("運営者コンソール", () => {
       expect(await codeOf(ops.platform.tenants.inviteAdmin({ tenantId, email: "admin@corp.example" }))).toBe("CONFLICT"); // 有効なユーザー
       await ops.platform.tenants.inviteAdmin({ tenantId, email: "second@corp.example" }); // 招待中なら再発行
     });
+  });
+
+  it("操作記録を期間・運営者・テナント・操作で絞って新しい順に見られる。出力は記録される", async () => {
+    // 記録の時刻は DB の現在時刻なので、実際の日付で期間を作る
+    const today = new Date(Date.now() + 9 * 3600_000).toISOString().slice(0, 10);
+    const period = { from: addDays(today, -1), to: addDays(today, 1) };
+    const all = await ops.platform.auditLogs.list({ period });
+    expect(all.rows.length).toBeGreaterThan(3);
+    expect(all.rows[0]!.id).toBeGreaterThan(all.rows.at(-1)!.id);
+    expect(all.rows.find((r) => r.action === "operator.login")).toMatchObject({ operatorEmail: "ops@example.com" });
+    const plan = all.rows.find((r) => r.action === "plan.create");
+    expect(plan).toMatchObject({ targetType: "plan", targetName: expect.any(String) });
+    const tenantRow = all.rows.find((r) => r.targetType === "tenant");
+    expect(tenantRow?.targetName).toEqual(expect.any(String));
+    const byTenant = await ops.platform.auditLogs.list({ period, tenantId: tenantRow!.targetId! });
+    expect(byTenant.rows.every((r) => r.targetId === tenantRow!.targetId)).toBe(true);
+    expect((await ops.platform.auditLogs.list({ period, action: "plan." })).rows.every((r) => r.action.startsWith("plan."))).toBe(true);
+    // ワイルドカードの文字は文字どおりに扱う
+    expect((await ops.platform.auditLogs.list({ period, action: "%" })).rows).toEqual([]);
+    expect((await ops.platform.auditLogs.list({ period: { from: "2020-01-01", to: "2020-01-31" } })).rows).toEqual([]);
+    expect(await codeOf(ops.platform.auditLogs.list({ period: { from: "2020-01-01", to: "2026-01-31" } }))).toBe("BAD_REQUEST");
+    expect((await ops.platform.auditLogs.operators()).map((o) => o.email)).toEqual(["ops@example.com"]);
+    const { rows } = await ops.platform.auditLogs.export({ period });
+    expect(rows.length).toBeGreaterThanOrEqual(all.rows.length);
+    expect((await audits()).at(-1)).toMatchObject({ action: "platform_audit_log.export", detail: { count: rows.length } });
+    // テナントのユーザーからは呼べない
+    expect(await codeOf(as(null).platform.auditLogs.list({ period }))).toBe("UNAUTHORIZED");
   });
 
   it("停止した運営者のセッションは次のリクエストから通らない", async () => {

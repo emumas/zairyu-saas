@@ -218,26 +218,45 @@ export const orgRouter = router({
       ),
   }),
 
-  /** テナント設定: 退職後の保存期間(3〜5 年。過ぎたら自動削除 1-21) */
+  /**
+   * テナント設定: 退職後の保存期間(3〜5 年。過ぎたら自動削除 1-21)と、
+   * 監査ログの保存期間(5〜10 年。退職後の保存期間より短くならない。過ぎた記録は毎日の処理で削除)
+   */
   settings: router({
     get: permissionProcedure("tenant.settings")
-      .output(z.object({ name: z.string(), retentionYears: z.number() }))
+      .output(z.object({ name: z.string(), retentionYears: z.number(), auditRetentionYears: z.number() }))
       .query(({ ctx }) =>
         ctx.tenantTx(async (tx) => {
-          const [t] = await tx.select({ name: schema.tenants.name, retentionYears: schema.tenants.retentionYears }).from(schema.tenants);
+          const [t] = await tx
+            .select({ name: schema.tenants.name, retentionYears: schema.tenants.retentionYears, auditRetentionYears: schema.tenants.auditRetentionYears })
+            .from(schema.tenants);
           if (!t) throw notFound();
           return t;
         }),
       ),
     update: permissionProcedure("tenant.settings")
-      .input(z.object({ retentionYears: z.number().int().min(3).max(5) }))
-      .output(z.object({ retentionYears: z.number() }))
+      .input(
+        z
+          .object({ retentionYears: z.number().int().min(3).max(5).optional(), auditRetentionYears: z.number().int().min(5).max(10).optional() })
+          .refine((v) => v.retentionYears !== undefined || v.auditRetentionYears !== undefined, "変更する項目がありません"),
+      )
+      .output(z.object({ retentionYears: z.number(), auditRetentionYears: z.number() }))
       .mutation(({ ctx, input }) =>
         ctx.tenantTx(async (tx) => {
-          const [before] = await tx.select({ retentionYears: schema.tenants.retentionYears }).from(schema.tenants);
-          await tx.update(schema.tenants).set({ retentionYears: input.retentionYears, updatedAt: new Date() }).where(eq(schema.tenants.id, ctx.actor.tenantId));
-          await ctx.audit(tx, { action: "tenant.retention_update", targetType: "tenant", targetId: ctx.actor.tenantId, detail: { from: before?.retentionYears ?? null, to: input.retentionYears } });
-          return { retentionYears: input.retentionYears };
+          const [before] = await tx.select({ retentionYears: schema.tenants.retentionYears, auditRetentionYears: schema.tenants.auditRetentionYears }).from(schema.tenants);
+          if (!before) throw notFound();
+          const after = { retentionYears: input.retentionYears ?? before.retentionYears, auditRetentionYears: input.auditRetentionYears ?? before.auditRetentionYears };
+          await tx.update(schema.tenants).set({ ...after, updatedAt: new Date() }).where(eq(schema.tenants.id, ctx.actor.tenantId));
+          if (after.retentionYears !== before.retentionYears) {
+            await ctx.audit(tx, { action: "tenant.retention_update", targetType: "tenant", targetId: ctx.actor.tenantId, detail: { from: before.retentionYears, to: after.retentionYears } });
+          }
+          if (after.auditRetentionYears !== before.auditRetentionYears) {
+            await ctx.audit(tx, { action: "tenant.audit_retention_update", targetType: "tenant", targetId: ctx.actor.tenantId, detail: { from: before.auditRetentionYears, to: after.auditRetentionYears } });
+          }
+          if (after.retentionYears === before.retentionYears && after.auditRetentionYears === before.auditRetentionYears) {
+            await ctx.audit(tx, { action: "tenant.settings_unchanged", targetType: "tenant", targetId: ctx.actor.tenantId });
+          }
+          return after;
         }),
       ),
   }),

@@ -2,9 +2,9 @@
  * 運営者コンソール(1-19)。withPlatform のトランザクションで呼ぶこと。
  * 運営者は登録者・カード・確認履歴を見ない。テナントについては契約と人数(件数)だけを扱う
  */
-import { asc, count, desc, eq, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, gte, like, lt, sql } from "drizzle-orm";
 import type { Tx } from "../client.js";
-import { billingPeriods, dailyCounts, plans, tenantPriceOverrides, tenants } from "../schema.js";
+import { billingPeriods, dailyCounts, plans, platformAuditLogs, platformOperators, tenantPriceOverrides, tenants } from "../schema.js";
 
 export async function listTenantsForPlatform(tx: Tx) {
   const latest = tx
@@ -113,4 +113,57 @@ export async function upsertPriceOverride(
     .insert(tenantPriceOverrides)
     .values({ tenantId, ...v })
     .onConflictDoUpdate({ target: tenantPriceOverrides.tenantId, set: v });
+}
+
+export interface PlatformAuditQuery {
+  from: Date;
+  to: Date;
+  operatorId?: string | undefined;
+  /** テナントに関わる操作(target_type = tenant)をテナントで絞る */
+  tenantId?: string | undefined;
+  /** 操作の種類の先頭一致(例: tenant. / operator.login) */
+  action?: string | undefined;
+  /** これより古い記録(id が小さい)だけ。ページ送り用 */
+  beforeId?: number | undefined;
+  limit: number;
+}
+
+/** 運営者の操作記録(新しい順)。運営者のメールアドレスと、対象のテナント名・プラン名を付ける */
+export async function listPlatformAuditLogs(tx: Tx, q: PlatformAuditQuery) {
+  const l = platformAuditLogs;
+  return tx
+    .select({
+      id: l.id,
+      at: l.at,
+      operatorEmail: platformOperators.email,
+      action: l.action,
+      targetType: l.targetType,
+      targetId: l.targetId,
+      targetName: sql<string | null>`coalesce(${tenants.name}, ${plans.name})`,
+      detail: l.detail,
+      ip: sql<string | null>`host(${l.ip})`,
+    })
+    .from(l)
+    .leftJoin(platformOperators, eq(platformOperators.id, l.operatorId))
+    .leftJoin(tenants, and(eq(l.targetType, "tenant"), eq(sql`${tenants.id}::text`, l.targetId)))
+    .leftJoin(plans, and(eq(l.targetType, "plan"), eq(sql`${plans.id}::text`, l.targetId)))
+    .where(
+      and(
+        gte(l.at, q.from),
+        lt(l.at, q.to),
+        q.operatorId ? eq(l.operatorId, q.operatorId) : undefined,
+        q.tenantId ? and(eq(l.targetType, "tenant"), eq(l.targetId, q.tenantId)) : undefined,
+        q.action ? like(l.action, `${q.action.replace(/[\\%_]/g, (c) => `\\${c}`)}%`) : undefined,
+        q.beforeId !== undefined ? lt(l.id, q.beforeId) : undefined,
+      ),
+    )
+    .orderBy(desc(l.id))
+    .limit(q.limit);
+}
+
+export async function listPlatformOperators(tx: Tx) {
+  return tx
+    .select({ id: platformOperators.id, email: platformOperators.email, disabledAt: platformOperators.disabledAt })
+    .from(platformOperators)
+    .orderBy(asc(platformOperators.email));
 }

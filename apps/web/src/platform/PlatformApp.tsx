@@ -6,6 +6,7 @@ import { createContext, useCallback, useContext, useEffect, useState, type FormE
 import { Navigate, NavLink, Route, Routes } from "react-router";
 import { messageOf, publicApi } from "../api";
 import { Button, Card, Field, Message } from "../ui";
+import { OperatorLogsPage } from "./OperatorLogsPage";
 import { PlansPage } from "./PlansPage";
 import { TenantDetailPage } from "./TenantDetailPage";
 import { TenantsPage } from "./TenantsPage";
@@ -106,6 +107,7 @@ export function PlatformApp() {
           <strong className="brand">運営者コンソール</strong>
           <NavLink to="/platform/tenants">テナント</NavLink>
           <NavLink to="/platform/plans">プラン</NavLink>
+          <NavLink to="/platform/logs">操作記録</NavLink>
           <div className="nav-foot">
             <div>{me}</div>
             <div className="sub">運営者</div>
@@ -119,6 +121,7 @@ export function PlatformApp() {
             <Route path="tenants" element={<TenantsPage />} />
             <Route path="tenants/:id" element={<TenantDetailPage />} />
             <Route path="plans" element={<PlansPage />} />
+            <Route path="logs" element={<OperatorLogsPage />} />
             <Route path="*" element={<Navigate to="/platform/tenants" replace />} />
           </Routes>
         </main>

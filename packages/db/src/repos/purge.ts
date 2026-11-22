@@ -6,12 +6,12 @@
  * 消すもの: 登録者・カード・カード画像(行。ファイルは呼び出し側で消す)・確認履歴・アラート・就労時間・在籍期間の履歴。
  * 監査ログは値を含まない(ID だけ)ので残す。日次人数・請求も人に結び付かないので残す
  */
-import { and, eq, inArray, or, sql } from "drizzle-orm";
+import { and, count, eq, inArray, lt, or, sql } from "drizzle-orm";
 import type { Tx } from "../client.js";
-import { alerts, cardImages, personEmployments, persons, residenceCards, tenants, studyBreaks, verifications, workDays, workHours } from "../schema.js";
+import { alerts, auditLogs, cardImages, platformAuditLogs, personEmployments, persons, residenceCards, tenants, studyBreaks, verifications, workDays, workHours } from "../schema.js";
 
 export async function tenantsForPurge(tx: Tx) {
-  return tx.select({ id: tenants.id, retentionYears: tenants.retentionYears }).from(tenants);
+  return tx.select({ id: tenants.id, retentionYears: tenants.retentionYears, auditRetentionYears: tenants.auditRetentionYears }).from(tenants);
 }
 
 /** 保存期間が過ぎた登録者(today は JST の YYYY-MM-DD)。1 回に limit 人まで */
@@ -73,4 +73,44 @@ export async function referencedBlobKeys(tx: Tx, tenantId: string, keys: readonl
     .from(cardImages)
     .where(and(eq(cardImages.tenantId, tenantId), inArray(cardImages.blobKey, [...keys])));
   return new Set(rows.map((r) => r.key));
+}
+
+/** 運営者の操作記録の保存期間(年)。テナントに属さないので一律 */
+export const PLATFORM_AUDIT_RETENTION_YEARS = 10;
+
+/**
+ * 保存期間が過ぎた監査ログを消す(古い順に limit 件まで。多いときは繰り返し呼ぶ)。
+ * before は JST の日付で、この日の 0 時より前の記録が対象
+ */
+export async function deleteExpiredAuditLogs(tx: Tx, tenantId: string, before: string, limit = 5000): Promise<number> {
+  const cutoff = new Date(`${before}T00:00:00+09:00`);
+  const ids = tx
+    .select({ id: auditLogs.id })
+    .from(auditLogs)
+    .where(and(eq(auditLogs.tenantId, tenantId), lt(auditLogs.at, cutoff)))
+    .orderBy(auditLogs.id)
+    .limit(limit);
+  const r = await tx.delete(auditLogs).where(and(eq(auditLogs.tenantId, tenantId), inArray(auditLogs.id, ids))).returning({ id: auditLogs.id });
+  return r.length;
+}
+
+export async function countExpiredAuditLogs(tx: Tx, tenantId: string, before: string): Promise<number> {
+  const [r] = await tx
+    .select({ n: count() })
+    .from(auditLogs)
+    .where(and(eq(auditLogs.tenantId, tenantId), lt(auditLogs.at, new Date(`${before}T00:00:00+09:00`))));
+  return r?.n ?? 0;
+}
+
+export async function deleteExpiredPlatformAuditLogs(tx: Tx, before: string, limit = 5000): Promise<number> {
+  const l = platformAuditLogs;
+  const cutoff = new Date(`${before}T00:00:00+09:00`);
+  const ids = tx.select({ id: l.id }).from(l).where(lt(l.at, cutoff)).orderBy(l.id).limit(limit);
+  const r = await tx.delete(l).where(inArray(l.id, ids)).returning({ id: l.id });
+  return r.length;
+}
+
+export async function countExpiredPlatformAuditLogs(tx: Tx, before: string): Promise<number> {
+  const [r] = await tx.select({ n: count() }).from(platformAuditLogs).where(lt(platformAuditLogs.at, new Date(`${before}T00:00:00+09:00`)));
+  return r?.n ?? 0;
 }

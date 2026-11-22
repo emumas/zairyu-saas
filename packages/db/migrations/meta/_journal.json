@@ -162,6 +162,20 @@
       "when": 1795305391436,
       "tag": "0022_work_days_security",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1795391321591,
+      "tag": "0023_audit_retention",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1795391325279,
+      "tag": "0024_audit_retention_security",
+      "breakpoints": true
     }
   ]
 }

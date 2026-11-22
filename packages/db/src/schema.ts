@@ -99,11 +99,16 @@ export const tenants = pgTable("tenants", {
   planId: uuid("plan_id").references(() => plans.id),
   /** 退職後の保存期間(年)。3〜5、標準 5 */
   retentionYears: integer("retention_years").notNull().default(5),
+  /** 監査ログの保存期間(年)。5〜10、標準 7(退職後の保存期間より短くならない) */
+  auditRetentionYears: integer("audit_retention_years").notNull().default(7),
   /** 支払い失敗の日時(未払い時の制御。1-18) */
   pastDueSince: timestamp("past_due_since", { withTimezone: true }),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
-}, (t) => [check("tenants_retention_years_ck", sql`${t.retentionYears} between 3 and 5`)]);
+}, (t) => [
+  check("tenants_retention_years_ck", sql`${t.retentionYears} between 3 and 5`),
+  check("tenants_audit_retention_years_ck", sql`${t.auditRetentionYears} between 5 and 10`),
+]);
 
 export const tenantPriceOverrides = pgTable("tenant_price_overrides", {
   id: id(),

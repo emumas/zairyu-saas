@@ -52,6 +52,18 @@ describe.skipIf(!url)("組織管理と招待", () => {
     await admin.org.settings.update({ retentionYears: 5 });
   });
 
+  it("監査ログの保存期間(5〜10 年、標準 7 年、テナント管理者のみ)", async () => {
+    expect(await admin.org.settings.get()).toMatchObject({ retentionYears: 5, auditRetentionYears: 7 });
+    expect(await admin.org.settings.update({ auditRetentionYears: 10 })).toEqual({ retentionYears: 5, auditRetentionYears: 10 });
+    expect(await codeOf(admin.org.settings.update({ auditRetentionYears: 4 }))).toBe("BAD_REQUEST");
+    expect(await codeOf(admin.org.settings.update({ auditRetentionYears: 11 }))).toBe("BAD_REQUEST");
+    expect(await codeOf(admin.org.settings.update({}))).toBe("BAD_REQUEST");
+    expect(await codeOf(siteAdmin.org.settings.update({ auditRetentionYears: 8 }))).toBe("FORBIDDEN");
+    const logs = await withTenant(h.db, tenant, (tx) => tx.select().from(schema.auditLogs).where(eq(schema.auditLogs.action, "tenant.audit_retention_update")));
+    expect(logs[0]?.detail).toEqual({ from: 7, to: 10 });
+    await admin.org.settings.update({ auditRetentionYears: 7 });
+  });
+
   it("拠点管理者は組織管理を使えない", async () => {
     expect(await codeOf(siteAdmin.org.users.list())).toBe("FORBIDDEN");
     expect(await codeOf(siteAdmin.org.sites.create({ name: "x" }))).toBe("FORBIDDEN");

@@ -64,6 +64,8 @@ export function TenantDetailPage() {
     <>
       <p>
         <Link to="/platform/tenants">‹ テナント一覧</Link>
+        {" ・ "}
+        <Link to={`/platform/logs?tenant=${t.id}`}>このテナントへの運営者の操作記録</Link>
       </p>
       <h1>{t.name}</h1>
       <Message text={error} />

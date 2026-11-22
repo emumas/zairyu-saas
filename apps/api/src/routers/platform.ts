@@ -10,7 +10,10 @@ import {
   insertInvitedUser,
   insertPlan,
   insertTenant,
+  EXPORT_LIMIT,
   listPlansForPlatform,
+  listPlatformAuditLogs,
+  listPlatformOperators,
   listTenantsForPlatform,
   lookupUserForLogin,
   planExists,
@@ -21,7 +24,7 @@ import {
   withTenant,
   type Tx,
 } from "@zairyu/db";
-import { planInput, priceOverrideInput, pricingTiersSchema, resolvePricing, siteNameInput, TENANT_STATUSES } from "@zairyu/shared";
+import { addDays, daysBetween, dateString, planInput, priceOverrideInput, pricingTiersSchema, resolvePricing, siteNameInput, TENANT_STATUSES } from "@zairyu/shared";
 import { TRPCError } from "@trpc/server";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
@@ -68,6 +71,35 @@ async function inviteTenantAdmin(services: Services, tenantId: string, email: st
     return { userId, ...inv };
   });
 }
+
+const PAGE = 100;
+const auditQueryInput = z.object({
+  period: z
+    .object({ from: dateString, to: dateString })
+    .refine((p) => p.from <= p.to, { message: "開始日は終了日以前にしてください" })
+    .refine((p) => daysBetween(p.from, p.to) < 366, { message: "期間は 1 年以内にしてください" }),
+  operatorId: z.uuid().optional(),
+  tenantId: z.uuid().optional(),
+  action: z.string().trim().max(64).optional(),
+});
+const auditQuery = (q: z.infer<typeof auditQueryInput>) => ({
+  from: new Date(`${q.period.from}T00:00:00+09:00`),
+  to: new Date(`${addDays(q.period.to, 1)}T00:00:00+09:00`),
+  operatorId: q.operatorId,
+  tenantId: q.tenantId,
+  action: q.action || undefined,
+});
+const auditRowOutput = z.object({
+  id: z.number(),
+  at: z.date(),
+  operatorEmail: z.string().nullable(),
+  action: z.string(),
+  targetType: z.string().nullable(),
+  targetId: z.string().nullable(),
+  targetName: z.string().nullable(),
+  detail: z.unknown(),
+  ip: z.string().nullable(),
+});
 
 const tierOutput = z.array(z.object({ upTo: z.number().nullable(), unitPrice: z.number() }));
 const planOutput = z.object({
@@ -300,6 +332,37 @@ export const platformRouter = router({
           if (!(await updatePlan(tx, input.id, values))) throw notFound();
           await ctx.platformAudit(tx, { action: "plan.update", targetType: "plan", targetId: input.id, detail: { ...values, tiersJson: undefined, tiers: values.tiersJson } });
           return { id: input.id };
+        }),
+      ),
+  }),
+
+  /** 運営者の操作記録(platform_audit_logs)の閲覧と出力。期間は JST の日付 */
+  auditLogs: router({
+    operators: platformProcedure
+      .output(z.array(z.object({ id: z.string(), email: z.string(), disabled: z.boolean() })))
+      .query(({ ctx }) => ctx.platformTx(async (tx) => (await listPlatformOperators(tx)).map((o) => ({ id: o.id, email: o.email, disabled: o.disabledAt !== null })))),
+
+    list: platformProcedure
+      .input(auditQueryInput.extend({ beforeId: z.number().int().positive().optional() }))
+      .output(z.object({ rows: z.array(auditRowOutput), nextBeforeId: z.number().nullable() }))
+      .query(({ ctx, input }) =>
+        ctx.platformTx(async (tx) => {
+          const rows = await listPlatformAuditLogs(tx, { ...auditQuery(input), beforeId: input.beforeId, limit: PAGE + 1 });
+          const page = rows.slice(0, PAGE);
+          return { rows: page, nextBeforeId: rows.length > PAGE ? page.at(-1)!.id : null };
+        }),
+      ),
+
+    /** CSV 用に条件に合うものをすべて返す(出力したことを記録する) */
+    export: platformProcedure
+      .input(auditQueryInput)
+      .output(z.object({ rows: z.array(auditRowOutput) }))
+      .mutation(({ ctx, input }) =>
+        ctx.platformTx(async (tx) => {
+          const rows = await listPlatformAuditLogs(tx, { ...auditQuery(input), limit: EXPORT_LIMIT + 1 });
+          if (rows.length > EXPORT_LIMIT) throw new TRPCError({ code: "BAD_REQUEST", message: `${EXPORT_LIMIT} 件を超えます。期間を分けて出力してください` });
+          await ctx.platformAudit(tx, { action: "platform_audit_log.export", detail: { ...input, count: rows.length } });
+          return { rows };
         }),
       ),
   }),

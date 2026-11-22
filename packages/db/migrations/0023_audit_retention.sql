@@ -1,0 +1,2 @@
+ALTER TABLE "tenants" ADD COLUMN "audit_retention_years" integer DEFAULT 7 NOT NULL;--> statement-breakpoint
+ALTER TABLE "tenants" ADD CONSTRAINT "tenants_audit_retention_years_ck" CHECK ("tenants"."audit_retention_years" between 5 and 10);

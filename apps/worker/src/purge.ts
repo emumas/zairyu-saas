@@ -4,7 +4,23 @@
  * 1. 行を消す(1 人ずつではなくまとめて、1 つのトランザクション)→ 2. 画像ファイルを消す → 3. 監査ログに残す
  * 行を先に消すので、ファイルの削除に失敗しても個人のデータに辿り着く手がかりは残らない(暗号化済みのファイルだけが残る)
  */
-import { deletePersonsData, expiredPersons, insertAudit, referencedBlobKeys, tenantsForPurge, withPurge, withTenant, type Db } from "@zairyu/db";
+import {
+  countExpiredAuditLogs,
+  countExpiredPlatformAuditLogs,
+  deleteExpiredAuditLogs,
+  deleteExpiredPlatformAuditLogs,
+  deletePersonsData,
+  expiredPersons,
+  insertAudit,
+  PLATFORM_AUDIT_RETENTION_YEARS,
+  referencedBlobKeys,
+  schema,
+  tenantsForPurge,
+  withPlatform,
+  withPurge,
+  withTenant,
+  type Db,
+} from "@zairyu/db";
 import { jstDate } from "@zairyu/shared";
 import type { BlobStore } from "@zairyu/vault";
 
@@ -98,5 +114,64 @@ export async function sweepOrphanBlobs(db: Db, blobs: BlobStore, nowMs: number, 
     if (batch.length > 0) await flush();
     if (r.orphans > 0) results.push(r);
   }
+  return results;
+}
+
+/** YYYY-MM-DD の years 年前(2/29 は前の年の 2/28) */
+export function yearsBefore(date: string, years: number): string {
+  const y = String(Number(date.slice(0, 4)) - years).padStart(4, "0");
+  const md = date.slice(5) === "02-29" ? "02-28" : date.slice(5);
+  return `${y}-${md}`;
+}
+
+export interface AuditPurgeResult {
+  /** null は運営者の操作記録 */
+  tenantId: string | null;
+  /** この日(JST)より前の記録が対象 */
+  before: string;
+  /** 消した件数(dry-run では消す予定の件数) */
+  deleted: number;
+}
+
+/**
+ * 監査ログの保存期間切れの削除(毎日の purge で一緒に行う)。
+ * テナントの監査ログはテナントの設定(5〜10 年)、運営者の操作記録は一律 10 年。
+ * 消したことは、件数と基準日だけを新しい記録として残す
+ */
+export async function purgeAuditLogs(db: Db, nowMs: number, opts: { dryRun?: boolean } = {}): Promise<AuditPurgeResult[]> {
+  const today = jstDate(nowMs);
+  const results: AuditPurgeResult[] = [];
+  for (const t of await withPurge(db, (tx) => tenantsForPurge(tx))) {
+    const before = yearsBefore(today, t.auditRetentionYears);
+    let deleted = 0;
+    if (opts.dryRun) {
+      deleted = await withPurge(db, (tx) => countExpiredAuditLogs(tx, t.id, before));
+    } else {
+      for (;;) {
+        const n = await withPurge(db, (tx) => deleteExpiredAuditLogs(tx, t.id, before));
+        deleted += n;
+        if (n === 0) break;
+      }
+      if (deleted > 0) {
+        await withTenant(db, t.id, (tx) => insertAudit(tx, { actorId: null, action: "audit_log.purge", detail: { before, deleted, retentionYears: t.auditRetentionYears } }));
+      }
+    }
+    if (deleted > 0) results.push({ tenantId: t.id, before, deleted });
+  }
+  const before = yearsBefore(today, PLATFORM_AUDIT_RETENTION_YEARS);
+  let deleted = 0;
+  if (opts.dryRun) {
+    deleted = await withPurge(db, (tx) => countExpiredPlatformAuditLogs(tx, before));
+  } else {
+    for (;;) {
+      const n = await withPurge(db, (tx) => deleteExpiredPlatformAuditLogs(tx, before));
+      deleted += n;
+      if (n === 0) break;
+    }
+    if (deleted > 0) {
+      await withPlatform(db, (tx) => tx.insert(schema.platformAuditLogs).values({ operatorId: null, action: "platform_audit_log.purge", detail: { before, deleted, retentionYears: PLATFORM_AUDIT_RETENTION_YEARS } }));
+    }
+  }
+  if (deleted > 0) results.push({ tenantId: null, before, deleted });
   return results;
 }

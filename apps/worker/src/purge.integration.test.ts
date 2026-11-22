@@ -2,9 +2,10 @@
 import { randomBytes } from "node:crypto";
 import { createDb, schema, withPlatform, withTenant, type Db } from "@zairyu/db";
 import { prepareTestDatabase } from "@zairyu/db/testing";
+import { eq } from "drizzle-orm";
 import { MemoryBlobStore } from "@zairyu/vault";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { ORPHAN_MIN_AGE_MS, purgeExpired, sweepOrphanBlobs } from "./purge.js";
+import { ORPHAN_MIN_AGE_MS, purgeAuditLogs, purgeExpired, sweepOrphanBlobs, yearsBefore } from "./purge.js";
 
 const url = process.env.TEST_DATABASE_URL;
 const at = (jstDate: string) => Date.parse(`${jstDate}T01:00:00+09:00`);
@@ -129,5 +130,53 @@ describe.skipIf(!url)("退職後データの自動削除", () => {
     blobs.modified.set(`${b}/a-active-front`, new Date(0));
     expect(await sweepOrphanBlobs(db, blobs, now)).toEqual([{ tenantId: b, orphans: 1, deleted: 1, failures: 0 }]);
     expect(await blobs.get(`${a}/a-active-front`)).not.toBeNull();
+  });
+
+  it("基準日の計算(2/29 は 2/28)", () => {
+    expect(yearsBefore("2026-11-22", 7)).toBe("2019-11-22");
+    expect(yearsBefore("2028-02-29", 5)).toBe("2023-02-28");
+  });
+
+  it("保存期間が過ぎた監査ログを消す(テナントごとの設定・運営者の操作記録は 10 年)。消したことを件数で残す", async () => {
+    // A は 5 年、B は標準の 7 年
+    await withPlatform(db, (tx) => tx.update(schema.tenants).set({ auditRetentionYears: 5 }).where(eq(schema.tenants.id, a)));
+    const old = (iso: string) => new Date(`${iso}T12:00:00+09:00`);
+    for (const t of [a, b]) {
+      await withTenant(db, t, (tx) =>
+        tx.insert(schema.auditLogs).values([
+          { action: "old.1", at: old("2018-01-01") },
+          { action: "old.2", at: old("2020-11-21") },
+          { action: "keep", at: old("2020-11-22") },
+        ]),
+      );
+    }
+    await withPlatform(db, (tx) =>
+      tx.insert(schema.platformAuditLogs).values([
+        { action: "old.p", at: old("2016-11-21") },
+        { action: "keep.p", at: old("2016-11-22") },
+      ]),
+    );
+    const now = at("2025-11-22");
+    // A: 2020-11-22 より前の 2 件、B: 2018-11-22 より前の 1 件、運営者: 2015-11-22 より前は無し
+    const sorted = (r: { tenantId: string | null }[]) => [...r].sort((x, y) => (x.tenantId === a ? 0 : x.tenantId === b ? 1 : 2) - (y.tenantId === a ? 0 : y.tenantId === b ? 1 : 2));
+    expect(sorted(await purgeAuditLogs(db, now, { dryRun: true }))).toEqual([
+      { tenantId: a, before: "2020-11-22", deleted: 2 },
+      { tenantId: b, before: "2018-11-22", deleted: 1 },
+    ]);
+    const later = at("2026-11-22");
+    expect(sorted(await purgeAuditLogs(db, later))).toEqual([
+      { tenantId: a, before: "2021-11-22", deleted: 3 },
+      { tenantId: b, before: "2019-11-22", deleted: 1 },
+      { tenantId: null, before: "2016-11-22", deleted: 1 },
+    ]);
+    const actions = (t: string) => withTenant(db, t, async (tx) => (await tx.select().from(schema.auditLogs)).map((l) => l.action));
+    expect(await actions(a)).not.toContain("keep");
+    expect(await actions(b)).toEqual(expect.arrayContaining(["old.2", "keep", "audit_log.purge"]));
+    expect(await actions(b)).not.toContain("old.1");
+    const platform = await withPlatform(db, (tx) => tx.select().from(schema.platformAuditLogs));
+    expect(platform.map((l) => l.action)).toEqual(["keep.p", "platform_audit_log.purge"]);
+    expect(platform[1]!.detail).toEqual({ before: "2016-11-22", deleted: 1, retentionYears: 10 });
+    // 2 回目は何もしない
+    expect(await purgeAuditLogs(db, later)).toEqual([]);
   });
 });
