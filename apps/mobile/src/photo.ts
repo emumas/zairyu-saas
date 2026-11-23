@@ -26,7 +26,7 @@ export async function recognizeCardNumber(pathOrUrl: string): Promise<string[]> 
 /** 日本語の認識(住居地・在留資格など)。行の位置(上端)も返す */
 async function japaneseLines(pathOrUrl: string): Promise<OcrLine[]> {
   const result = await TextRecognition.recognize(toFileUrl(pathOrUrl), TextRecognitionScript.JAPANESE);
-  return result.blocks.flatMap((b) => b.lines.map((l) => ({ text: l.text, top: l.frame?.top })));
+  return result.blocks.flatMap((b) => b.lines.map((l) => ({ text: l.text, top: l.frame?.top, left: l.frame?.left, height: l.frame?.height })));
 }
 
 /**

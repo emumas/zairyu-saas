@@ -15,6 +15,19 @@ describe("addressFromFrontOcr", () => {
   it("項目名と住所が別の行でも、行の順番がばらばらでも読める", () => {
     expect(addressFromFrontOcr([{ text: "大阪府大阪市北区梅田1-1-1", top: 320 }, { text: "住居地", top: 300 }])).toBe("大阪府大阪市北区梅田1-1-1");
   });
+  it("2 行目が数字だけ・建物名だけでも、間に項目名(ADDRESS)が挟まってもつなぐ", () => {
+    const lines = [
+      { text: "住居地 愛知県名古屋市中区新栄二丁目16番28号 西三宝ビル5", top: 300, left: 60, height: 20 },
+      { text: "ADDRESS", top: 318, left: 10, height: 14 },
+      { text: "02号", top: 324, left: 62, height: 20 },
+      { text: "在留資格 永住者", top: 380, left: 10, height: 20 },
+    ];
+    expect(addressFromFrontOcr(lines)).toBe("愛知県名古屋市中区新栄二丁目16番28号 西三宝ビル5 02号");
+    expect(addressFromFrontOcr([{ text: "東京都新宿区西新宿2-8-1", top: 300 }, { text: "メゾン新宿", top: 325 }, { text: "在留資格 技能", top: 380 }])).toBe("東京都新宿区西新宿2-8-1 メゾン新宿");
+  });
+  it("離れた行(高さの 2.5 倍より下)はつながない", () => {
+    expect(addressFromFrontOcr([{ text: "東京都新宿区西新宿2-8-1", top: 300, height: 20 }, { text: "メゾン新宿", top: 400, height: 20 }])).toBe("東京都新宿区西新宿2-8-1");
+  });
   it("住所が無ければ null", () => {
     expect(addressFromFrontOcr([{ text: "在留カード RESIDENCE CARD" }, { text: "AB12345678CD" }])).toBeNull();
   });
@@ -43,6 +56,21 @@ describe("latestAddressFromBackOcr", () => {
     expect(latestAddressFromBackOcr([base, { text: "R7.2.14岐阜県大垣市本町1丁目12番地7 メゾン大垣101", top: 100 }])).toBe("岐阜県大垣市本町1丁目12番地7 メゾン大垣101");
     // 建物名の続きの行に日付が混ざっても除く
     expect(latestAddressFromBackOcr([base, { text: "岐阜県大垣市本町1丁目12番地7", top: 100 }, { text: "2025年2月14日 メゾン大垣101", top: 104 }])).toBe("岐阜県大垣市本町1丁目12番地7 メゾン大垣101");
+  });
+  it("裏面: 2 行目(建物名・部屋番号)を、届出年月日・印影の行を飛ばしてつなぐ。次の記載ではやめる", () => {
+    const base = { text: "届出年月日 住居地 記載者印", top: 50 };
+    expect(
+      latestAddressFromBackOcr([
+        base,
+        { text: "2024年4月1日", top: 100 },
+        { text: "岐阜県大垣市本町1丁目12番地7", top: 100 },
+        { text: "大垣市長之印", top: 104 },
+        { text: "コーポ本町 201号室", top: 122 },
+      ]),
+    ).toBe("岐阜県大垣市本町1丁目12番地7 コーポ本町 201号室");
+    expect(
+      latestAddressFromBackOcr([base, { text: "岐阜県大垣市本町1丁目12番地7", top: 100 }, { text: "2025年2月14日 愛知県一宮市本町2-3-4", top: 130 }]),
+    ).toBe("愛知県一宮市本町2-3-4");
   });
   it("記載が無ければ null", () => {
     expect(latestAddressFromBackOcr([{ text: "届出年月日 住居地 記載者印", top: 50 }, { text: "在留期間更新等許可申請欄", top: 300 }])).toBeNull();

@@ -51,17 +51,44 @@ function addressPart(line: string): string | null {
   return s.length >= 5 ? s : null;
 }
 
-/** 都道府県名で始まらない続きの行か(番地・建物名など)。日付だけの行(次の記載の届出年月日など)は続きにしない */
-function isContinuation(line: string): boolean {
-  const s = cleanAddress(line);
-  if (s.replace(/[\s.,、。・]/g, "").length < 2) return false;
-  return s.length > 0 && s.length <= 40 && !PREF_RE.test(s) && /[0-9０-９丁目番号号室階棟ー\-－]/.test(s) && !/在留資格|STATUS|就労|期間|年月日|許可/.test(s);
+/** 住所の続きではない欄(ほかの項目・記載者印の印影など)。ここで探すのをやめる */
+const OTHER_FIELD_RE = /在留資格|STATUS|就労|期間|年月日|許可|資格外|申請|交付|有効|PERIOD|DATE|NATIONALITY|国籍/i;
+/** 読み飛ばす行(項目名だけ・英語の項目名・印影の文字) */
+const SKIP_RE = /^(?:[A-Z][A-Z\s()./]*|.*(?:之印|市長|区長|町長|村長|記載者).*)$/;
+
+/**
+ * 住所の行(index)の続きの行(番地の残り・建物名・部屋番号)を最大 2 行つなぐ。
+ * OCR は項目名(ADDRESS など)や届出年月日を別の行として間に挟むことがあるので、それらは読み飛ばす。
+ * 行の高さが分かれば、住所の行から 2.5 行分より下は見ない
+ */
+function withContinuation(sorted: readonly OcrLine[], index: number, first: string): string {
+  const base = sorted[index]!;
+  const limit = base.top !== undefined && base.height ? base.top + base.height * 2.5 : undefined;
+  const parts = [first];
+  for (let j = index + 1; j < sorted.length && j <= index + 4 && parts.length < 3; j++) {
+    const line = sorted[j]!;
+    if (limit !== undefined && line.top !== undefined && line.top > limit) break;
+    const raw = stripDates(line.text).trim();
+    if (PREF_RE.test(raw)) break; // 次の記載
+    if (OTHER_FIELD_RE.test(raw) && !/[丁目番地号室]/.test(raw)) break;
+    const c = cleanAddress(raw);
+    if (c.replace(/[\s.,、。・]/g, "").length < 2 || SKIP_RE.test(c)) continue;
+    if (c.length > 40) break;
+    // 住所の列より左から始まる行は別の欄(位置が分かるときだけ見る)
+    if (base.left !== undefined && line.left !== undefined && base.height && line.left < base.left - base.height * 2) continue;
+    parts.push(c);
+  }
+  return parts.join(" ");
 }
 
 export interface OcrLine {
   text: string;
   /** 画像上の上端(大きいほど下) */
   top?: number | undefined;
+  /** 画像上の左端 */
+  left?: number | undefined;
+  /** 行の高さ */
+  height?: number | undefined;
 }
 
 /** 表面の OCR から住居地を取り出す(住居地の欄は 1 か所だけ) */
@@ -70,8 +97,7 @@ export function addressFromFrontOcr(lines: readonly OcrLine[]): string | null {
   for (let i = 0; i < sorted.length; i++) {
     const a = addressPart(sorted[i]!.text);
     if (!a) continue;
-    const next = sorted[i + 1];
-    return next && isContinuation(next.text) ? `${a} ${cleanAddress(next.text)}` : a;
+    return withContinuation(sorted, i, a);
   }
   return null;
 }
@@ -86,8 +112,7 @@ export function latestAddressFromBackOcr(lines: readonly OcrLine[]): string | nu
   for (let i = 0; i < sorted.length; i++) {
     const a = addressPart(stripDates(sorted[i]!.text));
     if (!a) continue;
-    const next = sorted[i + 1];
-    latest = next && isContinuation(next.text) ? `${a} ${cleanAddress(next.text)}` : a;
+    latest = withContinuation(sorted, i, a);
   }
   return latest;
 }
