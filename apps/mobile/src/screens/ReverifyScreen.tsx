@@ -70,9 +70,11 @@ export function ReverifyScreen({ cardId, personName, onDone }: { cardId: string;
               <Row
                 k="IC の住居地(裏面の記載)"
                 v={result.icBackAddress.recorded ? `記録あり${result.icBackAddress.writtenAt ? `(${result.icBackAddress.writtenAt} 記録)` : ""}` : "記録なし"}
-                tone={result.icBackAddress.recorded ? "ok" : "warn"}
+                tone={result.icBackAddress.recorded ? "ok" : undefined}
               />
-              {result.icBackAddress.diag && <Text style={{ color: "#59636e", fontSize: 11 }}>確認用: {result.icBackAddress.diag}</Text>}
+              {!result.icBackAddress.recorded && (
+                <Text style={{ color: "#59636e", fontSize: 12 }}>旧様式のカードは、住居地の変更が裏面に印字されるだけで IC には記録されないことがあります。その場合は裏面の写真から読み取った住所を使います。</Text>
+              )}
             </>
           )}
           {result.needsReview && <Message text="署名の検証に失敗しました。「要確認」にして管理者へ通知しました。入管局・労働局に相談してください。" />}
