@@ -167,6 +167,46 @@ pnpm start -- --clear
 ### 11-6. ほかの人にテストしてもらうとき
 その人を Tailscale のアカウントに招待し、その人の端末にも Tailscale を入れてもらいます(無料プランは少人数まで)。公開 URL で見せたいときは Cloudflare Tunnel + Cloudflare Access(要相談)を使います。
 
+## 12. 別の PC でテスト運用する
+
+テスト用のサーバーにする PC(以下「テスト PC」)に、API・Web・Metro を置きます。開発は今の PC で続け、テスト PC は `git pull` で最新にします。
+
+### 12-1. テスト PC に入れるもの(初回だけ)
+| もの | メモ |
+|---|---|
+| Git | リポジトリの取得・更新。GitHub にログインできるようにする(`git clone` で取得) |
+| Node.js 24 | 今の PC と同じ版にそろえる(`node -v` で確認) |
+| pnpm 10 | `corepack enable` → `corepack prepare pnpm@10 --activate`、または `npm i -g pnpm@10` |
+| PostgreSQL 16 以降 | 「1. PostgreSQL を入れる」と同じ |
+| Tailscale | 「11. 外出先からテストする」と同じ。テスト PC の IP(`100.x.x.x`)を使う |
+
+Android Studio は不要です(スマホに入っている開発用アプリは、どの PC の Metro にもつながります。アプリを作り直すときだけ今の PC で行います)。
+
+### 12-2. 始め方は 2 通り
+**A. まっさらな状態から始める(おすすめ)**: 「2」〜「4」と「10. 郵便番号データ」をテスト PC で行い、テスト PC の Tailscale の IP を `--public-url` と `apps\mobile\.env` に使います。登録者・カードは登録し直します。
+
+**B. 今の PC のデータを引き継ぐ**: 次の 3 つを**そろえて**移します。どれか 1 つでも欠けると、カード番号・住所・写真・認証アプリの設定が読めなくなります。
+1. DB(ロールとデータ)
+   ```powershell
+   # 今の PC(PostgreSQL の bin フォルダーにパスが通った PowerShell で)
+   pg_dumpall -U postgres --roles-only -f roles.sql
+   pg_dump -U postgres -Fc -f zairyu.dump zairyu
+   # テスト PC
+   psql -U postgres -f roles.sql          # 「postgres は既にある」のエラーは無視してよい
+   psql -U postgres -c "CREATE DATABASE zairyu"
+   pg_restore -U postgres -d zairyu zairyu.dump
+   ```
+2. `apps\api\.env`(暗号の鍵 `VAULT_LOCAL_KEK`・`AUTH_SECRET_BOX_KEY`・`AUTH_JWT_SECRET` を**そのまま**使う。`DATABASE_URL` のパスワードと `PUBLIC_BASE_URL` だけテスト PC に合わせて直す)
+3. `apps\api\.blobs` フォルダー(カードの写真)
+
+移したあとは `pnpm db:migrate` を実行してから起動します。
+
+### 12-3. 気をつけること
+- B のファイル(`zairyu.dump`・`.env`・`.blobs`)には実カードの個人情報と鍵が入ります。**USB メモリなどで直接**移し、メール・クラウドのストレージ・チャットは使わないでください。移したら USB と今の PC のコピーを消します
+- テスト PC には Windows のログインパスワードを付け、ドライブの暗号化(BitLocker またはデバイスの暗号化)をオンにしてください
+- テスト PC はスリープしない設定にし、Tailscale の「Run unattended」をオンにします
+- テスト PC を更新するときは、テスト PC で `git pull` → `pnpm install` → `pnpm build` → `pnpm db:migrate` → 起動し直し、です
+
 ## トラブル: `pnpm build` で `spawn UNKNOWN`
 
 ビルドを取りまとめるツール(Turbo)が Windows のセキュリティ機能などで起動できない場合でも、`pnpm build` / `pnpm test` / `pnpm typecheck` / `pnpm dev` は自動で pnpm の順次実行に切り替わります(「Turbo を起動できないため、pnpm で順に実行します」と表示)。速さは落ちますが結果は同じです。Turbo を直すには `pnpm install --force` を試し、それでもだめなら Windows セキュリティの保護の履歴を確認してください。
