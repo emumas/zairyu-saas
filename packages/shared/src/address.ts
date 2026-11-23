@@ -20,11 +20,25 @@ const PREFECTURE =
   "(?:北海道|青森県|岩手県|宮城県|秋田県|山形県|福島県|茨城県|栃木県|群馬県|埼玉県|千葉県|東京都|神奈川県|新潟県|富山県|石川県|福井県|山梨県|長野県|岐阜県|静岡県|愛知県|三重県|滋賀県|京都府|大阪府|兵庫県|奈良県|和歌山県|鳥取県|島根県|岡山県|広島県|山口県|徳島県|香川県|愛媛県|高知県|福岡県|佐賀県|長崎県|熊本県|大分県|宮崎県|鹿児島県|沖縄県)";
 const PREF_RE = new RegExp(PREFECTURE);
 
+/**
+ * 届出年月日などの日付(西暦・和暦。2025年2月14日 / 2025.02.14 / 2025-2-14 / 令和7年2月14日 / R7.2.14)。
+ * 裏面は 届出年月日 | 住居地 | 記載者印 の欄が横に並ぶので、OCR が日付を住所と同じ行や次の行にまとめることがある
+ */
+const DATE_RE = /(?<![A-Za-z0-9])(?:(?:19|20)\d{2}|(?:令和|平成|昭和|[RHS])\s*(?:元|\d{1,2}))\s*[年./-]\s*\d{1,2}\s*[月./-]\s*\d{1,2}\s*日?/g;
+
+/** 全角の数字・記号を半角に(日付の判定用) */
+const toHalfWidth = (s: string) => s.replace(/[０-９．／－]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xfee0));
+
+/** 日付を取り除く */
+export function stripDates(s: string): string {
+  return toHalfWidth(s).replace(DATE_RE, " ");
+}
+
 /** 項目名・日付・余分な空白を除く */
 export function cleanAddress(s: string): string {
-  return s
+  return stripDates(s)
     .replace(/[\u3000\s]+/g, " ")
-    .replace(/住居地|ADDRESS|住所/gi, "")
+    .replace(/住居地|ADDRESS|住所|届出年月日|記載者印/gi, "")
     .replace(/^[\s:：]+/, "")
     .trim();
 }
@@ -37,9 +51,10 @@ function addressPart(line: string): string | null {
   return s.length >= 5 ? s : null;
 }
 
-/** 都道府県名で始まらない続きの行か(番地・建物名など) */
+/** 都道府県名で始まらない続きの行か(番地・建物名など)。日付だけの行(次の記載の届出年月日など)は続きにしない */
 function isContinuation(line: string): boolean {
   const s = cleanAddress(line);
+  if (s.replace(/[\s.,、。・]/g, "").length < 2) return false;
   return s.length > 0 && s.length <= 40 && !PREF_RE.test(s) && /[0-9０-９丁目番号号室階棟ー\-－]/.test(s) && !/在留資格|STATUS|就労|期間|年月日|許可/.test(s);
 }
 
@@ -63,14 +78,13 @@ export function addressFromFrontOcr(lines: readonly OcrLine[]): string | null {
 
 /**
  * 裏面の OCR から最新の住居地を取り出す。住居地記載欄は上から順に追記されるので、いちばん下の記載を最新とする。
- * 行頭の届出年月日(2025年4月1日 など)は除く
+ * 届出年月日(行のどこにあっても、日付だけの行でも)は住所に入れない
  */
 export function latestAddressFromBackOcr(lines: readonly OcrLine[]): string | null {
   const sorted = [...lines].sort((a, b) => (a.top ?? 0) - (b.top ?? 0));
   let latest: string | null = null;
   for (let i = 0; i < sorted.length; i++) {
-    const text = sorted[i]!.text.replace(/^\s*\d{4}\s*[年./-]\s*\d{1,2}\s*[月./-]\s*\d{1,2}\s*日?/, "");
-    const a = addressPart(text);
+    const a = addressPart(stripDates(sorted[i]!.text));
     if (!a) continue;
     const next = sorted[i + 1];
     latest = next && isContinuation(next.text) ? `${a} ${cleanAddress(next.text)}` : a;

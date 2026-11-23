@@ -31,6 +31,19 @@ describe("latestAddressFromBackOcr", () => {
     ];
     expect(latestAddressFromBackOcr(lines)).toBe("埼玉県さいたま市浦和区高砂3-15-1 さいたまハイツ205");
   });
+  it("届出年月日は、行の前後・次の行・和暦・全角でも住所に入れない", () => {
+    const base = { text: "届出年月日 住居地 記載者印", top: 50 };
+    // 日付が住所の後ろに付く
+    expect(latestAddressFromBackOcr([base, { text: "岐阜県大垣市本町1丁目12番地7 2025.02.14", top: 100 }])).toBe("岐阜県大垣市本町1丁目12番地7");
+    // 日付だけの行が住所の次に来る(続きの行としてつながない)
+    expect(latestAddressFromBackOcr([base, { text: "岐阜県大垣市本町1丁目12番地7", top: 100 }, { text: "2025年2月14日", top: 104 }])).toBe("岐阜県大垣市本町1丁目12番地7");
+    // 和暦・全角
+    expect(latestAddressFromBackOcr([base, { text: "令和7年2月14日 岐阜県大垣市本町1丁目12番地7", top: 100 }])).toBe("岐阜県大垣市本町1丁目12番地7");
+    expect(latestAddressFromBackOcr([base, { text: "２０２５．０２．１４ 岐阜県大垣市本町１丁目１２番地７", top: 100 }])).toBe("岐阜県大垣市本町1丁目12番地7");
+    expect(latestAddressFromBackOcr([base, { text: "R7.2.14岐阜県大垣市本町1丁目12番地7 メゾン大垣101", top: 100 }])).toBe("岐阜県大垣市本町1丁目12番地7 メゾン大垣101");
+    // 建物名の続きの行に日付が混ざっても除く
+    expect(latestAddressFromBackOcr([base, { text: "岐阜県大垣市本町1丁目12番地7", top: 100 }, { text: "2025年2月14日 メゾン大垣101", top: 104 }])).toBe("岐阜県大垣市本町1丁目12番地7 メゾン大垣101");
+  });
   it("記載が無ければ null", () => {
     expect(latestAddressFromBackOcr([{ text: "届出年月日 住居地 記載者印", top: 50 }, { text: "在留期間更新等許可申請欄", top: 300 }])).toBeNull();
   });
