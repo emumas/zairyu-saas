@@ -4,6 +4,7 @@
  * OCR の全文は保持せず、ここで取り出した住所だけを使う
  */
 import { z } from "zod";
+import { workRestrictionFromText } from "./workRestriction.js";
 
 export const ADDRESS_SOURCES = ["ic_back", "back_photo", "front_photo", "manual"] as const;
 export type AddressSource = (typeof ADDRESS_SOURCES)[number];
@@ -163,6 +164,8 @@ export function japaneseDate(s: string): string | null {
 export interface FrontOcrFields {
   /** 氏名(ローマ字。カードの表記のまま大文字) */
   name: string | null;
+  /** 就労制限の有無(券面の文言から。1 制限なし / 2 在留資格に基づく就労のみ / 4 指定書 / 9 就労不可) */
+  workRestriction: "1" | "2" | "4" | "9" | null;
   birthDate: string | null;
   sex: "M" | "F" | null;
   nationality: string | null;
@@ -217,6 +220,7 @@ export function frontFieldsFromOcr(lines: readonly OcrLine[]): FrontOcrFields {
 
   return {
     name: nameFromFrontOcr(sorted),
+    workRestriction: workRestrictionFromText(near(/就労制限|就労不可|就労活動/).join(" ")),
     birthDate: firstDate(near(/生年月日|DATE OF BIRTH/i)),
     sex,
     nationality: nationality && nationality.length <= 30 ? nationality : null,
@@ -255,4 +259,25 @@ export function nationalityCode(s: string | null | undefined): string | null {
   if (/^[A-Z]{3}$/.test(t)) return t;
   const key = s.trim().replace(/\s/g, "");
   return NATIONALITY_CODES[key] ?? (/^中国/.test(key) && /台湾/.test(key) ? "TWN" : null);
+}
+
+/**
+ * 裏面の下の欄の読み取り。
+ * - 資格外活動許可欄: 「許可:原則週28時間以内・風俗営業等の従事を除く」(包括許可)/「許可(資格外活動許可書に記載された範囲内の活動)」(個別許可)
+ * - 在留期間更新等許可申請欄: 「在留期間更新許可申請中」「在留資格変更許可申請中」
+ * 欄の見出し(「資格外活動許可欄」)だけでは許可ありとしない。読み取れなければ null(許可が無いとも決めない)
+ */
+export function backPermissionsFromOcr(lines: readonly OcrLine[]): { outsideActivity: string | null; pendingApplication: boolean | null } {
+  const text = lines
+    .map((l) => l.text)
+    .join(" ")
+    .normalize("NFKC")
+    .replace(/\s/g, "");
+  const outsideActivity = /週\D{0,3}28時間/.test(text)
+    ? "許可:原則週28時間以内・風俗営業等の従事を除く"
+    : /資格外活動許可書に記載/.test(text)
+      ? "許可(資格外活動許可書に記載された範囲内の活動)"
+      : null;
+  const pendingApplication = /(?:更新|変更)(?:許可)?申請中/.test(text) ? true : null;
+  return { outsideActivity, pendingApplication };
 }

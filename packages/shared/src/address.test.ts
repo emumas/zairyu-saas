@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addressFromFrontOcr, backHasEntries, nameFromFrontOcr, nationalityCode, chooseAddress, cleanAddress, countryName, frontFieldsFromOcr, japaneseDate, latestAddressFromBackOcr } from "./address.js";
+import { addressFromFrontOcr, backHasEntries, backPermissionsFromOcr, nameFromFrontOcr, nationalityCode, chooseAddress, cleanAddress, countryName, frontFieldsFromOcr, japaneseDate, latestAddressFromBackOcr } from "./address.js";
 
 describe("addressFromFrontOcr", () => {
   it("住居地の欄を取り出す(項目名を除き、続きの行をつなぐ)", () => {
@@ -104,6 +104,7 @@ describe("frontFieldsFromOcr(旧様式の表面)", () => {
   it("項目ごとに値を取り出す", () => {
     expect(frontFieldsFromOcr(lines)).toEqual({
       name: "NGUYEN VAN A",
+      workRestriction: "2",
       birthDate: "1995-04-01",
       sex: "M",
       nationality: "ベトナム",
@@ -165,5 +166,19 @@ describe("氏名と国籍(登録者の下書き)", () => {
     expect(nationalityCode("vnm")).toBe("VNM");
     expect(nationalityCode("中国(台湾)")).toBe("TWN");
     expect(nationalityCode("どこか")).toBeNull();
+  });
+});
+
+describe("裏面の資格外活動許可欄・申請欄", () => {
+  it("包括許可(週28時間)・個別許可・申請中を読み取る", () => {
+    expect(backPermissionsFromOcr([{ text: "資格外活動許可欄" }, { text: "許可：原則週２８時間以内・風俗営業等の従事を除く" }])).toEqual({
+      outsideActivity: "許可:原則週28時間以内・風俗営業等の従事を除く",
+      pendingApplication: null,
+    });
+    expect(backPermissionsFromOcr([{ text: "許可(資格外活動許可書に記載された範囲内の活動)" }]).outsideActivity).toContain("資格外活動許可書");
+    expect(backPermissionsFromOcr([{ text: "在留期間更新等許可申請欄" }, { text: "在留期間更新許可申請中" }]).pendingApplication).toBe(true);
+  });
+  it("欄の見出しだけでは許可・申請中としない", () => {
+    expect(backPermissionsFromOcr([{ text: "資格外活動許可欄" }, { text: "在留期間更新等許可申請欄" }])).toEqual({ outsideActivity: null, pendingApplication: null });
   });
 });

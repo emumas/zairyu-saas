@@ -61,6 +61,8 @@ export const cardManualFields = z.object({
   statusOfResidence: z.string().trim().max(50).nullish(),
   workRestriction: z.enum(WORK_RESTRICTIONS).nullish(),
   pendingApplication: z.boolean().optional(),
+  /** 資格外活動許可(旧様式は裏面の写真の読み取りか入力の文言。第2世代は IC の値を使う) */
+  outsideActivity: z.string().trim().max(100).nullish(),
   /** カード記載の生年月日・性別・国籍(旧様式は券面の読み取り・入力。第2世代は IC の値を使い、これは照合に使う) */
   birthDate: dateString.nullish(),
   sex: z.enum(["M", "F"]).nullish(),
@@ -121,6 +123,8 @@ export const cardDetailsUpdateInput = z.object({
   postalCode: postalCodeInput.nullable().optional(),
   /** 旧様式のみ(IC に文字情報が無いため) */
   statusOfResidence: z.string().trim().max(50).nullable().optional(),
+  workRestriction: z.enum(WORK_RESTRICTIONS).nullable().optional(),
+  outsideActivity: z.string().trim().max(100).nullable().optional(),
   expiryDate: dateString.nullable().optional(),
   cardValidUntil: dateString.nullable().optional(),
 });

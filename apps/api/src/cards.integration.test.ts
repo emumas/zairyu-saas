@@ -159,6 +159,32 @@ describe.skipIf(!url)("カード登録", () => {
     expect(p.expiry).toMatchObject({ bucket: "ok", deadlineBasis: "card", deadline: "2030-06-26" });
   });
 
+  it("旧様式: 就労制限は在留資格だけで決まるものを自動で入れ、資格外活動は裏面の読み取りの文言を保存する", async () => {
+    const p1 = await newPerson("WR01");
+    const n1 = "WR12345678CD";
+    const { cardId: c1 } = await tokyoAdmin.cards.register({ personId: p1, cardNumber: n1, ic: icPayload({ format: "legacy", kind: "residence", signer: rsa, cardNumber: n1 }), manual: { statusOfResidence: "永住者", cardValidUntil: "2030-06-26" } });
+    expect((await tokyoAdmin.persons.get({ id: p1 })).card).toMatchObject({ id: c1, workRestriction: "1" });
+    const p2 = await newPerson("WR02");
+    const n2 = "WS12345678CD";
+    await tokyoAdmin.cards.register({
+      personId: p2,
+      cardNumber: n2,
+      ic: icPayload({ format: "legacy", kind: "residence", signer: rsa, cardNumber: n2 }),
+      manual: { statusOfResidence: "留学", expiryDate: "2028-03-31", outsideActivity: "許可:原則週28時間以内・風俗営業等の従事を除く" },
+    });
+    const got = await tokyoAdmin.persons.get({ id: p2 });
+    expect(got.card).toMatchObject({ workRestriction: "9", outsideActivity: expect.stringContaining("28") });
+    expect(got.work).toMatchObject({ level: "conditional", weeklyHoursLimit: 28 });
+    // 技術・人文知識・国際業務は在留資格だけでは決めない(券面・入力で)
+    const p3 = await newPerson("WR03");
+    const n3 = "WT12345678CD";
+    const { cardId: c3 } = await tokyoAdmin.cards.register({ personId: p3, cardNumber: n3, ic: icPayload({ format: "legacy", kind: "residence", signer: rsa, cardNumber: n3 }), manual: { statusOfResidence: "技術・人文知識・国際業務", expiryDate: "2029-01-01" } });
+    expect((await tokyoAdmin.persons.get({ id: p3 })).card?.workRestriction).toBeNull();
+    // 記載事項の修正で在留資格を直すと、決まるものは入る
+    expect((await tokyoAdmin.cards.updateDetails({ cardId: c3, statusOfResidence: "定住者" })).changed).toEqual(expect.arrayContaining(["statusOfResidence", "workRestriction"]));
+    expect((await tokyoAdmin.persons.get({ id: p3 })).card?.workRestriction).toBe("1");
+  });
+
   it("新しい登録者: 登録者を作る前にカードを照合できる(同じカードの登録者も返す)。その後に作った登録者へ登録できる", async () => {
     const n = "NW12345678CD";
     const ic = icPayload({ format: "gen2", kind: "residence", signer: ec, cardNumber: n });

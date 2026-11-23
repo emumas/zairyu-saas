@@ -18,6 +18,7 @@ import {
   type IcReadPayload,
   jstDate,
   nationalityCode,
+  workRestrictionFromStatus,
 } from "@zairyu/shared";
 import { useState } from "react";
 import { Modal, Switch, Text, View } from "react-native";
@@ -96,6 +97,8 @@ export function CardWizard({
   const [frontOcr, setFrontOcr] = useState<FrontOcrFields | null>(null);
   const [backOcrAddress, setBackOcrAddress] = useState<string | null>(null);
   const [backEntries, setBackEntries] = useState(false);
+  /** 裏面の資格外活動許可欄・申請欄の読み取り(旧様式で IC に記録が無いときに使う) */
+  const [backPerms, setBackPerms] = useState<{ outsideActivity: string | null; pendingApplication: boolean | null }>({ outsideActivity: null, pendingApplication: null });
   /** 住居地: 自動で選んだ値(null)か、利用者が直した値 */
   const [addressEdit, setAddressEdit] = useState<string | null>(null);
 
@@ -122,6 +125,7 @@ export function CardWizard({
       const b = await recognizeBack(path);
       setBackOcrAddress((await correctAddress(b.address)).address);
       setBackEntries(b.hasEntries);
+      setBackPerms({ outsideActivity: b.outsideActivity, pendingApplication: b.pendingApplication });
       setBack(await compressForUpload(path));
     } finally {
       deleteFile(path);
@@ -158,6 +162,8 @@ export function CardWizard({
     setManual((m) => ({
       ...m,
       statusOfResidence: m.statusOfResidence ?? f.statusOfResidence,
+      // 就労制限: 券面の文言(確定)、無ければ在留資格だけで決まるもの
+      workRestriction: m.workRestriction ?? f.workRestriction ?? workRestrictionFromStatus(f.statusOfResidence),
       ...(permanentCard ? { cardValidUntil: m.cardValidUntil ?? f.cardValidUntil, expiryDate: null } : { expiryDate: m.expiryDate ?? f.expiryDate }),
       birthDate: m.birthDate ?? f.birthDate,
       sex: m.sex ?? f.sex,
@@ -210,6 +216,9 @@ export function CardWizard({
         ...(ic ? {} : { icFailureReason: icFailure ?? "other" }),
         manual: {
           ...manual,
+          // 旧様式で IC に記録が無いとき、裏面の写真から読めた資格外活動・申請中を使う(サーバーは IC の値を優先する)
+          ...(manual.outsideActivity === undefined && backPerms.outsideActivity ? { outsideActivity: backPerms.outsideActivity } : {}),
+          ...(manual.pendingApplication === undefined && backPerms.pendingApplication ? { pendingApplication: true } : {}),
           ...(address.trim() && addressSource && addressSource !== "ic_back" ? { address: address.trim(), addressSource } : {}),
         },
         photos: { ...(front ? { front } : {}), ...(back ? { back } : {}) },
@@ -517,6 +526,12 @@ export function CardWizard({
           <Text>追記欄・資格外活動許可欄を確認するため、裏面を撮影します。</Text>
           <Button label={back ? "裏面を撮り直す" : "裏面を撮影"} kind={back ? "secondary" : "primary"} onPress={() => setCamera("back")} />
           {back && <Message text="裏面を撮影しました" tone="ok" />}
+          {back && verify?.format === "legacy" && (
+            <>
+              <Row k="資格外活動許可(裏面)" v={verify.fields.outsideActivity ?? backPerms.outsideActivity ?? "読み取れず(許可なしの場合も)"} tone={(verify.fields.outsideActivity ?? backPerms.outsideActivity) ? "ok" : undefined} />
+              {(verify.fields.pendingApplication ?? backPerms.pendingApplication) && <Row k="更新等の申請" v="申請中" tone="warn" />}
+            </>
+          )}
           <Text style={{ fontWeight: "700", marginTop: 8 }}>住居地</Text>
           {icBackAddress ? (
             <>

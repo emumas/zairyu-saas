@@ -5,7 +5,17 @@
  * - 画像の取得は閲覧として監査ログに残る
  * - 第2世代の記載事項と、IC の裏面追記から取った住居地は IC の値なので変えない(表示のみ)
  */
-import { ADDRESS_SOURCE_LABEL, chooseAddress, formatPostalCode, type AddressSource, type FrontOcrFields } from "@zairyu/shared";
+import {
+  ADDRESS_SOURCE_LABEL,
+  chooseAddress,
+  formatPostalCode,
+  WORK_RESTRICTION_LABEL,
+  WORK_RESTRICTIONS,
+  workRestrictionFromStatus,
+  type AddressSource,
+  type FrontOcrFields,
+  type WorkRestrictionCode,
+} from "@zairyu/shared";
 import { useEffect, useState } from "react";
 import { Switch, Text, View } from "react-native";
 import { api, messageOf } from "../api";
@@ -19,6 +29,8 @@ type Form = {
   sex: "M" | "F" | null;
   nationality: string;
   statusOfResidence: string;
+  workRestriction: WorkRestrictionCode | null;
+  outsideActivity: string;
   expiryDate: string;
   cardValidUntil: string;
   address: string;
@@ -30,6 +42,8 @@ const fromCard = (c: CardRow): Form => ({
   sex: c.sex === "M" || c.sex === "F" ? c.sex : null,
   nationality: c.nationality ?? "",
   statusOfResidence: c.statusOfResidence ?? "",
+  workRestriction: (WORK_RESTRICTIONS as readonly string[]).includes(c.workRestriction ?? "") ? (c.workRestriction as WorkRestrictionCode) : null,
+  outsideActivity: c.outsideActivity ?? "",
   expiryDate: c.expiryDate ?? "",
   cardValidUntil: c.cardValidUntil ?? "",
   address: c.address ?? "",
@@ -98,10 +112,15 @@ export function CardDetailsScreen({ personId, personName, onClose, onSaved }: { 
           if (fields.sex) next.sex = fields.sex;
           if (fields.nationality) next.nationality = fields.nationality;
           if (fields.statusOfResidence) next.statusOfResidence = fields.statusOfResidence;
+          // 就労制限: 券面の文言(確定)、無ければ在留資格だけで決まるもの
+          const wr = fields.workRestriction ?? workRestrictionFromStatus(fields.statusOfResidence ?? next.statusOfResidence);
+          if (wr) next.workRestriction = wr;
           if (fields.expiryDate) next.expiryDate = fields.expiryDate;
           if (fields.cardValidUntil) next.cardValidUntil = fields.cardValidUntil;
         }
         // 住居地: 裏面に新しい住所があればそちらを採用する
+        // 資格外活動許可欄(旧様式で IC に記録が無いとき)
+        if (legacy && back?.outsideActivity) next.outsideActivity = back.outsideActivity;
         // 裏面に記載があるのに読めないときは、表面の古い住所を入れない
         const chosen = addressFromIc ? null : chooseAddress({ backPhoto: b, frontPhoto: fields?.address ?? null, backHasEntries: back?.hasEntries ?? false });
         if (chosen) {
@@ -149,6 +168,8 @@ export function CardDetailsScreen({ personId, personName, onClose, onSaved }: { 
         input.sex = form.sex;
         input.nationality = orNull(form.nationality);
         input.statusOfResidence = orNull(form.statusOfResidence);
+        if (form.workRestriction !== (card.workRestriction ?? null)) input.workRestriction = form.workRestriction;
+        if (form.outsideActivity.trim() !== (card.outsideActivity ?? "")) input.outsideActivity = orNull(form.outsideActivity);
         input.expiryDate = permanent ? null : orNull(form.expiryDate);
         input.cardValidUntil = orNull(form.cardValidUntil);
       }
@@ -203,6 +224,17 @@ export function CardDetailsScreen({ personId, personName, onClose, onSaved }: { 
             {readDone && was(card.nationality)}
             <Field label="在留資格" value={form.statusOfResidence} onChangeText={(v) => setForm({ ...form, statusOfResidence: v })} />
             {readDone && was(card.statusOfResidence)}
+            <Text style={{ fontWeight: "600" }}>就労制限の有無</Text>
+            <Choice options={WORK_RESTRICTIONS.map((w) => ({ value: w, label: WORK_RESTRICTION_LABEL[w] }))} value={form.workRestriction} onChange={(v) => setForm({ ...form, workRestriction: v })} />
+            {readDone && was(card.workRestriction ? WORK_RESTRICTION_LABEL[card.workRestriction as WorkRestrictionCode] : null)}
+            <Field
+              label="資格外活動許可(裏面の資格外活動許可欄。無ければ空欄)"
+              value={form.outsideActivity}
+              onChangeText={(v) => setForm({ ...form, outsideActivity: v })}
+              placeholder="許可:原則週28時間以内・風俗営業等の従事を除く"
+              multiline
+            />
+            {readDone && was(card.outsideActivity)}
             <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
               <Switch value={permanent} onValueChange={setPermanent} />
               <Text style={{ flex: 1 }}>永住者(在留期間の定めなし)</Text>

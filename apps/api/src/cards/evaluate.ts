@@ -4,7 +4,7 @@
  */
 import { parseCardRead, type EfPath, type ParsedCard } from "@zairyu/zairyu-ic";
 import { verifyCardSignature, type SignatureVerification } from "@zairyu/zairyu-ic/verify";
-import type { CardManualFields, IcReadPayload } from "@zairyu/shared";
+import { workRestrictionFromStatus, type CardManualFields, type IcReadPayload } from "@zairyu/shared";
 import { TRPCError } from "@trpc/server";
 import type { X509Certificate } from "node:crypto";
 
@@ -147,8 +147,11 @@ export function mergeFields(ic: IcEvaluation | null, manual: CardManualFields): 
     expiryDate: base.expiryDate ?? manual.expiryDate ?? null,
     cardValidUntil: base.cardValidUntil ?? manual.cardValidUntil ?? null,
     statusOfResidence: base.statusOfResidence ?? manual.statusOfResidence ?? null,
-    workRestriction: base.workRestriction ?? manual.workRestriction ?? null,
+    // 旧様式は IC に無いので入力の値。入力が無ければ、在留資格だけで決まるもの(永住者・留学など)を入れる
+    workRestriction: base.workRestriction ?? manual.workRestriction ?? workRestrictionFromStatus(base.statusOfResidence ?? manual.statusOfResidence),
     pendingApplication: base.pendingApplication ?? manual.pendingApplication ?? null,
+    // 旧様式の IC に記録が無ければ、裏面の写真の読み取り・入力の文言
+    outsideActivity: base.outsideActivity ?? manual.outsideActivity ?? null,
     birthDate: base.birthDate ?? manual.birthDate ?? null,
     sex: base.sex ?? manual.sex ?? null,
     nationality: base.nationality ?? manual.nationality ?? null,

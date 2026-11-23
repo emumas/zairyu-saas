@@ -2,7 +2,7 @@
  * 撮影画像の処理。カメラロールには保存しない。一時ファイルは処理後すぐ消す(CLAUDE.md ルール4)
  */
 import TextRecognition, { TextRecognitionScript } from "@react-native-ml-kit/text-recognition";
-import { backHasEntries, extractCardNumberCandidates, frontFieldsFromOcr, latestAddressFromBackOcr, type FrontOcrFields, type OcrLine } from "@zairyu/shared";
+import { backHasEntries, backPermissionsFromOcr, extractCardNumberCandidates, frontFieldsFromOcr, latestAddressFromBackOcr, type FrontOcrFields, type OcrLine } from "@zairyu/shared";
 import { File, Paths } from "expo-file-system";
 import { manipulateAsync, SaveFormat } from "expo-image-manipulator";
 
@@ -46,6 +46,10 @@ export interface BackOcr {
   address: string | null;
   /** 記載(届出年月日)があったか。true で address が null なら、表面の古い住所を使わない */
   hasEntries: boolean;
+  /** 資格外活動許可欄の文言(包括許可・個別許可が読めたとき) */
+  outsideActivity: string | null;
+  /** 在留期間更新等許可申請欄に「申請中」があるか */
+  pendingApplication: boolean | null;
 }
 
 /**
@@ -54,6 +58,7 @@ export interface BackOcr {
  */
 export async function recognizeBack(pathOrUrl: string): Promise<BackOcr> {
   let hasEntries = false;
+  let perms: { outsideActivity: string | null; pendingApplication: boolean | null } = { outsideActivity: null, pendingApplication: null };
   for (const rotate of [0, 90, 270]) {
     let path = pathOrUrl;
     let temp: string | null = null;
@@ -64,15 +69,17 @@ export async function recognizeBack(pathOrUrl: string): Promise<BackOcr> {
       }
       const lines = await japaneseLines(path);
       hasEntries ||= backHasEntries(lines);
+      const p = backPermissionsFromOcr(lines);
+      perms = { outsideActivity: perms.outsideActivity ?? p.outsideActivity, pendingApplication: perms.pendingApplication ?? p.pendingApplication };
       const address = latestAddressFromBackOcr(lines);
-      if (address) return { address, hasEntries: true };
+      if (address) return { address, hasEntries: true, ...perms };
     } catch {
       // この向きでは読めなかった。次の向きを試す
     } finally {
       if (temp) deleteFile(temp);
     }
   }
-  return { address: null, hasEntries };
+  return { address: null, hasEntries, ...perms };
 }
 
 /** 裏面の端末内 OCR: 住居地記載欄のいちばん新しい記載 */

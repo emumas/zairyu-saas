@@ -26,7 +26,7 @@ import {
   replaceCurrentCard,
   type Tx,
 } from "@zairyu/db";
-import { cardDetailsUpdateInput, cardPhotoReplaceInput, cardRegisterInput, cardVerifyInput, RETIRE_REASON_LABEL, RETIRE_REASONS, type RetireReason, icReadPayload, jstDate, needsReviewNotice } from "@zairyu/shared";
+import { workRestrictionFromStatus, cardDetailsUpdateInput, cardPhotoReplaceInput, cardRegisterInput, cardVerifyInput, RETIRE_REASON_LABEL, RETIRE_REASONS, type RetireReason, icReadPayload, jstDate, needsReviewNotice } from "@zairyu/shared";
 import { cardNumberHmac, decryptAddress, decryptCardNumber, encryptAddress, encryptCardNumber, putEncryptedBlob } from "@zairyu/vault";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
@@ -526,7 +526,7 @@ export const cardsRouter = router({
       ctx.tenantTx(async (tx) => {
         const card = await loadCurrentCardForWrite(tx, ctx.actor, input.cardId, "記載事項を直せるのは現在のカードだけです");
         const fromIc = card.cardFormat !== "legacy";
-        const icOnly = ["birthDate", "sex", "nationality", "statusOfResidence", "expiryDate", "cardValidUntil"] as const;
+        const icOnly = ["birthDate", "sex", "nationality", "statusOfResidence", "expiryDate", "cardValidUntil", "workRestriction", "outsideActivity"] as const;
         if (fromIc && icOnly.some((k) => input[k] !== undefined)) {
           throw new TRPCError({ code: "BAD_REQUEST", message: "第2世代のカードの記載事項は IC の値を使うため変更できません" });
         }
@@ -545,6 +545,14 @@ export const cardsRouter = router({
           if (v === undefined || v === card[k]) continue;
           (patch as Record<string, unknown>)[k] = v;
           changed.push(k);
+        }
+        // 旧様式で就労制限が未登録なら、在留資格だけで決まるもの(永住者・留学など)を入れる
+        if (!fromIc && input.workRestriction === undefined && !card.workRestriction) {
+          const inferred = workRestrictionFromStatus(status);
+          if (inferred) {
+            patch.workRestriction = inferred;
+            changed.push("workRestriction");
+          }
         }
         if (input.address !== undefined) {
           const keyring = requireVault(ctx.services).keyring;

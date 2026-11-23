@@ -145,6 +145,8 @@ export async function getCardWithSite(tx: Tx, cardId: string) {
       statusOfResidence: residenceCards.statusOfResidence,
       expiryDate: residenceCards.expiryDate,
       cardValidUntil: residenceCards.cardValidUntil,
+      workRestriction: residenceCards.workRestriction,
+      outsideActivity: residenceCards.outsideActivity,
       isCurrent: residenceCards.isCurrent,
       personStatus: persons.status,
     })
@@ -177,6 +179,7 @@ export type CardPatch = Partial<
     | "statusOfResidence"
     | "expiryDate"
     | "cardValidUntil"
+    | "workRestriction"
   >
 >;
 

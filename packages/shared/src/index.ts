@@ -13,3 +13,4 @@ export * from "./address.js";
 export * from "./postal.js";
 export * from "./work.js";
 export * from "./workHours.js";
+export * from "./workRestriction.js";
