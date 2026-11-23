@@ -48,6 +48,48 @@ export async function recognizeBackAddress(pathOrUrl: string): Promise<string | 
     .catch(() => null);
 }
 
+export interface Rect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/** 枠の外側に残す余白(枠の幅・高さに対する割合)。合わせ方のずれでカードの端が切れないようにする */
+const GUIDE_MARGIN = 0.06;
+
+/**
+ * 撮影した写真を、画面の枠(カードの位置)の範囲で切り抜く。新しい一時ファイルのパスを返す(呼び出し側が消す)。
+ * プレビューは画面いっぱいに「はみ出して表示」(cover)されている前提で、画面の座標を写真の座標に直す。
+ * 向きが画面と合わないなど、正しく切り抜けないときは null(元の写真をそのまま使う)
+ */
+export async function cropToGuide(pathOrUrl: string, view: { width: number; height: number }, guide: Rect): Promise<string | null> {
+  if (!view.width || !view.height || !guide.width || !guide.height) return null;
+  // 向き(EXIF)を反映した画像にしてから寸法を見る
+  const upright = await manipulateAsync(toFileUrl(pathOrUrl), [], { compress: 1, format: SaveFormat.JPEG });
+  try {
+    const { width: pw, height: ph } = upright;
+    if (!pw || !ph || pw > ph !== view.width > view.height) return null;
+    const scale = Math.max(view.width / pw, view.height / ph);
+    const offX = (pw * scale - view.width) / 2;
+    const offY = (ph * scale - view.height) / 2;
+    const mx = guide.width * GUIDE_MARGIN;
+    const my = guide.height * GUIDE_MARGIN;
+    const left = Math.max(0, Math.floor((guide.x - mx + offX) / scale));
+    const top = Math.max(0, Math.floor((guide.y - my + offY) / scale));
+    const right = Math.min(pw, Math.ceil((guide.x + guide.width + mx + offX) / scale));
+    const bottom = Math.min(ph, Math.ceil((guide.y + guide.height + my + offY) / scale));
+    if (right - left < pw * 0.3 || bottom - top < ph * 0.1) return null;
+    const cropped = await manipulateAsync(upright.uri, [{ crop: { originX: left, originY: top, width: right - left, height: bottom - top } }], {
+      compress: 0.95,
+      format: SaveFormat.JPEG,
+    });
+    return cropped.uri;
+  } finally {
+    deleteFile(upright.uri);
+  }
+}
+
 /** 送信用に縮小した JPEG(base64)。長辺 1600px・品質 0.7(数百 KB 程度) */
 export async function compressForUpload(pathOrUrl: string): Promise<{ contentType: "image/jpeg"; data: string }> {
   const r = await manipulateAsync(toFileUrl(pathOrUrl), [{ resize: { width: 1600 } }], {
