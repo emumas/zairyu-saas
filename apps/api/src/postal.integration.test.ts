@@ -19,6 +19,11 @@ const KEN_ALL = [
   row("1830000", "東京都", "府中市", "以下に掲載がない場合"),
   row("7260000", "広島県", "府中市", "以下に掲載がない場合"),
   row("2530000", "神奈川県", "茅ヶ崎市", "以下に掲載がない場合"),
+  row("5030000", "岐阜県", "大垣市", "以下に掲載がない場合"),
+  row("5030887", "岐阜県", "大垣市", "郭町"),
+  row("4600008", "愛知県", "名古屋市中区", "栄"),
+  row("4600007", "愛知県", "名古屋市中区", "新栄"),
+  row("4600004", "愛知県", "名古屋市中区", "新栄町"),
 ].join("\n");
 
 describe.skipIf(!url)("郵便番号", () => {
@@ -89,5 +94,20 @@ describe.skipIf(!url)("郵便番号", () => {
 
   it("アプリのロールは郵便番号データを書き換えられない", async () => {
     await expect(withTenant(h.db, tenant, (tx) => tx.insert(schema.postalCodes).values({ code: "0000000", pref: "x", city: "x", town: "", townKey: "" }))).rejects.toThrow();
+  });
+
+  it("OCR の地名の読み違いを郵便番号データの表記に直す(番地より後ろはそのまま)", async () => {
+    // 前のテストでデータを入れ済み
+    expect(await admin.postal.correct({ address: "岐卓県大垣市郭町1丁目12番地7 メゾン101" })).toEqual({
+      address: "岐阜県大垣市郭町1丁目12番地7 メゾン101",
+      changed: true,
+      postalCode: "5030887",
+    });
+    expect(await admin.postal.correct({ address: "愛知県名古屋市中区新栄ニ丁目16番28号" })).toMatchObject({ address: "愛知県名古屋市中区新栄二丁目16番28号", changed: true, postalCode: "4600007" });
+    expect(await admin.postal.correct({ address: "愛知県名古屋市申区新栄2-16-28" })).toMatchObject({ address: "愛知県名古屋市中区新栄2-16-28", changed: true });
+    // 正しい住所は変えない。決まらないところはそのまま
+    expect(await admin.postal.correct({ address: "東京都新宿区西新宿2-8-1" })).toMatchObject({ changed: false, postalCode: "1600023" });
+    expect(await admin.postal.correct({ address: "どこか不明な住所" })).toMatchObject({ address: "どこか不明な住所", changed: false, postalCode: null });
+    expect(await codeOf(viewer.postal.correct({ address: "東京都新宿区" }))).toBe("FORBIDDEN");
   });
 });

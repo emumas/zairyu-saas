@@ -8,6 +8,7 @@
 import { useState } from "react";
 import { Text } from "react-native";
 import { api, messageOf } from "../api";
+import { correctAddress } from "../addressFix";
 import { compressForUpload, deleteFile, recognizeBackAddress } from "../photo";
 import { CameraCapture } from "../ui/CameraCapture";
 import { CardImage } from "../ui/CardImage";
@@ -47,7 +48,7 @@ export function PhotoRetakeScreen({
     const kind = camera!;
     try {
       if (kind === "back" && !addressFromIc) {
-        const a = await recognizeBackAddress(path);
+        const a = (await correctAddress(await recognizeBackAddress(path))).address;
         setBackAddress(a ?? "");
         setBackAddressRead(a);
       }

@@ -1,7 +1,7 @@
 /**
  * 郵便番号データ(参照データ)。投入は管理ユーザー(テーブル所有者)で、参照はどのロールのトランザクションからでもよい
  */
-import { matchTown, splitPrefecture, type PostalMatch, type PostalRow } from "@zairyu/shared";
+import { bestPrefix, fixChomeNumerals, matchTown, PREFECTURES, splitPrefecture, type PostalMatch, type PostalRow } from "@zairyu/shared";
 import { and, count, eq, sql } from "drizzle-orm";
 import type { Db, Tx } from "../client.js";
 import { postalCodes } from "../schema.js";
@@ -46,4 +46,41 @@ export async function lookupPostalCode(tx: Tx, address: string): Promise<PostalM
   const { pref: p, city } = best[0]!;
   const rows = await tx.select().from(postalCodes).where(and(eq(postalCodes.pref, p), eq(postalCodes.city, city)));
   return { ...matchTown(rows, rest.slice(city.length)), loaded: true };
+}
+
+/** 前から一致するいちばん長い名前(完全一致)。無ければ OCR の読み違いを許して探す */
+function prefixOf(text: string, names: readonly string[]): { name: string; consumed: number; fuzzy: boolean } | null {
+  const exact = names.filter((n) => n && text.startsWith(n)).sort((a, b) => b.length - a.length)[0];
+  if (exact) return { name: exact, consumed: [...exact].length, fuzzy: false };
+  const m = bestPrefix(text, names);
+  return m ? { name: m.name, consumed: m.consumed, fuzzy: true } : null;
+}
+
+/**
+ * OCR で読み取った住所の地名(都道府県・市区町村・町域)を、郵便番号データの正しい表記に直す。
+ * 番地より後ろはそのまま。直せないところはそのまま返す(郵便番号データが未投入なら何もしない)
+ */
+export async function correctAddressNames(tx: Tx, address: string): Promise<{ address: string; changed: boolean }> {
+  const raw = address.trim();
+  const unchanged = { address: fixChomeNumerals(raw), changed: fixChomeNumerals(raw) !== raw };
+  const pref = prefixOf(raw, PREFECTURES);
+  if (!pref) return unchanged;
+  const afterPref = [...raw].slice(pref.consumed).join("");
+  const cities = (await tx.selectDistinct({ city: postalCodes.city }).from(postalCodes).where(eq(postalCodes.pref, pref.name))).map((r) => r.city);
+  if (cities.length === 0) return unchanged;
+  const city = prefixOf(afterPref, cities);
+  if (!city) {
+    const fixed = fixChomeNumerals(`${pref.name}${afterPref}`);
+    return { address: fixed, changed: fixed !== raw };
+  }
+  const afterCity = [...afterPref].slice(city.consumed).join("");
+  const towns = (
+    await tx
+      .selectDistinct({ town: postalCodes.town })
+      .from(postalCodes)
+      .where(and(eq(postalCodes.pref, pref.name), eq(postalCodes.city, city.name), sql`${postalCodes.town} <> ''`))
+  ).map((r) => r.town);
+  const town = prefixOf(afterCity, towns);
+  const fixed = fixChomeNumerals(town ? `${pref.name}${city.name}${town.name}${[...afterCity].slice(town.consumed).join("")}` : `${pref.name}${city.name}${afterCity}`);
+  return { address: fixed, changed: fixed !== raw };
 }

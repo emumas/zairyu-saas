@@ -25,6 +25,7 @@ import { compressForUpload, deleteFile, recognizeBack, recognizeFront } from "..
 import { FORMAT_LABEL } from "../screens/format";
 import { Button, Card, Choice, color, Field, Message, Row, Screen } from "../ui/kit";
 import { CameraCapture } from "../ui/CameraCapture";
+import { correctAddress } from "../addressFix";
 import { CardFaceView } from "../ui/CardFaceView";
 import { CardImage } from "../ui/CardImage";
 
@@ -84,7 +85,7 @@ export function CardWizard({ personId, personName, onClose, onDone }: { personId
       const { numbers: found, fields } = await recognizeFront(path);
       setFront(await compressForUpload(path));
       setCandidates(found);
-      setFrontOcr(fields);
+      setFrontOcr(fields?.address ? { ...fields, address: (await correctAddress(fields.address)).address } : fields);
       if (found[0]) setNumberInput(found[0]);
     } finally {
       deleteFile(path);
@@ -96,7 +97,7 @@ export function CardWizard({ personId, personName, onClose, onDone }: { personId
   async function onBackCaptured(path: string) {
     try {
       const b = await recognizeBack(path);
-      setBackOcrAddress(b.address);
+      setBackOcrAddress((await correctAddress(b.address)).address);
       setBackEntries(b.hasEntries);
       setBack(await compressForUpload(path));
     } finally {

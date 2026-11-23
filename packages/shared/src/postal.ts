@@ -111,3 +111,70 @@ export function normalizePostalCode(s: string): string | null {
   const d = toHalfDigits(s).replace(/[〒\s\-ー－]/g, "");
   return /^\d{7}$/.test(d) ? d : null;
 }
+
+// ---------------------------------------------------------------- OCR の地名の読み違いの補正
+
+/** OCR で取り違えやすい文字(同じ組の中の置き換えは違いとして数えない) */
+const CONFUSABLE: readonly string[] = ["ケヶｹク", "口ロ□", "二ニ", "一ー－-‐", "工エ", "力カ", "夕タ", "卜ト", "八ハ", "曰日", "土士", "人入", "己巳已", "未末", "千干", "大太犬", "木本", "王玉", "崎﨑嵜", "辺邊邉", "沢澤", "島嶋", "竜龍", "条條"];
+const CLASS = new Map<string, number>();
+CONFUSABLE.forEach((g, i) => [...g].forEach((c) => CLASS.set(c, i)));
+const same = (a: string, b: string) => a === b || (CLASS.has(a) && CLASS.get(a) === CLASS.get(b));
+
+/** a と b の編集距離(取り違えやすい文字の置き換えは 0) */
+function distance(a: readonly string[], b: readonly string[]): number {
+  const dp = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    let prev = dp[0]!;
+    dp[0] = i;
+    for (let j = 1; j <= b.length; j++) {
+      const tmp = dp[j]!;
+      dp[j] = Math.min(dp[j]! + 1, dp[j - 1]! + 1, prev + (same(a[i - 1]!, b[j - 1]!) ? 0 : 1));
+      prev = tmp;
+    }
+  }
+  return dp[b.length]!;
+}
+
+export interface PrefixMatch {
+  name: string;
+  /** text の先頭から何文字を name とみなしたか */
+  consumed: number;
+  distance: number;
+}
+
+/**
+ * text の先頭が names のどれに当たるか(OCR の読み違いを許す)。
+ * 3 文字以上の名前は 1 文字までの違いを許し、2 文字以下は取り違えやすい文字の置き換えだけを許す。
+ * 違いのいちばん少ないもののうち名前のいちばん長いものが 1 つに決まれば返す(決まらなければ null)
+ */
+export function bestPrefix(text: string, names: readonly string[]): PrefixMatch | null {
+  const t = [...text];
+  const matches: PrefixMatch[] = [];
+  for (const name of names) {
+    const n = [...name];
+    if (n.length === 0) continue;
+    const max = n.length >= 3 ? 1 : 0;
+    // この名前でいちばん合う切り方(違いが少なく、同じなら名前と同じ長さ)
+    let own: PrefixMatch | null = null;
+    for (let k = Math.max(1, n.length - max); k <= Math.min(t.length, n.length + max); k++) {
+      const d = distance(n, t.slice(0, k));
+      if (d > max) continue;
+      if (!own || d < own.distance || (d === own.distance && k === n.length)) own = { name, consumed: k, distance: d };
+    }
+    if (own) matches.push(own);
+  }
+  if (matches.length === 0) return null;
+  const minD = Math.min(...matches.map((m) => m.distance));
+  const closest = matches.filter((m) => m.distance === minD);
+  const maxLen = Math.max(...closest.map((m) => [...m.name].length));
+  const best = closest.filter((m) => [...m.name].length === maxLen);
+  return best.length === 1 ? best[0]! : null;
+}
+
+/** 「ニ丁目」「ー丁目」「ハ丁目」など、漢数字の丁目の読み違いを直す */
+export function fixChomeNumerals(s: string): string {
+  const map: Record<string, string> = { ニ: "二", ー: "一", "－": "一", "-": "一", ハ: "八", ロ: "三", 口: "三" };
+  return s.replace(/(^|[^一二三四五六七八九十0-9０-９])([ニー－\-ハ])(?=丁目)/g, (_m, pre: string, c: string) => `${pre}${map[c] ?? c}`);
+}
+
+export const PREFECTURES = PREF_RE.source.slice(2, -1).split("|");

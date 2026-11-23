@@ -9,6 +9,7 @@ import { ADDRESS_SOURCE_LABEL, chooseAddress, formatPostalCode, type AddressSour
 import { useEffect, useState } from "react";
 import { Switch, Text, View } from "react-native";
 import { api, messageOf } from "../api";
+import { correctAddress } from "../addressFix";
 import { recognizeBack, recognizeFront, recognizeSavedImage } from "../photo";
 import { Button, Card, Choice, color, Field, Message, Row, Screen } from "../ui/kit";
 
@@ -81,9 +82,12 @@ export function CardDetailsScreen({ personId, personName, onClose, onSaved }: { 
     try {
       const f = frontImage ? await recognizeSavedImage((await api.cards.getImage.mutate({ imageId: frontImage.id })).data, recognizeFront) : null;
       const back = backImage ? await recognizeSavedImage((await api.cards.getImage.mutate({ imageId: backImage.id })).data, recognizeBack) : null;
-      const b = back?.address ?? null;
+      // 地名の読み違いを郵便番号データで直す(郵便番号も一緒に引く)
+      const bFix = await correctAddress(back?.address ?? null);
+      const fFix = await correctAddress(f?.fields?.address ?? null);
+      const b = bFix.address;
       setBackUnread(!!back && !back.address && back.hasEntries);
-      const fields = f?.fields ?? null;
+      const fields = f?.fields ? { ...f.fields, address: fFix.address } : null;
       setFront(fields);
       setBackAddress(b);
       setForm((cur) => {
@@ -103,6 +107,8 @@ export function CardDetailsScreen({ personId, personName, onClose, onSaved }: { 
         if (chosen) {
           next.address = chosen.address;
           setAddressSource(chosen.source);
+          const postal = chosen.source === "back_photo" ? bFix.postalCode : fFix.postalCode;
+          if (postal) next.postalCode = formatPostalCode(postal);
         }
         return next;
       });

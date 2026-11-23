@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatPostalCode, matchTown, normalizePostalCode, parseKenAll, splitPrefecture, type PostalRow } from "./postal.js";
+import { bestPrefix, fixChomeNumerals, formatPostalCode, matchTown, normalizePostalCode, parseKenAll, PREFECTURES, splitPrefecture, type PostalRow } from "./postal.js";
 
 // 日本郵便 utf_ken_all.csv と同じ形式の行(実データの書き方を写したもの)
 const row = (code: string, pref: string, city: string, town: string) => `13104,"160  ","${code}","ﾄｳｷｮｳﾄ","ｼﾝｼﾞｭｸｸ","ﾆｼｼﾝｼﾞｭｸ","${pref}","${city}","${town}",0,0,1,0,0,0`;
@@ -73,5 +73,32 @@ describe("郵便番号の書式", () => {
     expect(normalizePostalCode("１６０－００２３")).toBe("1600023");
     expect(normalizePostalCode("160-002")).toBeNull();
     expect(formatPostalCode("1600023")).toBe("160-0023");
+  });
+});
+
+describe("bestPrefix(OCR の地名の読み違い)", () => {
+  it("取り違えやすい文字と 1 文字の違いを許して、地名の先頭を当てる", () => {
+    expect(bestPrefix("岐卓県大垣市", ["岐阜県", "愛知県"])).toMatchObject({ name: "岐阜県", consumed: 3, distance: 1 });
+    expect(bestPrefix("西ヶ原1-2-3", ["西ケ原", "西原"])).toMatchObject({ name: "西ケ原", consumed: 3, distance: 0 });
+    expect(bestPrefix("新栄ニ丁目16番", ["新栄二丁目", "新栄一丁目", "新栄"])).toMatchObject({ name: "新栄二丁目", consumed: 5, distance: 0 });
+    expect(bestPrefix("大垣币本町", ["大垣市"])).toMatchObject({ name: "大垣市", consumed: 3 });
+  });
+  it("2 文字以下の名前は文字違いを許さない。決まらなければ null", () => {
+    expect(bestPrefix("北区", ["中区"])).toBeNull();
+    expect(bestPrefix("本町1丁目", ["本町", "元町"])).toMatchObject({ name: "本町" });
+    expect(bestPrefix("xyz", ["岐阜県"])).toBeNull();
+  });
+  it("都道府県の一覧", () => {
+    expect(PREFECTURES).toHaveLength(47);
+    expect(PREFECTURES[0]).toBe("北海道");
+  });
+});
+
+describe("fixChomeNumerals", () => {
+  it("丁目の前のカタカナの読み違いを漢数字に", () => {
+    expect(fixChomeNumerals("新栄ニ丁目16番")).toBe("新栄二丁目16番");
+    expect(fixChomeNumerals("本町ー丁目")).toBe("本町一丁目");
+    expect(fixChomeNumerals("西新宿二丁目")).toBe("西新宿二丁目");
+    expect(fixChomeNumerals("十ニ丁目")).toBe("十ニ丁目"); // 前が漢数字なら触らない
   });
 });
