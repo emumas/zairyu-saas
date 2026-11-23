@@ -1,6 +1,21 @@
 /** 共通の画面部品(最小限) */
-import type { ReactNode } from "react";
-import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, type TextInputProps, View } from "react-native";
+import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
+import {
+  ActivityIndicator,
+  Dimensions,
+  Keyboard,
+  Pressable,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  type NativeSyntheticEvent,
+  type NativeScrollEvent,
+  type ScrollViewInstance,
+  type TextInputProps,
+  View,
+} from "react-native";
 
 export const color = {
   primary: "#0b5cad",
@@ -14,6 +29,17 @@ export const color = {
   muted: "#f6f8fa",
 };
 
+/** 入力欄にフォーカスが移ったとき、キーボードに隠れないようにスクロールする(Screen が提供) */
+const KeyboardContext = createContext<() => void>(() => {});
+
+/** キーボードの上にこれだけ余白を空ける */
+const KEYBOARD_GAP = 24;
+
+/**
+ * 画面の枠(スクロール)。キーボードが出ている間は下に同じ高さの余白を足し、
+ * フォーカスした入力欄がキーボードに隠れていればその分スクロールする。
+ * (Android の edge-to-edge ではウィンドウのリサイズが効かないため、JS 側で調整する)
+ */
 export function Screen({
   children,
   title,
@@ -30,28 +56,72 @@ export function Screen({
   refreshing?: boolean;
   onRefresh?: () => void;
 }) {
+  const scrollRef = useRef<ScrollViewInstance>(null);
+  const scrollY = useRef(0);
+  const keyboardTop = useRef<number | null>(null);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+
+  const ensureFocusedVisible = useCallback(() => {
+    const input = TextInput.State.currentlyFocusedInput();
+    const top = keyboardTop.current;
+    if (!input || top === null) return;
+    input.measureInWindow((_x, y, _w, h) => {
+      const overflow = y + h + KEYBOARD_GAP - top;
+      // 隠れている分だけ下へ。上に出すぎている(画面の上端より上)ときは戻す
+      if (overflow > 0) scrollRef.current?.scrollTo({ y: scrollY.current + overflow, animated: true });
+      else if (y < 80) scrollRef.current?.scrollTo({ y: Math.max(0, scrollY.current + y - 80), animated: true });
+    });
+  }, []);
+
+  useEffect(() => {
+    const show = Keyboard.addListener("keyboardDidShow", (e) => {
+      // キーボードの上端(画面の座標)。取れない端末では画面の高さから引く
+      keyboardTop.current = e.endCoordinates.screenY > 0 ? e.endCoordinates.screenY : Dimensions.get("window").height - e.endCoordinates.height;
+      setKeyboardHeight(e.endCoordinates.height);
+      // 余白を足した後のレイアウトで測る
+      setTimeout(ensureFocusedVisible, 50);
+    });
+    const hide = Keyboard.addListener("keyboardDidHide", () => {
+      keyboardTop.current = null;
+      setKeyboardHeight(0);
+    });
+    return () => {
+      show.remove();
+      hide.remove();
+    };
+  }, [ensureFocusedVisible]);
+
+  const onScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    scrollY.current = e.nativeEvent.contentOffset.y;
+  };
+
   return (
-    <ScrollView
-      style={{ backgroundColor: color.bg }}
-      contentContainerStyle={s.screen}
-      keyboardShouldPersistTaps="handled"
-      refreshControl={onRefresh ? <RefreshControl refreshing={!!refreshing} onRefresh={onRefresh} /> : undefined}
-    >
-      {(title || onBack) && (
-        <View style={s.header}>
-          {onBack && (
-            <Pressable onPress={onBack} hitSlop={12}>
-              <Text style={s.back}>‹ 戻る</Text>
-            </Pressable>
-          )}
-          <Text style={s.title} numberOfLines={1}>
-            {title}
-          </Text>
-          <View style={{ marginLeft: "auto" }}>{right}</View>
-        </View>
-      )}
-      {children}
-    </ScrollView>
+    <KeyboardContext.Provider value={ensureFocusedVisible}>
+      <ScrollView
+        ref={scrollRef}
+        style={{ backgroundColor: color.bg }}
+        contentContainerStyle={[s.screen, keyboardHeight ? { paddingBottom: keyboardHeight + KEYBOARD_GAP } : null]}
+        keyboardShouldPersistTaps="handled"
+        onScroll={onScroll}
+        scrollEventThrottle={16}
+        refreshControl={onRefresh ? <RefreshControl refreshing={!!refreshing} onRefresh={onRefresh} /> : undefined}
+      >
+        {(title || onBack) && (
+          <View style={s.header}>
+            {onBack && (
+              <Pressable onPress={onBack} hitSlop={12}>
+                <Text style={s.back}>‹ 戻る</Text>
+              </Pressable>
+            )}
+            <Text style={s.title} numberOfLines={1}>
+              {title}
+            </Text>
+            <View style={{ marginLeft: "auto" }}>{right}</View>
+          </View>
+        )}
+        {children}
+      </ScrollView>
+    </KeyboardContext.Provider>
   );
 }
 
@@ -77,11 +147,21 @@ export function Button({
   );
 }
 
-export function Field({ label, error, ...props }: TextInputProps & { label: string; error?: string | null | undefined }) {
+export function Field({ label, error, onFocus, ...props }: TextInputProps & { label: string; error?: string | null | undefined }) {
+  const ensureVisible = useContext(KeyboardContext);
   return (
     <View style={{ gap: 4 }}>
       <Text style={s.label}>{label}</Text>
-      <TextInput style={[s.input, error ? { borderColor: color.danger } : null]} placeholderTextColor="#8c959f" {...props} />
+      <TextInput
+        style={[s.input, error ? { borderColor: color.danger } : null]}
+        placeholderTextColor="#8c959f"
+        {...props}
+        onFocus={(e) => {
+          onFocus?.(e);
+          // キーボードが出たままほかの欄に移ったとき(初めて出るときは keyboardDidShow で調整する)
+          setTimeout(ensureVisible, 100);
+        }}
+      />
       {error ? <Text style={s.error}>{error}</Text> : null}
     </View>
   );
