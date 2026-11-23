@@ -17,6 +17,7 @@ interface Props {
 
 export function CameraCapture({ visible, title, onClose, onCaptured }: Props) {
   const { hasPermission, canRequestPermission, requestPermission } = useCameraPermission();
+  // 写真の向きは画面(縦固定)に合わせる。端末の傾きに合わせると、机の上のカードを真上から撮ったときに横向きの写真になり、枠で切り抜けない
   // 4:3 はセンサー全体を使う(プレビューより広く写るので、枠で切り抜いてもカードが欠けない)。文字を読むので画質を優先
   const photoOutput = usePhotoOutput({ qualityPrioritization: "quality", targetResolution: CommonResolutions.UHD_4_3 });
   const viewSize = useRef<{ width: number; height: number }>({ width: 0, height: 0 });
@@ -56,7 +57,7 @@ export function CameraCapture({ visible, title, onClose, onCaptured }: Props) {
         }}
       >
         {hasPermission ? (
-          <Camera style={StyleSheet.absoluteFill} device="back" isActive={visible} outputs={[photoOutput]} resizeMode="cover" enableNativeTapToFocusGesture />
+          <Camera style={StyleSheet.absoluteFill} device="back" isActive={visible} outputs={[photoOutput]} resizeMode="cover" enableNativeTapToFocusGesture orientationSource="interface" />
         ) : (
           <Text style={styles.text}>カメラの使用が許可されていません。設定アプリから許可してください。</Text>
         )}
