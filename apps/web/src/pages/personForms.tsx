@@ -1,6 +1,6 @@
 /** 登録者詳細の編集フォーム(登録者の情報、カード記載事項の手入力) */
 import { useState, type FormEvent } from "react";
-import { formatPostalCode } from "@zairyu/shared";
+import { formatPostalCode, WORK_RESTRICTION_LABEL, WORK_RESTRICTIONS, workRestrictionFromStatus, type WorkRestrictionCode } from "@zairyu/shared";
 import { api, messageOf } from "../api";
 import { useSession } from "../session";
 import { Button, Message } from "../ui";
@@ -112,6 +112,8 @@ export function CardDetailsForm({ card, onDone }: { card: CardRow; onDone: () =>
     sex: card.sex ?? "",
     nationality: card.nationality ?? "",
     statusOfResidence: card.statusOfResidence ?? "",
+    workRestriction: card.workRestriction ?? "",
+    outsideActivity: card.outsideActivity ?? "",
     expiryDate: card.expiryDate ?? "",
     cardValidUntil: card.cardValidUntil ?? "",
     address: card.address ?? "",
@@ -146,6 +148,8 @@ export function CardDetailsForm({ card, onDone }: { card: CardRow; onDone: () =>
       if (f.sex !== (card.sex ?? "")) input.sex = f.sex === "M" || f.sex === "F" ? f.sex : null;
       if (f.nationality !== (card.nationality ?? "")) input.nationality = v(f.nationality);
       if (f.statusOfResidence !== (card.statusOfResidence ?? "")) input.statusOfResidence = v(f.statusOfResidence);
+      if (f.workRestriction !== (card.workRestriction ?? "")) input.workRestriction = (WORK_RESTRICTIONS as readonly string[]).includes(f.workRestriction) ? (f.workRestriction as WorkRestrictionCode) : null;
+      if (f.outsideActivity !== (card.outsideActivity ?? "")) input.outsideActivity = v(f.outsideActivity);
       if (f.expiryDate !== (card.expiryDate ?? "")) input.expiryDate = v(f.expiryDate);
       if (f.cardValidUntil !== (card.cardValidUntil ?? "")) input.cardValidUntil = v(f.cardValidUntil);
     }
@@ -189,6 +193,26 @@ export function CardDetailsForm({ card, onDone }: { card: CardRow; onDone: () =>
           <label className="field">
             <span>在留資格</span>
             <input value={f.statusOfResidence} onChange={(e) => setF({ ...f, statusOfResidence: e.target.value })} maxLength={50} />
+          </label>
+          <label className="field">
+            <span>就労制限の有無</span>
+            <select value={f.workRestriction} onChange={(e) => setF({ ...f, workRestriction: e.target.value })}>
+              <option value="">—(未登録)</option>
+              {WORK_RESTRICTIONS.map((w) => (
+                <option key={w} value={w}>
+                  {WORK_RESTRICTION_LABEL[w]}
+                </option>
+              ))}
+            </select>
+            {!f.workRestriction && workRestrictionFromStatus(f.statusOfResidence) && (
+              <small className="sub">
+                在留資格「{f.statusOfResidence}」は「{WORK_RESTRICTION_LABEL[workRestrictionFromStatus(f.statusOfResidence)!]}」です。空欄のまま保存すると自動で入ります。
+              </small>
+            )}
+          </label>
+          <label className="field">
+            <span>資格外活動許可(裏面の資格外活動許可欄。無ければ空欄)</span>
+            <input value={f.outsideActivity} onChange={(e) => setF({ ...f, outsideActivity: e.target.value })} maxLength={100} placeholder="許可:原則週28時間以内・風俗営業等の従事を除く" />
           </label>
           <label className="field">
             <span>在留期間の満了日(永住者は空欄)</span>

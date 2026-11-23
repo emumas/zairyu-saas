@@ -13,6 +13,8 @@ type Tenant = Awaited<ReturnType<typeof papi.tenants.list.query>>[number];
 export const OPERATOR_ACTION_LABEL: Record<string, string> = {
   "operator.create": "運営者アカウントの作成(CLI)",
   "operator.totp_reset": "運営者の認証アプリの再設定(CLI)",
+  "operator.disable": "運営者アカウントの停止(CLI)",
+  "operator.enable": "運営者アカウントの再開(CLI)",
   "operator.login": "ログイン",
   "operator.login_failed": "ログイン失敗(パスワード)",
   "operator.totp_failed": "ログイン失敗(認証コード)",

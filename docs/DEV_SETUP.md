@@ -103,6 +103,14 @@ pnpm platform:create-operator -- --email ops@example.com --password "12文字以
 ```
 
 表示された「キー」を認証アプリに手入力で登録します(キーはこのときだけ表示されます。テナントのメールアドレスとは別のものにしてください)。登録しそびれたときや端末を替えたときは、同じコマンドに `--reset-totp` を付けて実行するとキーを作り直します(パスワードもそのとき指定したものになります)。
+運営者の一覧・停止・再開も CLI で行います(最後の 1 人は停止できません。再開するとログイン失敗によるロックも解除します)。
+
+```powershell
+pnpm platform:operator -- --list
+pnpm platform:operator -- --disable --email ops@example.com
+pnpm platform:operator -- --enable --email ops@example.com
+```
+
 ブラウザで http://localhost:5173/platform を開き、メールアドレス・パスワード・認証アプリの 6 桁でログインします。運営者には登録者の氏名などは表示されません。
 
 ## 10. 郵便番号データを入れる(初回と、月 1 回ほど)

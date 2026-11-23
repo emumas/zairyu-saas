@@ -207,6 +207,12 @@ export function PersonDetailPage() {
                       ] ?? p.card.workRestriction)
                     : "—"}
                 </dd>
+                {p.card.outsideActivity && (
+                  <>
+                    <dt>資格外活動</dt>
+                    <dd>{p.card.outsideActivity === "1" ? "許可(原則週28時間以内)" : p.card.outsideActivity === "2" ? "許可(個別)" : p.card.outsideActivity === "0" ? "なし" : p.card.outsideActivity}</dd>
+                  </>
+                )}
                 <dt>IC 検証</dt>
                 <dd>{p.card.icVerified ? "検証済み" : "未検証"}</dd>
                 {p.card.needsReview && (
