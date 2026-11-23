@@ -2,7 +2,7 @@
  * IC の読み出し結果の評価(署名検証・項目の取り出し・券面との照合)。保存はしない。
  * 端末から届いた検証結果は使わず、必ずここでサーバーが検証する
  */
-import { parseCardRead, type EfPath, type ParsedCard } from "@zairyu/zairyu-ic";
+import { parseCardRead, parseTlv, type EfPath, type ParsedCard } from "@zairyu/zairyu-ic";
 import { verifyCardSignature, type SignatureVerification } from "@zairyu/zairyu-ic/verify";
 import type { CardManualFields, IcReadPayload } from "@zairyu/shared";
 import { TRPCError } from "@trpc/server";
@@ -67,6 +67,19 @@ export interface IcEvaluation {
   images: IcImage[];
   /** 裏面に追記された住居地(旧様式は IC に文字で記録される。無ければ null) */
   backAddress: { address: string; writtenAt: string | null } | null;
+  /** 旧様式の住居地(裏面追記)のファイルの中身の形(タグと長さだけ。値は含めない)。実カードでの切り分け用 */
+  backAddressDiag: string | null;
+}
+
+/** ファイルの TLV のタグと長さだけを文字にする(例: "D2:8 D3:6 D4:0")。値(住所など)は含めない */
+function tlvShape(data: Uint8Array | undefined): string | null {
+  if (!data) return null;
+  try {
+    const tags = parseTlv(data).map((t) => `${t.tag.toString(16).toUpperCase()}:${t.value.length}`);
+    return `${data.length}B ${tags.join(" ") || "(タグなし)"}`;
+  } catch {
+    return `${data.length}B (解釈できない)`;
+  }
 }
 
 /** issuers: 信頼する発行者証明書(config.trustedIssuers) */
@@ -115,7 +128,8 @@ export function evaluateIc(payload: IcReadPayload, issuers: readonly X509Certifi
 
   const backAddress =
     parsed.back.format === "legacy" && parsed.back.address?.trim() ? { address: parsed.back.address.trim(), writtenAt: parsed.back.addressWrittenAt } : null;
-  return { format: parsed.format, kind: parsed.kind, signature, fields, cardNumber: parsed.cardNumber, images, backAddress };
+  const backAddressDiag = parsed.back.format === "legacy" ? tlvShape(files["df2/ef01"]) : null;
+  return { format: parsed.format, kind: parsed.kind, signature, fields, cardNumber: parsed.cardNumber, images, backAddress, backAddressDiag };
 }
 
 export interface FieldDiff {

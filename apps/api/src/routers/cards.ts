@@ -182,6 +182,8 @@ export const cardsRouter = router({
         signature: z.enum(["valid", "invalid", "absent"]),
         /** 入管庁の発行者証明書で確かめられたか(null は該当する証明書なし。署名が有効なときだけ意味がある) */
         issuerTrusted: z.boolean().nullable(),
+        /** IC に住居地(裏面の記載)が記録されていたか(旧様式) */
+        icBackAddress: z.object({ recorded: z.boolean(), writtenAt: z.string().nullable(), diag: z.string().nullable() }).nullable(),
         icVerified: z.boolean(),
         needsReview: z.boolean(),
         changes: z.array(z.object({ field: z.string(), before: z.union([z.string(), z.boolean()]).nullable(), after: z.union([z.string(), z.boolean()]).nullable() })),
@@ -249,7 +251,8 @@ export const cardsRouter = router({
           detail: { signature: ic.signature.status, changed: changes.map((c) => c.field) },
         });
         const issuerTrusted = ic.signature.status === "valid" ? ic.signature.issuerTrusted : null;
-        return { signature: ic.signature.status, issuerTrusted, icVerified: judged.icVerified, needsReview: judged.needsReview, changes };
+        const icBackAddress = ic.format === "legacy" ? { recorded: !!ic.backAddress, writtenAt: ic.backAddress?.writtenAt ?? null, diag: ic.backAddressDiag } : null;
+        return { signature: ic.signature.status, issuerTrusted, icBackAddress, icVerified: judged.icVerified, needsReview: judged.needsReview, changes };
       }),
     ),
 

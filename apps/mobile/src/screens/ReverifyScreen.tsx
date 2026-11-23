@@ -14,6 +14,7 @@ const FIELD_LABEL: Record<string, string> = {
   pendingApplication: "更新申請中",
   outsideActivity: "資格外活動許可",
   outsideActivityUntil: "資格外活動許可の期限",
+  address: "住居地(IC の裏面の記載に更新)",
 };
 const show = (v: string | boolean | null) => (v === null ? "—" : v === true ? "はい" : v === false ? "いいえ" : v);
 
@@ -64,12 +65,22 @@ export function ReverifyScreen({ cardId, personName, onDone }: { cardId: string;
               tone={result.issuerTrusted === true ? "ok" : result.issuerTrusted === false ? "danger" : "warn"}
             />
           )}
+          {result.icBackAddress && (
+            <>
+              <Row
+                k="IC の住居地(裏面の記載)"
+                v={result.icBackAddress.recorded ? `記録あり${result.icBackAddress.writtenAt ? `(${result.icBackAddress.writtenAt} 記録)` : ""}` : "記録なし"}
+                tone={result.icBackAddress.recorded ? "ok" : "warn"}
+              />
+              {result.icBackAddress.diag && <Text style={{ color: "#59636e", fontSize: 11 }}>確認用: {result.icBackAddress.diag}</Text>}
+            </>
+          )}
           {result.needsReview && <Message text="署名の検証に失敗しました。「要確認」にして管理者へ通知しました。入管局・労働局に相談してください。" />}
           {result.changes.length > 0 ? (
             <>
               <Text style={{ fontWeight: "600" }}>カードに追記されていた内容を反映しました</Text>
               {result.changes.map((c) => (
-                <Row key={c.field} k={FIELD_LABEL[c.field] ?? c.field} v={`${show(c.before)} → ${show(c.after)}`} tone="warn" />
+                <Row key={c.field} k={FIELD_LABEL[c.field] ?? c.field} v={c.field === "address" ? "更新しました" : `${show(c.before)} → ${show(c.after)}`} tone="warn" />
               ))}
             </>
           ) : (
