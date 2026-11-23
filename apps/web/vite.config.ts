@@ -12,6 +12,9 @@ export default defineConfig({
   plugins: [react()],
   server: {
     port: 5173,
+    // スマホや Tailscale(外出先からのテスト)からも開けるように、PC のすべての接続口で待ち受ける。
+    // 外からの通信は Windows のファイアウォールで Tailscale の範囲(100.64.0.0/10)だけに絞る(DEV_SETUP.md の 11)
+    host: true,
     proxy: { "/trpc": api, "/files": api },
   },
 });

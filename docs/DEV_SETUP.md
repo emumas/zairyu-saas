@@ -124,6 +124,49 @@ pnpm postal:load
 
 日本郵便のサイトから取得して全件を入れ替えます(数十秒)。自動で取得できない場合(サイトの構成変更など)は、ブラウザで日本郵便の「郵便番号データダウンロード」ページから「全国一括」の zip(UTF-8 版・Shift_JIS 版のどちらでも可)を保存し、`pnpm postal:load -- --file <保存した zip のパス>` で入れます。データは毎月更新されるので、本番では月 1 回の定期実行にします。
 
+## 11. 外出先からテストする(Tailscale・無料)
+
+PC をインターネットに公開せずに、外出先(スマホのモバイル回線など)から PC の API・Web・Metro に接続します。Tailscale に招待した端末だけがつながり、通信は暗号化されます。テストデータには実カードの個人情報が入るので、ルーターのポート開放はしないでください。
+
+### 11-1. Tailscale を入れる(初回だけ)
+1. PC に Tailscale(Windows 版)を入れてログインする(Google・Microsoft のアカウントなどで可)
+2. スマホに Tailscale(Google Play)を入れ、**同じアカウント**でログインして「接続」をオンにする
+3. PC のタスクバーの Tailscale のアイコン →「This device」に出る `100.x.x.x` が PC の Tailscale の IP。以下 `<TS_IP>` と書きます(PowerShell で `tailscale ip -4` でも確認できます)
+4. PC の Tailscale の設定で「Run unattended」(ログアウト中もつなぐ)をオンにし、Windows の電源設定で**スリープしない**ようにする
+
+### 11-2. Windows のファイアウォールで、Tailscale からの通信だけを許可する(初回だけ)
+PowerShell を**管理者として実行**し、次を 1 回だけ実行します(Tailscale の範囲 `100.64.0.0/10` からだけ、API・Web・Metro のポートを開けます)。
+
+```powershell
+New-NetFirewallRule -DisplayName "zairyu dev (Tailscale)" -Direction Inbound -Protocol TCP -LocalPort 3000,5173,8081 -RemoteAddress 100.64.0.0/10 -Action Allow
+```
+
+### 11-3. 接続先を Tailscale の IP にする(初回と、IP が変わったとき)
+- `apps/api/.env` の `PUBLIC_BASE_URL=http://<TS_IP>:3000`
+- `apps/mobile/.env` の `EXPO_PUBLIC_API_URL=http://<TS_IP>:3000`
+
+家で使うときも、スマホの Tailscale をオンにしておけば同じ設定のまま使えます(LAN の IP に戻す必要はありません)。
+
+### 11-4. 起動する(毎回)
+API と Web は「4. 起動する」と同じです(Web は PC のすべての接続口で待ち受けます)。アプリの Metro だけ、接続先の IP を指定して起動します。
+
+```powershell
+cd C:\Users\royal\zairyu-saas\apps\mobile
+$env:REACT_NATIVE_PACKAGER_HOSTNAME = "<TS_IP>"
+pnpm start -- --clear
+```
+
+開発用アプリの起動画面に Metro のサーバーが出ないときは、「Enter URL manually」に `http://<TS_IP>:8081` を入れます。
+
+### 11-5. 確かめる
+1. スマホの Wi-Fi を切ってモバイル回線にする(Tailscale はオンのまま)
+2. スマホのブラウザで `http://<TS_IP>:3000/trpc/health` が開ける
+3. スマホのブラウザで `http://<TS_IP>:5173` の Web 管理画面にログインできる
+4. アプリを完全に終了して開き直し、ロック解除・登録者の一覧が表示できる
+
+### 11-6. ほかの人にテストしてもらうとき
+その人を Tailscale のアカウントに招待し、その人の端末にも Tailscale を入れてもらいます(無料プランは少人数まで)。公開 URL で見せたいときは Cloudflare Tunnel + Cloudflare Access(要相談)を使います。
+
 ## トラブル: `pnpm build` で `spawn UNKNOWN`
 
 ビルドを取りまとめるツール(Turbo)が Windows のセキュリティ機能などで起動できない場合でも、`pnpm build` / `pnpm test` / `pnpm typecheck` / `pnpm dev` は自動で pnpm の順次実行に切り替わります(「Turbo を起動できないため、pnpm で順に実行します」と表示)。速さは落ちますが結果は同じです。Turbo を直すには `pnpm install --force` を試し、それでもだめなら Windows セキュリティの保護の履歴を確認してください。
