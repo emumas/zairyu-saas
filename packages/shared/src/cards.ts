@@ -85,7 +85,8 @@ export const cardPhotoReplaceInput = z
   .refine((v) => v.front || v.back, "表面か裏面の写真を選んでください");
 
 export const cardVerifyInput = z.object({
-  personId: z.uuid(),
+  /** 省略は新しい登録者(カードを先に読み、その内容で登録者を作る) */
+  personId: z.uuid().optional(),
   cardNumber: cardNumberInput,
   ic: icReadPayload,
   manual: cardManualFields.default({}),

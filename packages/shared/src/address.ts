@@ -161,6 +161,8 @@ export function japaneseDate(s: string): string | null {
 }
 
 export interface FrontOcrFields {
+  /** 氏名(ローマ字。カードの表記のまま大文字) */
+  name: string | null;
   birthDate: string | null;
   sex: "M" | "F" | null;
   nationality: string | null;
@@ -214,6 +216,7 @@ export function frontFieldsFromOcr(lines: readonly OcrLine[]): FrontOcrFields {
   if (!status) status = valueOf(statusLines[1] ?? "");
 
   return {
+    name: nameFromFrontOcr(sorted),
     birthDate: firstDate(near(/生年月日|DATE OF BIRTH/i)),
     sex,
     nationality: nationality && nationality.length <= 30 ? nationality : null,
@@ -222,4 +225,34 @@ export function frontFieldsFromOcr(lines: readonly OcrLine[]): FrontOcrFields {
     cardValidUntil: firstDate(sorted.filter((t) => /まで有効|有効/.test(t))),
     address: addressFromFrontOcr(lines),
   };
+}
+
+/** 氏名の欄のローマ字(例:「氏名 KATO EDEN GARCIA」/ 次の行に名前)。項目名や国名の英語は除く */
+export function nameFromFrontOcr(sortedTexts: readonly string[]): string | null {
+  const i = sortedTexts.findIndex((t) => /氏名|\bNAME\b/.test(t));
+  if (i < 0) return null;
+  const pick = (t: string) => {
+    const s = t.normalize("NFKC").replace(/氏名|\bNAME\b|GOVERNMENT OF JAPAN|RESIDENCE CARD/g, " ");
+    const words = s.match(/[A-Z][A-Z'.-]*(?:[ ,]+[A-Z][A-Z'.-]*)*/g) ?? [];
+    const best = words.map((w) => w.replace(/\s*,\s*/g, ", ").replace(/\s+/g, " ").trim()).sort((a, b) => b.length - a.length)[0];
+    return best && best.replace(/[^A-Z]/g, "").length >= 3 ? best : null;
+  };
+  return pick(sortedTexts[i]!) ?? (sortedTexts[i + 1] && !/生年月日|DATE OF BIRTH/.test(sortedTexts[i + 1]!) ? pick(sortedTexts[i + 1]!) : null);
+}
+
+/** 在留カードの国籍・地域の表記(日本語)から国コード(ISO 3166-1 alpha-3)。主な国だけ。分からなければ null */
+const NATIONALITY_CODES: Record<string, string> = {
+  中国: "CHN", 台湾: "TWN", 韓国: "KOR", ベトナム: "VNM", フィリピン: "PHL", ブラジル: "BRA", ネパール: "NPL", インドネシア: "IDN",
+  ミャンマー: "MMR", タイ: "THA", 米国: "USA", アメリカ合衆国: "USA", インド: "IND", スリランカ: "LKA", ペルー: "PER", バングラデシュ: "BGD",
+  パキスタン: "PAK", カンボジア: "KHM", モンゴル: "MNG", 英国: "GBR", フランス: "FRA", ドイツ: "DEU", オーストラリア: "AUS", カナダ: "CAN",
+  マレーシア: "MYS", ロシア: "RUS", ウズベキスタン: "UZB", イラン: "IRN", ナイジェリア: "NGA", ボリビア: "BOL", アルゼンチン: "ARG", メキシコ: "MEX",
+  シンガポール: "SGP", ラオス: "LAO", トルコ: "TUR", エジプト: "EGY", ガーナ: "GHA", ケニア: "KEN", イタリア: "ITA", スペイン: "ESP",
+  ウクライナ: "UKR", コロンビア: "COL", パラグアイ: "PRY", キルギス: "KGZ", スリランカ民主社会主義共和国: "LKA", 香港: "HKG",
+};
+export function nationalityCode(s: string | null | undefined): string | null {
+  if (!s) return null;
+  const t = s.normalize("NFKC").trim().toUpperCase();
+  if (/^[A-Z]{3}$/.test(t)) return t;
+  const key = s.trim().replace(/\s/g, "");
+  return NATIONALITY_CODES[key] ?? (/^中国/.test(key) && /台湾/.test(key) ? "TWN" : null);
 }

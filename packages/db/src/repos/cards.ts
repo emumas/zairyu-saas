@@ -10,7 +10,8 @@ export type NewCard = Omit<typeof residenceCards.$inferInsert, "id" | "tenantId"
  * 同じ在留カード番号(HMAC)のカードを持つ、ほかの登録者。今のカードだけでなく過去のカードも、
  * 退職者・アーカイブも含めて探す(カード番号は 1 枚ごとに違うので、一致すれば同一人物)
  */
-export async function findPersonsWithCard(tx: Tx, cardNumberHmac: Buffer, personId: string) {
+/** personId は除く本人(新しい登録者のときは null) */
+export async function findPersonsWithCard(tx: Tx, cardNumberHmac: Buffer, personId: string | null) {
   return tx
     .selectDistinctOn([persons.id], {
       personId: persons.id,
@@ -25,7 +26,7 @@ export async function findPersonsWithCard(tx: Tx, cardNumberHmac: Buffer, person
     .from(residenceCards)
     .innerJoin(persons, eq(persons.id, residenceCards.personId))
     .innerJoin(sites, eq(sites.id, persons.siteId))
-    .where(and(eq(residenceCards.cardNumberHmac, cardNumberHmac), ne(residenceCards.personId, personId)))
+    .where(and(eq(residenceCards.cardNumberHmac, cardNumberHmac), personId ? ne(residenceCards.personId, personId) : undefined))
     .orderBy(persons.id, desc(residenceCards.isCurrent))
     .limit(10);
 }

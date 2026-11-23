@@ -16,15 +16,18 @@ import {
   type CardManualFields,
   type FrontOcrFields,
   type IcReadPayload,
+  jstDate,
+  nationalityCode,
 } from "@zairyu/shared";
 import { useState } from "react";
-import { Switch, Text, View } from "react-native";
+import { Modal, Switch, Text, View } from "react-native";
 import { api, messageOf } from "../api";
 import { IcProgressView, icErrorMessage, isCardReadError, readIcPayload, type IcProgress } from "../ic/readIc";
 import { compressForUpload, deleteFile, recognizeBack, recognizeFront } from "../photo";
 import { FORMAT_LABEL } from "../screens/format";
 import { Button, Card, Choice, color, Field, Message, Row, Screen } from "../ui/kit";
 import { CameraCapture } from "../ui/CameraCapture";
+import { PersonCreateScreen } from "../screens/PersonCreateScreen";
 import { correctAddress } from "../addressFix";
 import { CardFaceView } from "../ui/CardFaceView";
 import { CardImage } from "../ui/CardImage";
@@ -50,7 +53,27 @@ const IC_FAILURE: { value: IcFailure; label: string }[] = [
   { value: "other", label: "その他" },
 ];
 
-export function CardWizard({ personId, personName, onClose, onDone }: { personId: string; personName: string; onClose: () => void; onDone: () => void }) {
+/**
+ * personId を省くと「新しい登録者」: カードを先に読み取り、保存の前に、読み取った氏名・国籍・生年月日を入れた登録者の画面を出す。
+ * 登録者を追加(または再入社に)したら、そのままカードを登録する
+ */
+export function CardWizard({
+  personId: givenPersonId,
+  personName,
+  onClose,
+  onDone,
+  onManualEntry,
+}: {
+  personId?: string;
+  personName: string;
+  onClose: () => void;
+  onDone: (personId: string) => void;
+  /** 新しい登録者のとき: カードを使わずに手入力で登録する */
+  onManualEntry?: () => void;
+}) {
+  const [personId, setPersonId] = useState<string | null>(givenPersonId ?? null);
+  const newPerson = !givenPersonId;
+  const [personForm, setPersonForm] = useState(false);
   const [step, setStep] = useState<Step>("front");
   const [camera, setCamera] = useState<"front" | "back" | null>(null);
   const [front, setFront] = useState<Photo | null>(null);
@@ -113,7 +136,7 @@ export function CardWizard({ personId, personName, onClose, onDone }: { personId
       const payload = await readIcPayload(cardNumber, setIcProgress);
       setIc(payload);
       setIcFailure(null);
-      const v = await api.cards.verifyIcRead.mutate({ personId, cardNumber, ic: payload, manual: {} });
+      const v = await api.cards.verifyIcRead.mutate({ ...(personId ? { personId } : {}), cardNumber, ic: payload, manual: {} });
       setVerify(v);
       // 旧様式は IC に文字情報が無いので、表面の読み取り結果を入力欄に入れておく(第2世代は IC の値を使う)
       if (v.format === "legacy") prefillFromFront();
@@ -148,7 +171,7 @@ export function CardWizard({ personId, personName, onClose, onDone }: { personId
     setBusy(true);
     setError(null);
     try {
-      setVerify(await api.cards.verifyIcRead.mutate({ personId, cardNumber, ic, manual }));
+      setVerify(await api.cards.verifyIcRead.mutate({ ...(personId ? { personId } : {}), cardNumber, ic, manual }));
     } catch (e) {
       setError(messageOf(e));
     } finally {
@@ -156,12 +179,32 @@ export function CardWizard({ personId, personName, onClose, onDone }: { personId
     }
   }
 
-  async function save() {
+  /** 保存: 新しい登録者なら、先に登録者の画面(読み取った値を下書き)を出す */
+  function save() {
+    if (!personId) return setPersonForm(true);
+    void register(personId);
+  }
+
+  /** カードの番号で見つかった退職者を再入社にして、そのままカードを登録する(新しい登録者は作らない) */
+  async function rehireAndRegister(id: string) {
+    setBusy(true);
+    setError(null);
+    try {
+      await api.persons.reactivate.mutate({ id, hiredAt: jstDate(Date.now()) });
+    } catch (e) {
+      setError(messageOf(e));
+      setBusy(false);
+      return;
+    }
+    await register(id);
+  }
+
+  async function register(targetId: string) {
     setBusy(true);
     setError(null);
     try {
       const r = await api.cards.register.mutate({
-        personId,
+        personId: targetId,
         cardNumber,
         ic,
         ...(ic ? {} : { icFailureReason: icFailure ?? "other" }),
@@ -176,6 +219,7 @@ export function CardWizard({ personId, personName, onClose, onDone }: { personId
       setFront(null);
       setBack(null);
       setIc(null);
+      setPersonId(targetId);
       setResult(r);
       setStep("done");
     } catch (e) {
@@ -202,8 +246,26 @@ export function CardWizard({ personId, personName, onClose, onDone }: { personId
     (!needsReason || diffReason.trim().length > 0) &&
     (!manualNeeded || (permanent ? !!manual.cardValidUntil : !!manual.expiryDate));
 
+  /** 登録者の下書き: 第2世代は IC の値、旧様式は入力・表面の読み取りの値 */
+  function personDraft() {
+    const nationality = nationalityCode(verify?.fields.nationality ?? manual.nationality ?? frontOcr?.nationality ?? null);
+    return { name: frontOcr?.name ?? null, nationality, birthDate: verify?.fields.birthDate ?? manual.birthDate ?? frontOcr?.birthDate ?? null };
+  }
+
   return (
-    <Screen title={`カード登録: ${personName}`} onBack={step === "done" ? undefined : onClose}>
+    <Screen title={newPerson ? "登録者を追加(カードから)" : `カード登録: ${personName}`} onBack={step === "done" ? undefined : onClose}>
+      <Modal visible={personForm} animationType="slide" onRequestClose={() => setPersonForm(false)}>
+        <PersonCreateScreen
+          onBack={() => setPersonForm(false)}
+          initial={personDraft()}
+          note="在留カードから読み取った氏名・国籍・生年月日を入れました。券面と見比べて、社員番号・拠点などを入力してください。追加するとカードも登録します。"
+          submitLabel="追加してカードを登録"
+          onCreated={(id) => {
+            setPersonForm(false);
+            void register(id);
+          }}
+        />
+      </Modal>
       <CameraCapture
         visible={camera !== null}
         title={camera === "back" ? "裏面を撮影" : "表面を撮影"}
@@ -217,6 +279,7 @@ export function CardWizard({ personId, personName, onClose, onDone }: { personId
           <Text>在留カードの表面を撮影します。番号を端末内で読み取ります(画像は外部の AI に送りません)。</Text>
           <Button label="表面を撮影" onPress={() => setCamera("front")} />
           <Button label="撮影せずに番号を入力" kind="secondary" onPress={() => setStep("number")} />
+          {newPerson && onManualEntry && <Button label="カードを使わずに手入力で登録" kind="secondary" onPress={onManualEntry} />}
         </Card>
       )}
 
@@ -421,6 +484,10 @@ export function CardWizard({ personId, personName, onClose, onDone }: { personId
                     </Text>
                   )}
                   {m.status === "archived" && <Text style={{ color: color.sub }}>アーカイブ済みの古い記録です(登録はできます)。</Text>}
+                  {newPerson && m.personId && m.status === "active" && <Button label="この登録者の画面を開く" kind="secondary" onPress={() => onDone(m.personId!)} />}
+                  {newPerson && m.personId && m.status === "retired" && (
+                    <Button label="この方を再入社にしてカードを登録" busy={busy} onPress={() => void rehireAndRegister(m.personId!)} />
+                  )}
                 </View>
               ))}
             </Card>
@@ -469,7 +536,7 @@ export function CardWizard({ personId, personName, onClose, onDone }: { personId
             </>
           )}
           <Message text={error} />
-          <Button label="保存する" busy={busy} disabled={!canSave} onPress={save} />
+          <Button label={newPerson ? "次へ(登録者の情報を入力)" : "保存する"} busy={busy} disabled={!canSave} onPress={save} />
         </Card>
       )}
 
@@ -478,7 +545,7 @@ export function CardWizard({ personId, personName, onClose, onDone }: { personId
           <Text style={{ fontWeight: "700" }}>登録しました</Text>
           <Row k="IC 検証" v={result.icVerified ? "検証済み" : "未検証"} tone={result.icVerified ? "ok" : "warn"} />
           {result.needsReview && <Message text="「要確認(偽造の疑い)」として登録しました。" />}
-          <Button label="登録者の画面に戻る" onPress={onDone} />
+          <Button label="登録者の画面へ" onPress={() => personId && onDone(personId)} />
         </Card>
       )}
     </Screen>

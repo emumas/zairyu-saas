@@ -31,7 +31,7 @@ import { cardNumberHmac, decryptAddress, decryptCardNumber, encryptAddress, encr
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { assertSiteAccess } from "../authz/guards.js";
-import { canAccessSite, type Actor } from "../authz/permissions.js";
+import { can, canAccessSite, type Actor } from "../authz/permissions.js";
 import { diffFields, evaluateIc, judgeSignature, mergeFields } from "../cards/evaluate.js";
 import { toDisplayImage } from "../imageConvert.js";
 import { getDisplayImage, issueImageUrl } from "../images.js";
@@ -113,7 +113,7 @@ const sameCardOutput = z.object({
 type SameCard = z.infer<typeof sameCardOutput>;
 
 /** 同じカード番号を持つほかの登録者(番号はカード 1 枚ごとに違うので、一致すれば同一人物) */
-async function sameCardPersons(tx: Tx, actor: Actor, numberHmac: Buffer, personId: string): Promise<SameCard[]> {
+async function sameCardPersons(tx: Tx, actor: Actor, numberHmac: Buffer, personId: string | null): Promise<SameCard[]> {
   const rows = await findPersonsWithCard(tx, numberHmac, personId);
   const visibleIds = rows.filter((r) => canAccessSite(actor, r.siteId)).map((r) => r.personId);
   const employments = await listEmployments(tx, visibleIds);
@@ -279,9 +279,11 @@ export const cardsRouter = router({
     )
     .mutation(({ ctx, input }) =>
       ctx.tenantTx(async (tx) => {
-        await loadActivePerson(tx, ctx.actor, input.personId);
+        // 新しい登録者(personId なし)のときは、登録者を作れる人だけ
+        if (input.personId) await loadActivePerson(tx, ctx.actor, input.personId);
+        else if (!can(ctx.actor.role, "persons.write")) throw new TRPCError({ code: "FORBIDDEN", message: "この操作を行う権限がありません" });
         const ic = evaluateIc(input.ic, ctx.services.config.trustedIssuers);
-        const sameCard = await sameCardPersons(tx, ctx.actor, await cardNumberHmac(requireVault(ctx.services).keyring, ctx.actor.tenantId, input.cardNumber), input.personId);
+        const sameCard = await sameCardPersons(tx, ctx.actor, await cardNumberHmac(requireVault(ctx.services).keyring, ctx.actor.tenantId, input.cardNumber), input.personId ?? null);
         // 住居地イメージは照合に使わないので返さない(通信量を抑える)
         const icImages = await Promise.all(
           ic.images
@@ -298,8 +300,7 @@ export const cardsRouter = router({
         const judged = judgeSignature(ic.signature);
         await ctx.audit(tx, {
           action: "card.ic_verify",
-          targetType: "person",
-          targetId: input.personId,
+          ...(input.personId ? { targetType: "person", targetId: input.personId } : {}),
           detail: { format: ic.format, signature: ic.signature.status },
         });
         return {

@@ -159,6 +159,18 @@ describe.skipIf(!url)("カード登録", () => {
     expect(p.expiry).toMatchObject({ bucket: "ok", deadlineBasis: "card", deadline: "2030-06-26" });
   });
 
+  it("新しい登録者: 登録者を作る前にカードを照合できる(同じカードの登録者も返す)。その後に作った登録者へ登録できる", async () => {
+    const n = "NW12345678CD";
+    const ic = icPayload({ format: "gen2", kind: "residence", signer: ec, cardNumber: n });
+    const v = await tokyoAdmin.cards.verifyIcRead({ cardNumber: n, ic });
+    expect(v).toMatchObject({ format: "gen2", icVerified: true, sameCard: [] });
+    const { id } = await tokyoAdmin.persons.create({ siteId: tokyo, employeeCode: "NW01", name: "NEW PERSON" });
+    await tokyoAdmin.cards.register({ personId: id, cardNumber: n, ic });
+    // 同じカードでもう一度「新しい登録者」として照合すると、登録済みの人が出る
+    expect((await tokyoAdmin.cards.verifyIcRead({ cardNumber: n, ic })).sameCard).toMatchObject([{ personId: id, status: "active" }]);
+    expect(await codeOf(viewer.cards.verifyIcRead({ cardNumber: n, ic }))).toBe("FORBIDDEN");
+  });
+
   it("写真の撮り直し: 同じ種類の古い写真を消して差し替える(IC の画像は残す)。現在のカード・在籍者・編集できる人だけ", async () => {
     const personId = await newPerson("PH01");
     const n = "PH12345678CD";

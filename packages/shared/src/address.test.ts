@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addressFromFrontOcr, backHasEntries, chooseAddress, cleanAddress, countryName, frontFieldsFromOcr, japaneseDate, latestAddressFromBackOcr } from "./address.js";
+import { addressFromFrontOcr, backHasEntries, nameFromFrontOcr, nationalityCode, chooseAddress, cleanAddress, countryName, frontFieldsFromOcr, japaneseDate, latestAddressFromBackOcr } from "./address.js";
 
 describe("addressFromFrontOcr", () => {
   it("住居地の欄を取り出す(項目名を除き、続きの行をつなぐ)", () => {
@@ -103,6 +103,7 @@ describe("frontFieldsFromOcr(旧様式の表面)", () => {
   ];
   it("項目ごとに値を取り出す", () => {
     expect(frontFieldsFromOcr(lines)).toEqual({
+      name: "NGUYEN VAN A",
       birthDate: "1995-04-01",
       sex: "M",
       nationality: "ベトナム",
@@ -148,5 +149,21 @@ describe("裏面に記載があるのに住所が読めないとき", () => {
     expect(backHasEntries([{ text: "届出年月日 住居地 記載者印", top: 10 }, { text: "在留期間更新等許可申請欄", top: 300 }, { text: "2025.02.14 申請中", top: 320 }])).toBe(false);
     expect(chooseAddress({ backPhoto: null, frontPhoto: "東京都新宿区西新宿2-8-1", backHasEntries: true })).toBeNull();
     expect(chooseAddress({ backPhoto: null, frontPhoto: "東京都新宿区西新宿2-8-1", backHasEntries: false })).toEqual({ address: "東京都新宿区西新宿2-8-1", source: "front_photo" });
+  });
+});
+
+describe("氏名と国籍(登録者の下書き)", () => {
+  it("氏名の欄のローマ字を取り出す(同じ行・次の行)", () => {
+    expect(nameFromFrontOcr(["日本国政府 在留カード", "氏名 KATO EDEN GARCIA", "NAME", "生年月日 1990年1月2日"])).toBe("KATO EDEN GARCIA");
+    expect(nameFromFrontOcr(["氏名", "NGUYEN VAN A", "生年月日"])).toBe("NGUYEN VAN A");
+    expect(nameFromFrontOcr(["氏名 NAME", "生年月日"])).toBeNull();
+    expect(nameFromFrontOcr(["在留資格"])).toBeNull();
+  });
+  it("国籍の表記を国コードに。分からなければ null", () => {
+    expect(nationalityCode("フィリピン")).toBe("PHL");
+    expect(nationalityCode("ベトナム")).toBe("VNM");
+    expect(nationalityCode("vnm")).toBe("VNM");
+    expect(nationalityCode("中国(台湾)")).toBe("TWN");
+    expect(nationalityCode("どこか")).toBeNull();
   });
 });

@@ -14,17 +14,32 @@ import { Button, Card, Choice, color, Field, Message, Screen } from "../ui/kit";
 type Person = Awaited<ReturnType<typeof api.persons.get.query>>;
 type Similar = Awaited<ReturnType<typeof api.persons.findSimilar.query>>[number];
 
-export function PersonCreateScreen({ onBack, onCreated, person }: { onBack: () => void; onCreated: (id: string) => void; person?: Person }) {
+export function PersonCreateScreen({
+  onBack,
+  onCreated,
+  person,
+  initial,
+  note,
+  submitLabel,
+}: {
+  onBack: () => void;
+  onCreated: (id: string) => void;
+  person?: Person;
+  /** 在留カードから読み取った下書き(追加のとき) */
+  initial?: { name?: string | null; nationality?: string | null; birthDate?: string | null };
+  note?: string;
+  submitLabel?: string;
+}) {
   const session = useSession();
   const sites = session.state.status === "signedIn" ? session.state.me.sites : [];
   const editing = !!person;
   const [siteId, setSiteId] = useState<string | null>(person?.siteId ?? (sites.length === 1 ? sites[0]!.id : null));
   const [employeeCode, setEmployeeCode] = useState(person?.employeeCode ?? "");
-  const [name, setName] = useState(person?.name ?? "");
+  const [name, setName] = useState(person?.name ?? initial?.name ?? "");
   const [nameKana, setNameKana] = useState(person?.nameKana ?? "");
   const [phone, setPhone] = useState(person?.phone ?? "");
-  const [nationality, setNationality] = useState(person?.nationality ?? "");
-  const [birthDate, setBirthDate] = useState(person?.birthDate ?? "");
+  const [nationality, setNationality] = useState(person?.nationality ?? initial?.nationality ?? "");
+  const [birthDate, setBirthDate] = useState(person?.birthDate ?? initial?.birthDate ?? "");
   const [hiredAt, setHiredAt] = useState(person?.hiredAt ?? (person ? "" : jstDate(Date.now())));
   const [similar, setSimilar] = useState<Similar[]>([]);
   const [confirmDuplicate, setConfirmDuplicate] = useState(false);
@@ -101,6 +116,7 @@ export function PersonCreateScreen({ onBack, onCreated, person }: { onBack: () =
 
   return (
     <Screen title={editing ? "登録者の情報を編集" : "登録者を追加"} onBack={onBack}>
+      {note && <Message text={note} tone="ok" />}
       <Text style={{ fontWeight: "600" }}>拠点</Text>
       {sites.length === 0 ? (
         <Message text="担当の拠点がありません。管理者に拠点の割り当てを依頼してください。" tone="warn" />
@@ -141,7 +157,7 @@ export function PersonCreateScreen({ onBack, onCreated, person }: { onBack: () =
         </Card>
       )}
       <Message text={error} />
-      <Button label={editing ? "保存する" : "追加する"} busy={busy} disabled={!siteId || !employeeCode.trim() || !name.trim()} onPress={save} />
+      <Button label={submitLabel ?? (editing ? "保存する" : "追加する")} busy={busy} disabled={!siteId || !employeeCode.trim() || !name.trim()} onPress={save} />
     </Screen>
   );
 }

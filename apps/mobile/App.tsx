@@ -22,6 +22,7 @@ type Route =
   | { name: "person"; id: string }
   | { name: "wizard"; personId: string; personName: string }
   | { name: "personCreate" }
+  | { name: "newPerson" }
   | { name: "alerts" }
   | { name: "revocation"; cardId: string; personId: string; personName: string }
   | { name: "reverify"; cardId: string; personId: string; personName: string }
@@ -80,6 +81,19 @@ function Main() {
       );
     case "alerts":
       return <AlertsScreen onBack={() => setRoute({ name: "home" })} onOpenPerson={(id) => setRoute({ name: "person", id })} />;
+    case "newPerson":
+      // カードを先に読み取り、その内容で登録者を作る
+      return (
+        <CardWizard
+          personName="新しい登録者"
+          onClose={() => setRoute({ name: "home" })}
+          onManualEntry={() => setRoute({ name: "personCreate" })}
+          onDone={(id) => {
+            setReloadKey((k) => k + 1);
+            setRoute({ name: "person", id });
+          }}
+        />
+      );
     case "personCreate":
       return <PersonCreateScreen onBack={() => setRoute({ name: "home" })} onCreated={(id) => setRoute({ name: "person", id })} />;
     case "person":
@@ -144,7 +158,7 @@ function Main() {
         <HomeScreen
           onOpenPerson={(id) => setRoute({ name: "person", id })}
           onOpenPoc={() => setRoute({ name: "poc" })}
-          onCreatePerson={() => setRoute({ name: "personCreate" })}
+          onCreatePerson={() => setRoute({ name: "newPerson" })}
           onOpenAlerts={() => setRoute({ name: "alerts" })}
         />
       );
