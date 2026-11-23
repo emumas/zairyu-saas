@@ -57,6 +57,13 @@ export function ReverifyScreen({ cardId, personName, onDone }: { cardId: string;
             v={result.signature === "valid" ? "OK(真正)" : result.signature === "absent" ? "なし(年少者のカード)" : "NG"}
             tone={result.signature === "valid" ? "ok" : result.signature === "absent" ? "warn" : "danger"}
           />
+          {result.signature === "valid" && (
+            <Row
+              k="発行者"
+              v={result.issuerTrusted === true ? "入管庁の証明書で確認済み" : result.issuerTrusted === false ? "入管庁の証明書と一致しない" : "未確認(該当する証明書なし)"}
+              tone={result.issuerTrusted === true ? "ok" : result.issuerTrusted === false ? "danger" : "warn"}
+            />
+          )}
           {result.needsReview && <Message text="署名の検証に失敗しました。「要確認」にして管理者へ通知しました。入管局・労働局に相談してください。" />}
           {result.changes.length > 0 ? (
             <>

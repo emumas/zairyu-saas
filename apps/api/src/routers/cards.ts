@@ -180,6 +180,8 @@ export const cardsRouter = router({
     .output(
       z.object({
         signature: z.enum(["valid", "invalid", "absent"]),
+        /** 入管庁の発行者証明書で確かめられたか(null は該当する証明書なし。署名が有効なときだけ意味がある) */
+        issuerTrusted: z.boolean().nullable(),
         icVerified: z.boolean(),
         needsReview: z.boolean(),
         changes: z.array(z.object({ field: z.string(), before: z.union([z.string(), z.boolean()]).nullable(), after: z.union([z.string(), z.boolean()]).nullable() })),
@@ -246,7 +248,8 @@ export const cardsRouter = router({
           targetId: card.id,
           detail: { signature: ic.signature.status, changed: changes.map((c) => c.field) },
         });
-        return { signature: ic.signature.status, icVerified: judged.icVerified, needsReview: judged.needsReview, changes };
+        const issuerTrusted = ic.signature.status === "valid" ? ic.signature.issuerTrusted : null;
+        return { signature: ic.signature.status, issuerTrusted, icVerified: judged.icVerified, needsReview: judged.needsReview, changes };
       }),
     ),
 
