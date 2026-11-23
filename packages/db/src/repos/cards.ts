@@ -145,6 +145,7 @@ export async function getCardWithSite(tx: Tx, cardId: string) {
       expiryDate: residenceCards.expiryDate,
       cardValidUntil: residenceCards.cardValidUntil,
       isCurrent: residenceCards.isCurrent,
+      personStatus: persons.status,
     })
     .from(residenceCards)
     .innerJoin(persons, eq(persons.id, residenceCards.personId))
@@ -194,4 +195,22 @@ export async function getCardState(tx: Tx, cardId: string) {
     .from(residenceCards)
     .where(eq(residenceCards.id, cardId));
   return row ?? null;
+}
+
+/**
+ * 撮影した画像(表面・裏面)を差し替える。同じ種類の古い行を消して新しい行を入れ、消した画像のファイルのキーを返す
+ * (ファイルは呼び出し側がコミット後に消す。消し損ねは削除ジョブの孤立ファイル掃除で消える)
+ */
+export async function replaceCardPhotos(
+  tx: Tx,
+  cardId: string,
+  photos: readonly { kind: "front" | "back"; blobKey: string; contentType: string }[],
+): Promise<string[]> {
+  if (photos.length === 0) return [];
+  const old = await tx
+    .delete(cardImages)
+    .where(and(eq(cardImages.cardId, cardId), inArray(cardImages.kind, photos.map((p) => p.kind))))
+    .returning({ blobKey: cardImages.blobKey });
+  await tx.insert(cardImages).values(photos.map((p) => ({ cardId, ...p })));
+  return old.map((o) => o.blobKey);
 }

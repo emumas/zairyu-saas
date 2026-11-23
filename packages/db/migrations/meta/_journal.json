@@ -176,6 +176,13 @@
       "when": 1795391325279,
       "tag": "0024_audit_retention_security",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1795393737327,
+      "tag": "0025_card_image_replace",
+      "breakpoints": true
     }
   ]
 }

@@ -159,6 +159,32 @@ describe.skipIf(!url)("カード登録", () => {
     expect(p.expiry).toMatchObject({ bucket: "ok", deadlineBasis: "card", deadline: "2030-06-26" });
   });
 
+  it("写真の撮り直し: 同じ種類の古い写真を消して差し替える(IC の画像は残す)。現在のカード・在籍者・編集できる人だけ", async () => {
+    const personId = await newPerson("PH01");
+    const n = "PH12345678CD";
+    const ic = icPayload({ format: "gen2", kind: "residence", signer: ec, cardNumber: n, images: realImages });
+    const { cardId } = await tokyoAdmin.cards.register({ personId, cardNumber: n, ic, photos: { front: photo } });
+    const before = (await tokyoAdmin.cards.listForPerson({ personId }))[0]!.images;
+    const oldFront = before.find((i) => i.kind === "front")!;
+    const oldBlob = (await withTenant(h.db, tenant, (tx) => tx.select().from(schema.cardImages).where(eq(schema.cardImages.id, oldFront.id))))[0]!.blobKey;
+
+    const png = { contentType: "image/png" as const, data: Buffer.from("new-back").toString("base64") };
+    expect(await tokyoAdmin.cards.replacePhotos({ cardId, front: photo, back: png })).toEqual({ replaced: ["front", "back"] });
+    const after = (await tokyoAdmin.cards.listForPerson({ personId }))[0]!.images;
+    expect(after.map((i) => i.kind).sort()).toEqual(["back", "front", "ic_address", "ic_face", "ic_name"]);
+    expect(after.find((i) => i.kind === "front")!.id).not.toBe(oldFront.id);
+    // 古い写真のファイルも消える
+    expect(await h.services.vault!.blobs.get(oldBlob)).toBeNull();
+    const logs = await withTenant(h.db, tenant, (tx) => tx.select().from(schema.auditLogs).where(eq(schema.auditLogs.action, "card.photo_replace")));
+    expect(logs.at(-1)).toMatchObject({ targetId: cardId, detail: { kinds: ["front", "back"], removed: 1 } });
+
+    expect(await codeOf(tokyoAdmin.cards.replacePhotos({ cardId } as never))).toBe("BAD_REQUEST");
+    expect(await codeOf(viewer.cards.replacePhotos({ cardId, front: photo }))).toBe("FORBIDDEN");
+    expect(await codeOf(osakaAdmin.cards.replacePhotos({ cardId, front: photo }))).toBe("NOT_FOUND");
+    await admin.persons.retire({ id: personId, reasonCode: "self" });
+    expect(await codeOf(tokyoAdmin.cards.replacePhotos({ cardId, front: photo }))).toBe("BAD_REQUEST");
+  });
+
   it("旧様式: RSA 署名付きなら検証済み。券面イメージ(TIFF)と顔画像(JPEG2000)を表示できる", async () => {
     const personId = await newPerson("L002");
     const ic = icPayload({ format: "legacy", kind: "residence", signer: rsa, images: { front: realImages.front, face: realImages.face } });

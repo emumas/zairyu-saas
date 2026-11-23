@@ -14,6 +14,7 @@ import { useSession } from "../session";
 import { EmploymentSection } from "./EmploymentSection";
 import { WorkHoursSection } from "./WorkHoursSection";
 import { DeclarationCopyCard } from "./DeclarationCopyCard";
+import { PhotoReplaceForm } from "./PhotoReplaceForm";
 import { CardDetailsForm, PersonEditForm } from "./personForms";
 import { Button, Card, fmtDateTime, Message } from "../ui";
 
@@ -361,6 +362,7 @@ export function PersonDetailPage() {
               ))}
             </div>
           )}
+          {c.isCurrent && p.status === "active" && session.can("cards.write") && <PhotoReplaceForm cardId={c.id} onDone={reload} />}
           <table>
             <thead>
               <tr>

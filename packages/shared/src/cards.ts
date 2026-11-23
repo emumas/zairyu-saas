@@ -79,6 +79,11 @@ export const cardPhoto = z.object({
   data: base64(4_000_000),
 });
 
+/** 撮影した表面・裏面の写真の撮り直し(現在のカード) */
+export const cardPhotoReplaceInput = z
+  .object({ cardId: z.uuid(), front: cardPhoto.optional(), back: cardPhoto.optional() })
+  .refine((v) => v.front || v.back, "表面か裏面の写真を選んでください");
+
 export const cardVerifyInput = z.object({
   personId: z.uuid(),
   cardNumber: cardNumberInput,

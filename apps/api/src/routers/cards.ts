@@ -19,13 +19,14 @@ import {
   insertAlertsIfAbsent,
   findPersonSite,
   insertCardImage,
+  replaceCardPhotos,
   insertVerification,
   lookupPostalCode,
   listCardsForPerson,
   replaceCurrentCard,
   type Tx,
 } from "@zairyu/db";
-import { cardDetailsUpdateInput, cardRegisterInput, cardVerifyInput, RETIRE_REASON_LABEL, RETIRE_REASONS, type RetireReason, icReadPayload, jstDate, needsReviewNotice } from "@zairyu/shared";
+import { cardDetailsUpdateInput, cardPhotoReplaceInput, cardRegisterInput, cardVerifyInput, RETIRE_REASON_LABEL, RETIRE_REASONS, type RetireReason, icReadPayload, jstDate, needsReviewNotice } from "@zairyu/shared";
 import { cardNumberHmac, decryptAddress, decryptCardNumber, encryptAddress, encryptCardNumber, putEncryptedBlob } from "@zairyu/vault";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
@@ -482,6 +483,35 @@ export const cardsRouter = router({
    * - IC の裏面追記から取った住居地は変えられない(IC 再検証で更新する)
    * - 変更した項目名を監査ログに、目視確認として確認履歴に残す(値は残さない)
    */
+  /**
+   * 撮影した表面・裏面の写真を撮り直す(ぶれ・反射で読めないときなど)。現在のカード・在籍中の登録者だけ。
+   * 古い写真は消す(行はこのトランザクションで、ファイルはコミット後)。IC の画像は変えない。
+   * 写真から記載事項を読み直すときは、端末で読み取ってから updateDetails で直す
+   */
+  replacePhotos: permissionProcedure("cards.write")
+    .input(cardPhotoReplaceInput)
+    .output(z.object({ replaced: z.array(z.enum(["front", "back"])) }))
+    .mutation(async ({ ctx, input }) => {
+      const vault = requireVault(ctx.services);
+      const tenantId = ctx.actor.tenantId;
+      // 暗号化・保存はトランザクションの外で先に行う(登録と同じ。確認で止まったファイルは削除ジョブが 24 時間後以降に掃除する)
+      const photos = (["front", "back"] as const).flatMap((kind) => {
+        const p = input[kind];
+        return p ? [{ kind, contentType: p.contentType, data: Buffer.from(p.data, "base64") }] : [];
+      });
+      const stored = await Promise.all(photos.map(async (p) => ({ kind: p.kind, contentType: p.contentType, blobKey: await putEncryptedBlob(vault.blobs, vault.keyring, tenantId, p.data) })));
+      const oldKeys = await ctx.tenantTx(async (tx) => {
+        const card = await loadCurrentCardForWrite(tx, ctx.actor, input.cardId, "写真を撮り直せるのは現在のカードだけです");
+        if (card.personStatus !== "active") throw new TRPCError({ code: "BAD_REQUEST", message: "在籍中の登録者だけ写真を撮り直せます" });
+        const old = await replaceCardPhotos(tx, card.id, stored);
+        await ctx.audit(tx, { action: "card.photo_replace", targetType: "residence_card", targetId: card.id, detail: { personId: card.personId, kinds: stored.map((s) => s.kind), removed: old.length } });
+        return old;
+      });
+      // 古いファイルを消す。失敗しても記録は無いので、削除ジョブの孤立ファイル掃除で消える
+      await Promise.all(oldKeys.map((k) => vault.blobs.delete(k).catch(() => undefined)));
+      return { replaced: stored.map((s) => s.kind) };
+    }),
+
   updateDetails: permissionProcedure("cards.write")
     .input(cardDetailsUpdateInput)
     .output(z.object({ changed: z.array(z.string()) }))

@@ -24,6 +24,7 @@ export function PersonScreen({
   onReverify,
   onEditDetails,
   onEditPerson,
+  onRetakePhotos,
 }: {
   personId: string;
   onBack: () => void;
@@ -31,6 +32,7 @@ export function PersonScreen({
   onRevocationCheck: (cardId: string, personName: string) => void;
   onReverify: (cardId: string, personName: string) => void;
   onEditDetails: (personName: string) => void;
+  onRetakePhotos: (cardId: string, personName: string) => void;
   onEditPerson: (person: Person) => void;
 }) {
   const session = useSession();
@@ -220,6 +222,9 @@ export function PersonScreen({
       <Message text={error} />
       {c && session.can("cards.write") && person.status === "active" && (
         <Button label="IC を再検証" kind="secondary" onPress={() => onReverify(c.id, person.name)} />
+      )}
+      {c && session.can("cards.write") && person.status === "active" && (
+        <Button label="写真を撮り直す" kind="secondary" onPress={() => onRetakePhotos(c.id, person.name)} />
       )}
       {c && session.can("verifications.write") && (
         <Button label="失効情報照会" kind="secondary" onPress={() => onRevocationCheck(c.id, person.name)} />
