@@ -1,0 +1,367 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><title>本番準備ガイド</title>
+<style>
+@page { size: A4; margin: 16mm 15mm 18mm; }
+body { font-family: "IPAPGothic", "IPAGothic", sans-serif; font-size: 10.2pt; line-height: 1.65; color: #1f2328; }
+h1 { font-size: 22pt; margin: 0 0 4mm; color: #0b4f8a; }
+h2 { font-size: 15pt; color: #0b4f8a; border-bottom: 2px solid #0b4f8a; padding-bottom: 1mm; margin: 9mm 0 3mm; page-break-after: avoid; }
+h3 { font-size: 12pt; margin: 6mm 0 2mm; padding-left: 2.5mm; border-left: 4px solid #3b82c4; page-break-after: avoid; }
+h4 { font-size: 10.5pt; margin: 4mm 0 1mm; page-break-after: avoid; }
+p { margin: 1.5mm 0; }
+thead { display: table-header-group; }
+table { border-collapse: collapse; width: 100%; margin: 2mm 0 3mm; font-size: 9.3pt; page-break-inside: auto; }
+tr { page-break-inside: avoid; }
+th, td { border: 1px solid #c9d1d9; padding: 1.4mm 2mm; vertical-align: top; text-align: left; }
+th { background: #eef4fa; }
+.cover { height: 250mm; display: flex; flex-direction: column; justify-content: center; }
+.cover .sub { font-size: 12pt; color: #59636e; }
+.box { border: 1px solid #c9d1d9; border-radius: 2mm; padding: 2.5mm 3.5mm; margin: 2.5mm 0; page-break-inside: avoid; }
+.note { background: #fff8e6; border-color: #e8c66b; }
+.tip { background: #eef7ee; border-color: #8cc28c; }
+.warn { background: #fdeeee; border-color: #e3a0a0; }
+.step { counter-reset: s; padding-left: 0; list-style: none; }
+.step > li { counter-increment: s; position: relative; padding-left: 8mm; margin: 1.2mm 0; }
+.step > li::before { content: counter(s); position: absolute; left: 0; top: 0.3mm; width: 5.5mm; height: 5.5mm; border-radius: 50%; background: #0b4f8a; color: #fff; font-size: 8.5pt; text-align: center; line-height: 5.5mm; }
+.check li { list-style: none; margin-left: -4mm; }
+.check li::before { content: "□ "; }
+code { font-family: "IPAGothic", monospace; background: #f3f5f7; padding: 0 1mm; border-radius: 1mm; font-size: 9pt; }
+.small { font-size: 8.8pt; color: #59636e; }
+.pb { page-break-before: always; }
+.toc li { margin: 0.6mm 0; }
+.tag { display: inline-block; font-size: 8pt; border-radius: 1mm; padding: 0 1.5mm; color: #fff; }
+.must { background: #c0392b; } .opt { background: #7f8c8d; } .later { background: #2f7d32; }
+</style></head><body>
+
+<section class="cover">
+<h1>在留カード管理SaaS<br>本番準備ガイド</h1>
+<p class="sub">各サービスの契約・設定の進め方(できる限りわかりやすく)</p>
+<p class="small" style="margin-top:12mm">作成日: 2026年11月23日 ／ 対象: 運営会社の担当者(技術に詳しくない方を想定)<br>
+料金・画面の名前・審査の条件は変わることがあります。金額は執筆時点の目安で、契約前に必ず各社の公式ページで確認してください。</p>
+</section>
+
+<h2 class="pb">目次</h2>
+<ol class="toc">
+<li>全体像: 本番で使うサービスと役割</li>
+<li>進める順番とスケジュールの目安</li>
+<li>会社として先に用意するもの(D-U-N-S 番号・ドメインなど)</li>
+<li>Microsoft Azure(サーバー・データベース・保管庫)</li>
+<li>メール送信(Azure Communication Services)</li>
+<li>決済(Stripe)</li>
+<li>プッシュ通知(Expo・Firebase・Apple)</li>
+<li>Apple(iPhone アプリ)と App Store</li>
+<li>Google Play(Android アプリ)</li>
+<li>エラー監視(Sentry など・任意)</li>
+<li>法務・書類の準備</li>
+<li>開発側に渡してほしい情報と、安全な渡し方</li>
+<li>開発側に残っている作業</li>
+<li>費用の目安と、全体チェックリスト</li>
+<li>用語集</li>
+</ol>
+<div class="box tip"><b>この資料の読み方</b><br>
+各章の最初に「何のために必要か」「誰が・何をするか」を書いています。<span class="tag must">必須</span> は本番に必要なもの、<span class="tag opt">任意</span> は無くても動くもの、<span class="tag later">後でよい</span> は利用者が増えてからでよいものです。
+ボタンや画面の名前は各社の管理画面の表記に合わせていますが、各社が名前を変えることがあります。見つからないときは開発側に聞いてください。</div>
+
+<h2 class="pb">1. 全体像: 本番で使うサービスと役割</h2>
+<p>このシステムは「Web 管理画面」「スマホアプリ」「サーバー(API と定期処理)」でできています。本番では、次のサービスを組み合わせて動かします。</p>
+<table>
+<tr><th style="width:22%">サービス</th><th style="width:38%">役割(たとえると)</th><th style="width:12%">必要度</th><th>契約者</th></tr>
+<tr><td>Microsoft Azure</td><td>サーバー・データベース・ファイル保管・暗号鍵の金庫を置く場所(貸しオフィス一式)</td><td><span class="tag must">必須</span></td><td>運営会社</td></tr>
+<tr><td>独自ドメイン</td><td>サービスの住所(例: <code>app.example.co.jp</code>)。メール送信にも使う</td><td><span class="tag must">必須</span></td><td>運営会社</td></tr>
+<tr><td>Azure Communication Services(Email)</td><td>パスワード再設定・期限アラート・未払いのお知らせなどのメールを送る郵便局</td><td><span class="tag must">必須</span></td><td>運営会社(Azure の中で契約)</td></tr>
+<tr><td>Stripe</td><td>顧客企業からの月額料金のカード決済・請求書(集金代行)</td><td><span class="tag must">必須</span>※</td><td>運営会社</td></tr>
+<tr><td>Expo(EAS)</td><td>スマホアプリを組み立てる工場と、プッシュ通知の中継所</td><td><span class="tag must">必須</span></td><td>運営会社</td></tr>
+<tr><td>Firebase(Google)</td><td>Android へのプッシュ通知の配達員</td><td><span class="tag must">必須</span></td><td>運営会社</td></tr>
+<tr><td>Google Play Console</td><td>Android アプリの配布窓口</td><td><span class="tag must">必須</span></td><td>運営会社(組織として)</td></tr>
+<tr><td>Apple Developer Program</td><td>iPhone アプリの配布窓口・iPhone へのプッシュ通知</td><td><span class="tag must">必須</span>(iPhone 対応時)</td><td>運営会社(組織として)</td></tr>
+<tr><td>Sentry など</td><td>本番で起きたエラーを知らせる見張り番</td><td><span class="tag opt">任意</span></td><td>運営会社</td></tr>
+</table>
+<p class="small">※ 最初は運営者コンソールで手動請求(銀行振込など)にして、Stripe を後から入れることもできます。</p>
+
+<h3>データの流れと置き場所</h3>
+<table>
+<tr><th style="width:28%">データ</th><th>置き場所と守り方</th></tr>
+<tr><td>登録者・カード情報・確認履歴</td><td>Azure の PostgreSQL(日本リージョン)。テナントごとに行レベルで分離。カード番号・住所はテナント別の鍵で暗号化</td></tr>
+<tr><td>カードの写真・IC の画像</td><td>Azure Blob Storage(非公開)。テナント別の鍵で暗号化してから保存</td></tr>
+<tr><td>暗号鍵の親鍵</td><td>Azure Key Vault(金庫)。サーバーは鍵そのものを持たず、金庫に「包む・開ける」を頼むだけ</td></tr>
+<tr><td>カードの写真の文字読み取り</td><td>スマホの中だけで行う(外部の AI には送らない)</td></tr>
+</table>
+<div class="box note"><b>日本リージョンにする理由</b>: 在留カードの情報は機微な個人情報です。データを日本国内(Azure の「東日本」)に置くと、顧客企業への説明がしやすくなります。バックアップの複製先も国内(西日本)にします。</div>
+
+<h2 class="pb">2. 進める順番とスケジュールの目安</h2>
+<p>審査や番号の発行に日数がかかるものがあるので、<b>時間のかかるものから先に申し込む</b>のがこつです。</p>
+<table>
+<tr><th style="width:9%">順</th><th style="width:36%">やること</th><th style="width:18%">かかる日数の目安</th><th>ポイント</th></tr>
+<tr><td>1</td><td>D-U-N-S 番号の取得(会社の国際的な ID)</td><td>数日〜数週間</td><td>Apple・Google に「組織」として登録するのに必要。最初に申し込む</td></tr>
+<tr><td>2</td><td>独自ドメインの取得</td><td>即日</td><td>メール送信の設定にも使う</td></tr>
+<tr><td>3</td><td>Azure の契約</td><td>即日〜数日</td><td>請求書払いにする場合は与信審査あり</td></tr>
+<tr><td>4</td><td>Stripe の申し込み</td><td>数日〜2週間</td><td>事業内容・特定商取引法の表記の審査あり</td></tr>
+<tr><td>5</td><td>Apple Developer Program(組織)</td><td>数日〜2週間</td><td>D-U-N-S 番号が必要。電話確認が来ることがある</td></tr>
+<tr><td>6</td><td>Google Play Console(組織)</td><td>数日〜2週間</td><td>D-U-N-S 番号と本人確認が必要</td></tr>
+<tr><td>7</td><td>Expo・Firebase のアカウント</td><td>即日</td><td>無料で作れる</td></tr>
+<tr><td>8</td><td>開発側で本番環境を組み立て・試験</td><td>1〜3週間</td><td>1〜7 の情報がそろってから</td></tr>
+<tr><td>9</td><td>アプリの審査</td><td>数日〜数週間</td><td>差し戻しがあると延びる</td></tr>
+</table>
+<div class="box tip"><b>おすすめ</b>: 1〜7 の申し込みを同じ週にまとめて行うと、全体で 1〜2 か月程度で公開できる見込みです(審査の結果しだいで前後します)。</div>
+
+<h2 class="pb">3. 会社として先に用意するもの</h2>
+<h3>3-1. D-U-N-S 番号 <span class="tag must">必須</span></h3>
+<p><b>何か</b>: 会社ごとに付く世界共通の 9 桁の番号です。Apple と Google が「本当にある会社か」を確かめるのに使います。</p>
+<ol class="step">
+<li>Apple の「D-U-N-S Number 検索」ページ(Apple Developer のサイト内)で、自社がすでに登録されていないか調べる</li>
+<li>無ければ、同じページから無料で申請する(日本では東京商工リサーチが発行)</li>
+<li>番号が届いたら控えておく。会社名・住所は<b>登記と同じ英語表記</b>にそろえる(違うと Apple の審査で止まる)</li>
+</ol>
+<h3>3-2. 独自ドメイン <span class="tag must">必須</span></h3>
+<p><b>何か</b>: サービスの住所です。例として、Web 管理画面を <code>app.example.co.jp</code>、メールの送り主を <code>no-reply@mail.example.co.jp</code> にします。</p>
+<ul>
+<li>会社のドメイン(<code>example.co.jp</code> など)をすでに持っていれば、その「サブドメイン」を使うのが簡単です</li>
+<li>DNS(住所録)の設定を変えられる人を社内で決めておいてください。メール送信とサーバーの設定で、<b>DNS にいくつか記録を足す作業</b>が出ます(手順は各章で案内します)</li>
+</ul>
+<h3>3-3. 会社の窓口・メールアドレス</h3>
+<ul>
+<li>各サービスの登録には、個人ではなく<b>会社の共有メールアドレス</b>(例: <code>dev-admin@example.co.jp</code>)を使ってください。担当者が替わってもログインできなくなりません</li>
+<li>各サービスで<b>2 段階認証</b>を必ず有効にし、認証アプリは担当者 2 名以上で持つか、予備コードを金庫に保管してください</li>
+<li>カード払いのサービスが多いので、法人カードを 1 枚用意しておくと手続きが進みます</li>
+</ul>
+
+<h2 class="pb">4. Microsoft Azure(サーバー・データベース・保管庫) <span class="tag must">必須</span></h2>
+<p><b>何のために</b>: API・Web 管理画面・定期処理(期限アラート・月次の確定・データの自動削除)を動かし、データを保管します。</p>
+<h3>4-1. 契約の手順</h3>
+<ol class="step">
+<li><code>azure.microsoft.com</code> で会社の共有メールアドレスから Microsoft アカウントを作り、「従量課金(Pay-As-You-Go)」で申し込む(法人カードが必要)</li>
+<li>請求書払いにしたい場合は、Microsoft のパートナー(販売代理店)経由の契約(CSP)も選べます。日本円・請求書で払えます</li>
+<li>Azure ポータル(<code>portal.azure.com</code>)で <b>予算アラート</b> を設定する(例: 月 3 万円を超えたらメール)。使いすぎを防げます</li>
+<li>開発側の担当者を「ユーザー」として招待し、作業に必要な権限(後述)を付ける</li>
+</ol>
+<h3>4-2. 作るもの一覧(開発側で作成も可能)</h3>
+<p>次の部品を「東日本(Japan East)」に作ります。開発側に権限をいただければ、こちらで作成・設定できます。</p>
+<table>
+<tr><th style="width:27%">部品(Azure での名前)</th><th style="width:33%">用途</th><th>設定のポイント</th></tr>
+<tr><td>リソースグループ</td><td>部品をまとめるフォルダー</td><td>例: <code>zairyu-prod</code>。試験用に <code>zairyu-stg</code> も別に作ると安全</td></tr>
+<tr><td>App Service(Linux)</td><td>API と Web 管理画面を動かす</td><td>Node.js 22 以上。最初は小さめのプラン(B1〜P0v3 程度)。「常時接続」をオン。HTTPS のみ</td></tr>
+<tr><td>Azure Database for PostgreSQL(フレキシブル サーバー)</td><td>データベース</td><td>PostgreSQL 16 以上。最初は Burstable B1ms〜B2s。バックアップ保持 14〜35 日、地理冗長バックアップ(西日本)を推奨。公開アクセスは App Service からだけに絞る</td></tr>
+<tr><td>ストレージ アカウント(Blob)</td><td>カードの写真の保管</td><td>コンテナーは「非公開」。匿名アクセスを無効。論理削除(誤削除の取り消し)を 7 日程度</td></tr>
+<tr><td>Key Vault</td><td>暗号鍵の金庫・秘密の保管</td><td>RSA 鍵を 1 つ作る(親鍵)。「消去保護」をオン。秘密(パスワード類)もここに入れる</td></tr>
+<tr><td>定期処理の実行場所</td><td>毎日・5 分おきの処理</td><td>Azure Container Apps のジョブ、または App Service の WebJobs で、下の 3 つを登録(開発側で設定)</td></tr>
+<tr><td>Application Insights</td><td>動作状況・エラーの記録</td><td>個人情報を記録しない設定にする(開発側で対応)</td></tr>
+</table>
+<div style="page-break-inside: avoid"><h4>定期処理(すでに作ってある処理を、時間を決めて動かすだけ)</h4>
+<table>
+<tr><th style="width:18%">名前</th><th style="width:32%">いつ</th><th>内容</th></tr>
+<tr><td><code>daily</code></td><td>毎日 0:30(日本時間)ごろ</td><td>前日の課金人数の記録・月次の確定、期限アラートの作成、続けて通知の送信</td></tr>
+<tr><td><code>send</code></td><td>5 分おき</td><td>送信待ちのメール・プッシュ通知を送る</td></tr>
+<tr><td><code>purge</code></td><td>毎日 1:00(日本時間)ごろ</td><td>保存期間が過ぎた退職者のデータ・不要な画像・古い監査ログを消す</td></tr>
+</table></div>
+<h3>4-3. 権限の考え方(「誰が何をできるか」)</h3>
+<ul>
+<li>サーバー(App Service と定期処理)には<b>「マネージド ID」</b>(パスワードの要らない Azure 内の身分証)を付け、次の 2 つだけを許可します
+ <ul><li>Key Vault: 「Key Vault Crypto User」(鍵で包む・開ける)と「Key Vault Secrets User」(秘密を読む)</li>
+ <li>ストレージ: 「Storage Blob Data Contributor」(写真の保存・取り出し)</li></ul></li>
+<li>人の権限は最小限に。普段の運用担当は「閲覧者」、設定変更をする人だけ「共同作成者」にします</li>
+<li>データベースのユーザーは、プログラムが最初の起動時(マイグレーション)に役割ごとに作ります(アプリ用・運営者用・削除処理用など)。管理者パスワードは Key Vault に保管します</li>
+</ul>
+<h3>4-4. サーバーに設定する値(開発側で設定)</h3>
+<table>
+<tr><th style="width:36%">設定の名前</th><th>中身</th></tr>
+<tr><td><code>DATABASE_URL</code></td><td>データベースの接続先(パスワード入り。Key Vault に保管して参照)</td></tr>
+<tr><td><code>AUTH_JWT_SECRET</code> / <code>AUTH_SECRET_BOX_KEY</code></td><td>ログインの合鍵・認証アプリの鍵を守る鍵(ランダムに作って Key Vault に保管)</td></tr>
+<tr><td><code>VAULT_KEY_PROVIDER=azure</code> / <code>AZURE_KEY_VAULT_KEY_ID</code></td><td>暗号の親鍵として Key Vault の鍵を使う</td></tr>
+<tr><td><code>BLOB_STORE=azure</code> / <code>AZURE_STORAGE_ACCOUNT_URL</code> / <code>AZURE_STORAGE_CONTAINER</code></td><td>写真の保管先</td></tr>
+<tr><td><code>ACS_CONNECTION_STRING</code> / <code>ACS_SENDER_ADDRESS</code></td><td>メール送信(5 章)</td></tr>
+<tr><td><code>NOTIFY_PUSH=expo</code></td><td>プッシュ通知を Expo 経由で送る(7 章)</td></tr>
+<tr><td><code>SECURE_COOKIES=true</code> / <code>NODE_ENV=production</code></td><td>本番用の安全設定</td></tr>
+</table>
+<div class="box warn"><b>大事</b>: これらの値(特にパスワード・鍵・接続文字列)は、<b>メール・チャット・スクリーンショットで送らないでください</b>。Key Vault に入れるか、Azure の管理画面で開発側に権限を付けていただければ、こちらで設定します(12 章)。</div>
+
+<h2 class="pb">5. メール送信(Azure Communication Services) <span class="tag must">必須</span></h2>
+<p><b>何のために</b>: パスワード再設定、期限が近いカードのアラート、偽造の疑いの通知、未払いのお知らせなどを、顧客企業の担当者へメールで送ります。</p>
+<ol class="step">
+<li>Azure ポータルで「Email Communication Services」を作る(データの場所は「Japan」)</li>
+<li>「ドメインを追加」→「カスタム ドメイン」で <code>mail.example.co.jp</code> を登録する</li>
+<li>画面に出る <b>TXT・SPF・DKIM(2 つ)</b> の記録を、自社の DNS に足す(DNS の担当者の作業。コピーして貼るだけ)</li>
+<li>Azure の画面で「確認」を押し、すべて「確認済み」になるまで待つ(数分〜1 日)</li>
+<li>送り主のアドレス(例: <code>no-reply@mail.example.co.jp</code>)と表示名(例: 在留カード管理)を決める</li>
+<li>「Communication Services」を作り、上のメールのドメインを「接続」する。接続文字列は Key Vault に保管</li>
+</ol>
+<div class="box note"><b>迷惑メールに入らないために</b>: SPF・DKIM に加えて DMARC(<code>_dmarc</code> の TXT 記録)も設定してください。最初は送れる通数に上限があるので、顧客が増えたら Azure に上限の引き上げを申請します。</div>
+<p class="small">費用: 送った通数と容量に応じた従量課金で、月数百〜数千通なら数百円程度の見込みです(要確認)。</p>
+
+<h2 class="pb">6. 決済(Stripe) <span class="tag must">必須</span>(手動請求で始める場合は後でよい)</h2>
+<p><b>何のために</b>: 顧客企業から月額料金をカードで自動的に集金し、請求書・領収書を出します。料金は「基本料+登録人数×単価(段階制も可)」で、運営者コンソールのプランで決めています。</p>
+<h3>6-1. 申し込み</h3>
+<ol class="step">
+<li><code>stripe.com/jp</code> で会社として申し込む(代表者の本人確認書類・登記の情報・入金先の銀行口座が必要)</li>
+<li>事業内容は「法人向けの在留カード管理クラウドサービス(月額課金)」のように具体的に書く</li>
+<li>Web サイトに<b>特定商取引法に基づく表記・利用規約・プライバシーポリシー・料金の説明</b>を載せておく(審査で見られます。11 章)</li>
+<li>審査が終わるまでは「テストモード」で開発側が試験できます</li>
+</ol>
+<h3>6-2. 設定</h3>
+<ul>
+<li>使う機能: <b>Stripe Billing</b>(定期課金)と <b>Customer Portal</b>(顧客がカードの変更・請求書の取得を自分で行う画面)</li>
+<li>請求書払い(銀行振込)を希望する顧客がいる場合は、Stripe の「請求書」機能の振込も使えます</li>
+<li>Webhook(Stripe から「支払いが成功した・失敗した」を知らせてもらう仕組み)の受け口を開発側で作り、Stripe に登録します</li>
+<li>開発側に渡すもの: 本番・テストの<b>シークレットキー</b>と<b>Webhook の署名シークレット</b>(どちらも Key Vault へ。チャットに貼らない)</li>
+</ul>
+<div class="box note"><b>アプリ内で課金しない理由</b>: スマホアプリに料金の表示や購入の画面を置くと、Apple・Google の手数料の対象になり審査も厳しくなります。このサービスは<b>契約と支払いを Web だけ</b>で行い、アプリは法人の社員だけが使う形にしています(App Store の規約 3.1.3(c) の考え方)。</div>
+<p class="small">費用: 初期費用・月額は無し。日本のカード決済で 1 件あたり 3.6% 程度の手数料(執筆時点の目安。要確認)。</p>
+<p class="small">現状: 料金の計算・未払い時の制限・運営者コンソールでの契約状態の変更は実装済みです。Stripe との接続(顧客の作成・定期課金・Webhook)は、契約後に開発側で実装します(13 章)。</p>
+
+<h2 class="pb">7. プッシュ通知(Expo・Firebase・Apple) <span class="tag must">必須</span></h2>
+<p><b>何のために</b>: 「期限が近いカードがあります」「偽造の疑いがあります」などを、担当者のスマホにすぐ知らせます。通知の文面には氏名やカード番号を入れていません。</p>
+<h3>7-1. Expo(EAS)</h3>
+<ol class="step">
+<li><code>expo.dev</code> で組織(Organization)のアカウントを作り、開発側を招待する</li>
+<li>アプリの「プロジェクト」を作る(開発側で可能)。アプリの組み立て(ビルド)とストアへの提出もここから行います</li>
+<li>無料プランで始められます。ビルドの回数が多くなったら有料プランを検討します</li>
+</ol>
+<h3>7-2. Firebase(Android の通知)</h3>
+<ol class="step">
+<li><code>console.firebase.google.com</code> でプロジェクトを作る(Google アナリティクスは「無効」で可)</li>
+<li>Android アプリを追加し、パッケージ名にアプリの ID(本番用に決める。例: <code>jp.co.example.zairyu</code>)を入れる</li>
+<li>「サービス アカウント」の鍵(JSON ファイル)を作り、Expo の管理画面にアップロードする(開発側で実施可能。ファイルはメールで送らない)</li>
+</ol>
+<h3>7-3. Apple(iPhone の通知)</h3>
+<p>8 章の Apple Developer Program の登録後に、「APNs キー」を作って Expo に登録します(開発側で実施可能)。</p>
+
+<h2 class="pb">8. Apple(iPhone アプリ)と App Store <span class="tag must">必須</span>(iPhone 対応時)</h2>
+<h3>8-1. Apple Developer Program(組織として登録)</h3>
+<ol class="step">
+<li>D-U-N-S 番号を用意する(3 章)</li>
+<li><code>developer.apple.com/programs</code> から「組織」として申し込む。申し込む人は会社を代表して契約できる立場の人(またはその委任を受けた人)</li>
+<li>Apple から電話や書類の確認が来たら対応する</li>
+<li>年会費を払う(執筆時点で年 12,980 円程度・要確認)</li>
+<li>開発側を「App Store Connect」のユーザーとして招待する(役割: 「App Manager」または「Developer」)</li>
+</ol>
+<h3>8-2. このアプリならではの注意</h3>
+<ul>
+<li><b>NFC(在留カードの IC の読み取り)</b>: iPhone でカードの IC を読むには、Apple の「NFC Tag Reading」の機能を有効にします(開発側で設定済みの項目あり)。iPhone 7 以降で使えます</li>
+<li><b>審査で聞かれやすい点</b>(審査メモに書きます)
+ <ul><li>法人の社員だけが使うアプリで、個人は登録できないこと。契約と支払いは Web で行うこと</li>
+ <li>審査用のデモアカウント(テスト用の会社・ダミーの登録者)を用意すること</li>
+ <li>カードの写真は端末の中だけで読み取り、外部の AI に送らないこと。カメラロールに保存しないこと</li></ul></li>
+<li>iPhone では、開発側でまだ実機の確認をしていません(13 章)。審査の前に iPhone での試験期間をとってください</li>
+</ul>
+<div class="box tip"><b>社内だけで配る方法</b>: 一般公開せずに特定の顧客だけに配るなら、「Apple Business Manager」の「カスタム App」という配り方もあります。顧客企業が Apple Business Manager に登録している必要があります。</div>
+
+<h2 class="pb">9. Google Play(Android アプリ) <span class="tag must">必須</span></h2>
+<ol class="step">
+<li><code>play.google.com/console</code> で「組織」としてデベロッパー アカウントを作る(D-U-N-S 番号・会社の連絡先・本人確認が必要)</li>
+<li>登録料を払う(執筆時点で 25 米ドル・1 回だけ・要確認)</li>
+<li>開発側をユーザーとして招待する(権限: アプリの作成・リリース)</li>
+<li>アプリを作り、次の情報を入力する(開発側で下書きを用意できます)
+ <ul><li>ストアの説明文・スクリーンショット(個人情報の写っていないダミーで作ります)</li>
+ <li><b>データ セーフティ</b>(どんなデータを集め、どう守るか): 氏名・住所・在留カードの情報・写真を、法人の業務のために集め、暗号化して保管し、第三者と共有しないこと</li>
+ <li>プライバシーポリシーの URL</li>
+ <li>審査用のデモアカウント</li></ul></li>
+<li>最初は「内部テスト」→「クローズド テスト」で試し、問題がなければ「製品版」に出す</li>
+</ol>
+<div class="box note"><b>新しい個人開発者のアカウントの場合の注意</b>: Google Play では、個人アカウントは公開前に一定人数・一定期間のテストを求められます。<b>組織アカウント</b>で登録すると、この条件を避けやすくなります。</div>
+<div class="box tip"><b>社内配布だけでよい場合</b>: 「Managed Google Play」を使って、顧客企業の端末だけに非公開で配る方法もあります。</div>
+
+<h2 class="pb">10. エラー監視(Sentry など) <span class="tag opt">任意</span></h2>
+<p><b>何のために</b>: 本番で起きたエラーをすぐに開発側に知らせ、原因を調べやすくします。</p>
+<ul>
+<li>Azure の Application Insights でも基本的な見張りはできます。より詳しく見たい場合に Sentry を足します</li>
+<li><code>sentry.io</code> で組織を作り、開発側を招待する。データの保存場所(リージョン)を選べる場合は確認する</li>
+<li><b>個人情報を送らない設定が必須</b>です(氏名・カード番号・住所・写真を送らない)。開発側で、送る前に個人情報を消す設定を入れてから有効にします</li>
+<li>無料プランで始められます(送る量が増えたら有料)</li>
+</ul>
+
+<h2 class="pb">11. 法務・書類の準備 <span class="tag must">必須</span></h2>
+<p>サービスの公開と、Stripe・Apple・Google の審査には、次の書類が必要です。在留カードの情報を扱うため、<b>弁護士など専門家の確認</b>をおすすめします。</p>
+<table>
+<tr><th style="width:28%">書類</th><th style="width:40%">内容</th><th>どこで使う</th></tr>
+<tr><td>利用規約</td><td>サービスの内容・料金・禁止事項・責任の範囲・解約。<b>就労可否の判定は補助であり、最終判断は雇用主</b>であることを明記</td><td>Web・申し込み時・Stripe の審査</td></tr>
+<tr><td>プライバシーポリシー</td><td>集める情報、使う目的、保管場所(日本)、保存期間(退職後 3〜5 年・監査ログ 5〜10 年)、委託先(Azure など)、問い合わせ先</td><td>Web・アプリ・ストアの審査</td></tr>
+<tr><td>個人データの取扱いに関する契約(DPA・委託契約)</td><td>顧客企業から個人データの取扱いを任される立場としての約束(安全管理措置・再委託・事故時の連絡・契約終了時の削除)</td><td>顧客企業との契約時</td></tr>
+<tr><td>特定商取引法に基づく表記</td><td>事業者名・住所・連絡先・料金・支払方法・解約方法</td><td>Web・Stripe の審査</td></tr>
+<tr><td>セキュリティの説明資料</td><td>暗号化・テナント分離・監査ログ・データの所在など(顧客の情報システム部門から求められやすい)</td><td>営業・導入時</td></tr>
+</table>
+<div class="box warn"><b>入管庁の照会ページについて</b>: カードの失効照会は、入管庁のページを<b>人が開いて確認する</b>方式にしています(機械的なアクセスはしません)。利用規約や説明資料でもこの方針を変えないでください。</div>
+
+<h2 class="pb">12. 開発側に渡してほしい情報と、安全な渡し方</h2>
+<h3>12-1. 渡し方の原則</h3>
+<ul>
+<li><b>パスワード・鍵・接続文字列は、メール・チャット・スクリーンショットで送らない</b></li>
+<li>代わりに、各サービスで開発側の担当者を<b>ユーザーとして招待</b>し、必要な権限を付けてください。秘密の値は開発側がサービスの画面から直接 Key Vault に入れます</li>
+<li>どうしても値を渡す必要があるときは、Azure Key Vault に入れていただき、その名前だけを伝えてください</li>
+</ul>
+<h3>12-2. お願いしたいこと(チェックリスト)</h3>
+<table>
+<tr><th style="width:24%">サービス</th><th>お願いしたいこと</th></tr>
+<tr><td>Azure</td><td>開発側の招待と、リソースグループ <code>zairyu-prod</code>(と <code>zairyu-stg</code>)の「共同作成者」の権限。予算アラートの設定</td></tr>
+<tr><td>ドメイン</td><td>使うサブドメイン(Web 用・メール用)の決定と、DNS の担当者の紹介</td></tr>
+<tr><td>メール</td><td>送り主のアドレスと表示名の決定</td></tr>
+<tr><td>Stripe</td><td>開発側の招待(役割: 開発者)。審査の状況の共有</td></tr>
+<tr><td>Expo</td><td>組織への開発側の招待</td></tr>
+<tr><td>Firebase</td><td>プロジェクトへの開発側の招待(役割: 編集者)</td></tr>
+<tr><td>Apple</td><td>App Store Connect への開発側の招待。会社の英語表記・サポート用の URL とメール</td></tr>
+<tr><td>Google Play</td><td>Play Console への開発側の招待</td></tr>
+<tr><td>アプリの ID</td><td>アプリの正式名称と ID(例: <code>jp.co.example.zairyu</code>)の決定。一度公開すると変えられません</td></tr>
+<tr><td>書類</td><td>利用規約・プライバシーポリシー・特商法表記の URL</td></tr>
+</table>
+
+<h2 class="pb">13. 開発側に残っている作業</h2>
+<p>契約がそろったあとに、開発側で次の作業を行います。</p>
+<table>
+<tr><th style="width:30%">作業</th><th>内容</th></tr>
+<tr><td>本番の組み立て(デプロイ)</td><td>API と Web 管理画面を同じドメインで配信する設定、定期処理 3 つの登録、自動でのデプロイの仕組み、試験用環境の用意</td></tr>
+<tr><td>Stripe との接続</td><td>顧客の作成、定期課金、Webhook の受け口(支払い成功・失敗で契約状態を自動で変える)、Customer Portal への導線</td></tr>
+<tr><td>未払いのお知らせメール</td><td>未払いになったとき・制限がかかる前のメールの文面と送信</td></tr>
+<tr><td>エラー監視</td><td>個人情報を消してから送る設定(Sentry を使う場合)</td></tr>
+<tr><td>iPhone 対応</td><td>iPhone の実機での NFC・カメラ・ロック画面の確認と調整</td></tr>
+<tr><td>第2世代の在留カード</td><td>実カードでの確認(手に入りしだい)</td></tr>
+<tr><td>アプリの公開準備</td><td>本番用のアプリ ID・アイコン・ストアの説明文・審査メモ・デモ用の会社の用意</td></tr>
+<tr><td>運用の手順書</td><td>バックアップからの戻し方、鍵の更新、障害時の連絡の流れ</td></tr>
+</table>
+
+<h2 class="pb">14. 費用の目安と、全体チェックリスト</h2>
+<p class="small">あくまで小さく始める場合の目安です。利用者が増えると増えます。必ず各社の料金ページ・Azure の料金計算ツールで確認してください。</p>
+<table>
+<tr><th style="width:30%">項目</th><th style="width:28%">支払い方</th><th>目安(執筆時点・要確認)</th></tr>
+<tr><td>Azure(サーバー・DB・保管庫・監視)</td><td>月額・従量</td><td>本番だけで月 1〜3 万円程度から(試験用環境を作ると加算)</td></tr>
+<tr><td>メール(ACS)</td><td>従量</td><td>月数百円程度から</td></tr>
+<tr><td>ドメイン</td><td>年額</td><td>年 1,000〜5,000 円程度(既存ドメインの流用なら追加なし)</td></tr>
+<tr><td>Stripe</td><td>決済ごと</td><td>カード決済 1 件あたり 3.6% 程度</td></tr>
+<tr><td>Apple Developer Program</td><td>年額</td><td>年 12,980 円程度</td></tr>
+<tr><td>Google Play</td><td>1 回のみ</td><td>25 米ドル</td></tr>
+<tr><td>Expo(EAS)</td><td>月額(任意)</td><td>無料から。ビルドが多ければ有料プラン</td></tr>
+<tr><td>Firebase(通知)</td><td>—</td><td>通知の送信は無料</td></tr>
+<tr><td>Sentry(任意)</td><td>月額</td><td>無料から</td></tr>
+<tr><td>法務(規約などの確認)</td><td>1 回</td><td>専門家の見積もりによる</td></tr>
+</table>
+<h3>全体チェックリスト</h3>
+<ul class="check">
+<li>D-U-N-S 番号を申請した/取得した</li>
+<li>独自ドメイン(Web 用・メール用のサブドメイン)を決めた</li>
+<li>会社の共有メールアドレスを用意し、各サービスで 2 段階認証を有効にした</li>
+<li>Azure を契約し、予算アラートを設定し、開発側を招待した</li>
+<li>メール送信のドメインを登録し、DNS に TXT・SPF・DKIM・DMARC を足した</li>
+<li>Stripe に申し込み、審査が通った</li>
+<li>Expo の組織と Firebase のプロジェクトを作り、開発側を招待した</li>
+<li>Apple Developer Program(組織)に登録し、App Store Connect に開発側を招待した</li>
+<li>Google Play Console(組織)に登録し、開発側を招待した</li>
+<li>アプリの正式名称と ID を決めた</li>
+<li>利用規約・プライバシーポリシー・特商法表記・DPA を用意し、専門家の確認を受けた</li>
+<li>審査用のデモ会社・デモアカウントを用意した(開発側と相談)</li>
+</ul>
+
+<h2 class="pb">15. 用語集</h2>
+<table>
+<tr><th style="width:26%">用語</th><th>意味</th></tr>
+<tr><td>API</td><td>アプリと Web 管理画面からの依頼を受けて、データを読み書きするサーバーのプログラム</td></tr>
+<tr><td>リージョン</td><td>クラウドのデータセンターがある地域。東日本・西日本など</td></tr>
+<tr><td>マネージド ID</td><td>Azure の中で、プログラムにパスワード無しで権限を与える身分証</td></tr>
+<tr><td>Key Vault(金庫)</td><td>暗号鍵とパスワード類を安全に保管する Azure の部品</td></tr>
+<tr><td>DNS</td><td>ドメイン名とサーバーの住所を結び付ける住所録。メールの送り主の正しさの証明にも使う</td></tr>
+<tr><td>SPF・DKIM・DMARC</td><td>「このメールは本物の送り主から来た」と相手に示すための DNS の記録。迷惑メール扱いを防ぐ</td></tr>
+<tr><td>Webhook</td><td>外部のサービス(Stripe など)が、出来事があったときにこちらのサーバーに自動で知らせる仕組み</td></tr>
+<tr><td>ビルド</td><td>アプリのプログラムを、スマホに入れられる形に組み立てること</td></tr>
+<tr><td>デプロイ</td><td>作ったプログラムを本番のサーバーに置いて動かすこと</td></tr>
+<tr><td>マイグレーション</td><td>データベースの表の形を、プログラムに合わせて変える処理</td></tr>
+<tr><td>テナント</td><td>このサービスを契約した顧客企業 1 社分の区画。他社のデータは見えない</td></tr>
+<tr><td>D-U-N-S 番号</td><td>企業に付く世界共通の識別番号。Apple・Google の組織登録に使う</td></tr>
+<tr><td>DPA</td><td>個人データの取扱いを任される側と任せる側の約束を書いた契約(データ処理契約)</td></tr>
+</table>
+<p class="small" style="margin-top:6mm">不明な点は、どの章のどの手順かを添えて開発側にお問い合わせください。</p>
+</body></html>
