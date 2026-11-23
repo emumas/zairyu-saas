@@ -2,14 +2,16 @@
  * 写真の撮り直し: 現在のカードの撮影画像(表面・裏面)を撮り直して差し替える。
  * - カメラロールには保存しない。一時ファイルは変換後すぐ消す(CLAUDE.md ルール4)
  * - 古い写真はサーバーで消える。IC の画像は変わらない
+ * - 裏面を撮り直したら、裏面の住居地の記載(いちばん新しいもの)を端末内で読み取り、確認のうえ住居地として登録する
+ *   (裏面の記載は表面より新しい。IC の裏面追記から取った住居地は IC の値なので変えない)
  */
 import { useState } from "react";
 import { Text } from "react-native";
 import { api, messageOf } from "../api";
-import { compressForUpload, deleteFile } from "../photo";
+import { compressForUpload, deleteFile, recognizeBackAddress } from "../photo";
 import { CameraCapture } from "../ui/CameraCapture";
 import { CardImage } from "../ui/CardImage";
-import { Button, Card, color, Message, Screen } from "../ui/kit";
+import { Button, Card, color, Field, Message, Screen } from "../ui/kit";
 
 type Photo = { contentType: "image/jpeg"; data: string };
 type Kind = "front" | "back";
@@ -18,12 +20,14 @@ const LABEL: Record<Kind, string> = { front: "表面", back: "裏面" };
 export function PhotoRetakeScreen({
   cardId,
   personName,
+  current,
   onClose,
   onSaved,
   onReadDetails,
 }: {
   cardId: string;
   personName: string;
+  current: { address: string | null; addressSource: string | null };
   onClose: () => void;
   onSaved: () => void;
   onReadDetails: () => void;
@@ -33,10 +37,20 @@ export function PhotoRetakeScreen({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState<Kind[] | null>(null);
+  /** 裏面から読み取った住居地(入力欄で直せる)。null は読み取っていない */
+  const [backAddress, setBackAddress] = useState<string | null>(null);
+  const [backAddressRead, setBackAddressRead] = useState<string | null>(null);
+  const [addressResult, setAddressResult] = useState<string | null>(null);
+  const addressFromIc = current.addressSource === "ic_back";
 
   async function onCaptured(path: string) {
     const kind = camera!;
     try {
+      if (kind === "back" && !addressFromIc) {
+        const a = await recognizeBackAddress(path);
+        setBackAddress(a ?? "");
+        setBackAddressRead(a);
+      }
       const p = await compressForUpload(path);
       setPhotos((cur) => ({ ...cur, [kind]: p }));
     } finally {
@@ -51,6 +65,15 @@ export function PhotoRetakeScreen({
     try {
       const r = await api.cards.replacePhotos.mutate({ cardId, ...photos });
       setPhotos({}); // 送信後は端末のメモリにも残さない
+      // 裏面の住居地: 今の登録と違えば更新する(郵便番号はサーバーが住所から引き直す)
+      const address = photos.back && !addressFromIc ? (backAddress ?? "").trim() : "";
+      if (address && address !== (current.address ?? "")) {
+        await api.cards.updateDetails.mutate({ cardId, address, addressSource: address === backAddressRead ? "back_photo" : "manual" });
+        setAddressResult(`住居地を裏面の記載「${address}」に更新しました(郵便番号も引き直しました)。`);
+      } else if (address) {
+        setAddressResult("裏面の住居地は登録済みの住所と同じです。");
+      }
+      setBackAddress(null);
       setSaved(r.replaced);
       onSaved();
     } catch (e) {
@@ -67,7 +90,8 @@ export function PhotoRetakeScreen({
       {saved ? (
         <Card>
           <Text style={{ fontWeight: "700" }}>{saved.map((k) => LABEL[k]).join("・")}の写真を差し替えました</Text>
-          <Text style={{ color: color.sub }}>古い写真は削除しました。新しい写真から記載事項(住居地など)を読み直すこともできます。</Text>
+          {addressResult && <Message text={addressResult} tone="ok" />}
+          <Text style={{ color: color.sub }}>古い写真は削除しました。新しい写真から記載事項を読み直して直すこともできます。</Text>
           <Button label="写真から記載事項を読み直す" onPress={onReadDetails} />
           <Button label="登録者の画面に戻る" kind="secondary" onPress={onClose} />
         </Card>
@@ -81,15 +105,33 @@ export function PhotoRetakeScreen({
               <Text style={{ fontWeight: "700" }}>{LABEL[k]}</Text>
               {photos[k] ? <CardImage kind={k} {...photos[k]} /> : <Text style={{ color: color.sub }}>撮り直さない場合は、今の写真のままです。</Text>}
               <Button label={photos[k] ? `${LABEL[k]}をもう一度撮る` : `${LABEL[k]}を撮影`} kind={photos[k] ? "secondary" : "primary"} onPress={() => setCamera(k)} />
+              {k === "back" && photos.back && (addressFromIc ? (
+                <Text style={{ color: color.sub }}>住居地は IC の裏面記載から登録済みのため、写真からは変更しません(IC の再検証で更新されます)。</Text>
+              ) : (
+                <>
+                  <Field
+                    label="裏面の住居地(最新の記載。保存すると住居地として登録します)"
+                    value={backAddress ?? ""}
+                    onChangeText={setBackAddress}
+                    placeholder={backAddressRead === null ? "読み取れませんでした。入力するか空欄のまま" : ""}
+                  />
+                  <Text style={{ color: color.sub, fontSize: 12 }}>
+                    裏面に記載された新しい住所を優先して登録します。写真と見比べて、違っていれば直してください。空欄なら住居地は変えません。登録済み: {current.address ?? "—"}
+                  </Text>
+                </>
+              ))}
               {photos[k] && (
                 <Button
                   label="この面は撮り直さない"
                   kind="secondary"
                   onPress={() =>
-                    setPhotos((cur) => {
-                      const { [k]: _removed, ...rest } = cur;
-                      return rest;
-                    })
+                    {
+                      if (k === "back") setBackAddress(null);
+                      setPhotos((cur) => {
+                        const { [k]: _removed, ...rest } = cur;
+                        return rest;
+                      });
+                    }
                   }
                 />
               )}

@@ -26,7 +26,7 @@ type Route =
   | { name: "revocation"; cardId: string; personId: string; personName: string }
   | { name: "reverify"; cardId: string; personId: string; personName: string }
   | { name: "cardDetails"; personId: string; personName: string }
-  | { name: "photoRetake"; cardId: string; personId: string; personName: string }
+  | { name: "photoRetake"; cardId: string; personId: string; personName: string; current: { address: string | null; addressSource: string | null } }
   | { name: "personEdit"; person: Person }
   | { name: "poc" };
 
@@ -93,7 +93,7 @@ function Main() {
           onReverify={(cardId, personName) => setRoute({ name: "reverify", cardId, personId: route.id, personName })}
           onEditDetails={(personName) => setRoute({ name: "cardDetails", personId: route.id, personName })}
           onEditPerson={(person) => setRoute({ name: "personEdit", person })}
-          onRetakePhotos={(cardId, personName) => setRoute({ name: "photoRetake", cardId, personId: route.id, personName })}
+          onRetakePhotos={(cardId, personName, current) => setRoute({ name: "photoRetake", cardId, personId: route.id, personName, current })}
         />
       );
     case "personEdit":
@@ -112,6 +112,7 @@ function Main() {
         <PhotoRetakeScreen
           cardId={route.cardId}
           personName={route.personName}
+          current={route.current}
           onClose={() => setRoute({ name: "person", id: route.personId })}
           onSaved={() => setReloadKey((k) => k + 1)}
           onReadDetails={() => setRoute({ name: "cardDetails", personId: route.personId, personName: route.personName })}
