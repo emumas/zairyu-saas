@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addressFromFrontOcr, chooseAddress, cleanAddress, countryName, frontFieldsFromOcr, japaneseDate, latestAddressFromBackOcr } from "./address.js";
+import { addressFromFrontOcr, backHasEntries, chooseAddress, cleanAddress, countryName, frontFieldsFromOcr, japaneseDate, latestAddressFromBackOcr } from "./address.js";
 
 describe("addressFromFrontOcr", () => {
   it("住居地の欄を取り出す(項目名を除き、続きの行をつなぐ)", () => {
@@ -136,5 +136,17 @@ describe("frontFieldsFromOcr(旧様式の表面)", () => {
   it("japaneseDate は存在しない日付を拒否する", () => {
     expect(japaneseDate("2025年2月30日")).toBeNull();
     expect(japaneseDate("2024年2月29日")).toBe("2024-02-29");
+  });
+});
+
+describe("裏面に記載があるのに住所が読めないとき", () => {
+  it("表面の古い住所を使わない", () => {
+    const lines = [{ text: "届出年月日 住居地 記載者印" }, { text: "2025年2月14日" }, { text: "(読めない文字)" }];
+    expect(backHasEntries(lines)).toBe(true);
+    expect(backHasEntries([{ text: "届出年月日 住居地 記載者印" }])).toBe(false);
+    // 下の欄(申請欄の押印など)の日付は住居地の記載ではない
+    expect(backHasEntries([{ text: "届出年月日 住居地 記載者印", top: 10 }, { text: "在留期間更新等許可申請欄", top: 300 }, { text: "2025.02.14 申請中", top: 320 }])).toBe(false);
+    expect(chooseAddress({ backPhoto: null, frontPhoto: "東京都新宿区西新宿2-8-1", backHasEntries: true })).toBeNull();
+    expect(chooseAddress({ backPhoto: null, frontPhoto: "東京都新宿区西新宿2-8-1", backHasEntries: false })).toEqual({ address: "東京都新宿区西新宿2-8-1", source: "front_photo" });
   });
 });

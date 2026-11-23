@@ -2,7 +2,7 @@
  * 撮影画像の処理。カメラロールには保存しない。一時ファイルは処理後すぐ消す(CLAUDE.md ルール4)
  */
 import TextRecognition, { TextRecognitionScript } from "@react-native-ml-kit/text-recognition";
-import { extractCardNumberCandidates, frontFieldsFromOcr, latestAddressFromBackOcr, type FrontOcrFields, type OcrLine } from "@zairyu/shared";
+import { backHasEntries, extractCardNumberCandidates, frontFieldsFromOcr, latestAddressFromBackOcr, type FrontOcrFields, type OcrLine } from "@zairyu/shared";
 import { File, Paths } from "expo-file-system";
 import { manipulateAsync, SaveFormat } from "expo-image-manipulator";
 
@@ -41,11 +41,43 @@ export async function recognizeFront(pathOrUrl: string): Promise<{ numbers: stri
   return { numbers, fields };
 }
 
+export interface BackOcr {
+  /** 住居地記載欄のいちばん新しい記載(読めなければ null) */
+  address: string | null;
+  /** 記載(届出年月日)があったか。true で address が null なら、表面の古い住所を使わない */
+  hasEntries: boolean;
+}
+
+/**
+ * 裏面の端末内 OCR。住所が読めなければ、画像を 90 度・270 度回して読み直す
+ * (枠の切り抜きを入れる前に保存した写真には、カードが縦向きに写っているものがあるため)
+ */
+export async function recognizeBack(pathOrUrl: string): Promise<BackOcr> {
+  let hasEntries = false;
+  for (const rotate of [0, 90, 270]) {
+    let path = pathOrUrl;
+    let temp: string | null = null;
+    try {
+      if (rotate) {
+        temp = (await manipulateAsync(toFileUrl(pathOrUrl), [{ rotate }], { compress: 1, format: SaveFormat.JPEG })).uri;
+        path = temp;
+      }
+      const lines = await japaneseLines(path);
+      hasEntries ||= backHasEntries(lines);
+      const address = latestAddressFromBackOcr(lines);
+      if (address) return { address, hasEntries: true };
+    } catch {
+      // この向きでは読めなかった。次の向きを試す
+    } finally {
+      if (temp) deleteFile(temp);
+    }
+  }
+  return { address: null, hasEntries };
+}
+
 /** 裏面の端末内 OCR: 住居地記載欄のいちばん新しい記載 */
 export async function recognizeBackAddress(pathOrUrl: string): Promise<string | null> {
-  return japaneseLines(pathOrUrl)
-    .then(latestAddressFromBackOcr)
-    .catch(() => null);
+  return (await recognizeBack(pathOrUrl)).address;
 }
 
 export interface Rect {

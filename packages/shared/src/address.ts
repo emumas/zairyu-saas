@@ -117,13 +117,32 @@ export function latestAddressFromBackOcr(lines: readonly OcrLine[]): string | nu
   return latest;
 }
 
+/** 裏面の住居地記載欄に記載(届出年月日)があるか。記載があるのに住所が読めないときは、表面の古い住所を使わない */
+export function backHasEntries(lines: readonly OcrLine[]): boolean {
+  // 下の欄(資格外活動許可欄・在留期間更新等許可申請欄)の日付は数えない
+  const lower = lines.filter((l) => /資格外活動|申請欄/.test(l.text) && l.top !== undefined).map((l) => l.top!);
+  const limit = lower.length ? Math.min(...lower) : Infinity;
+  return lines.some((l) => {
+    if (l.top !== undefined && l.top >= limit) return false;
+    DATE_RE.lastIndex = 0;
+    return DATE_RE.test(toHalfWidth(l.text));
+  });
+}
+
 /**
  * 採用する住居地を決める。裏面に新しい住所がある場合はそちらを採用する
  * (IC の裏面追記 > 裏面の読み取り > 表面の読み取り)
  */
-export function chooseAddress(c: { icBack?: string | null; backPhoto?: string | null; frontPhoto?: string | null }): { address: string; source: AddressSource } | null {
+export function chooseAddress(c: {
+  icBack?: string | null;
+  backPhoto?: string | null;
+  frontPhoto?: string | null;
+  /** 裏面に記載(届出年月日)が読めたか。true で住所が読めなければ、表面(古い住所)は使わない */
+  backHasEntries?: boolean;
+}): { address: string; source: AddressSource } | null {
   if (c.icBack?.trim()) return { address: cleanAddress(c.icBack), source: "ic_back" };
   if (c.backPhoto?.trim()) return { address: c.backPhoto.trim(), source: "back_photo" };
+  if (c.backHasEntries) return null;
   if (c.frontPhoto?.trim()) return { address: c.frontPhoto.trim(), source: "front_photo" };
   return null;
 }

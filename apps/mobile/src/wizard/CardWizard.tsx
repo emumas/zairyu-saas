@@ -21,7 +21,7 @@ import { useState } from "react";
 import { Switch, Text, View } from "react-native";
 import { api, messageOf } from "../api";
 import { IcProgressView, icErrorMessage, isCardReadError, readIcPayload, type IcProgress } from "../ic/readIc";
-import { compressForUpload, deleteFile, recognizeBackAddress, recognizeFront } from "../photo";
+import { compressForUpload, deleteFile, recognizeBack, recognizeFront } from "../photo";
 import { FORMAT_LABEL } from "../screens/format";
 import { Button, Card, Choice, color, Field, Message, Row, Screen } from "../ui/kit";
 import { CameraCapture } from "../ui/CameraCapture";
@@ -71,6 +71,7 @@ export function CardWizard({ personId, personName, onClose, onDone }: { personId
   /** 表面・裏面の端末内 OCR で読み取った候補(画像は外部に送らない) */
   const [frontOcr, setFrontOcr] = useState<FrontOcrFields | null>(null);
   const [backOcrAddress, setBackOcrAddress] = useState<string | null>(null);
+  const [backEntries, setBackEntries] = useState(false);
   /** 住居地: 自動で選んだ値(null)か、利用者が直した値 */
   const [addressEdit, setAddressEdit] = useState<string | null>(null);
 
@@ -94,7 +95,9 @@ export function CardWizard({ personId, personName, onClose, onDone }: { personId
 
   async function onBackCaptured(path: string) {
     try {
-      setBackOcrAddress(await recognizeBackAddress(path));
+      const b = await recognizeBack(path);
+      setBackOcrAddress(b.address);
+      setBackEntries(b.hasEntries);
       setBack(await compressForUpload(path));
     } finally {
       deleteFile(path);
@@ -183,7 +186,7 @@ export function CardWizard({ personId, personName, onClose, onDone }: { personId
 
   // 住居地: 裏面に新しい住所がある場合はそちらを採用する(IC の裏面追記 > 裏面の読み取り > 表面の読み取り)
   const icBackAddress = verify?.icBackAddress?.address ?? null;
-  const autoAddress = chooseAddress({ icBack: icBackAddress, backPhoto: backOcrAddress, frontPhoto: frontOcr?.address ?? null });
+  const autoAddress = chooseAddress({ icBack: icBackAddress, backPhoto: backOcrAddress, frontPhoto: frontOcr?.address ?? null, backHasEntries: backEntries });
   const address = icBackAddress ? icBackAddress : (addressEdit ?? autoAddress?.address ?? "");
   const addressSource: AddressSource | null = icBackAddress ? "ic_back" : addressEdit !== null ? "manual" : (autoAddress?.source ?? null);
 

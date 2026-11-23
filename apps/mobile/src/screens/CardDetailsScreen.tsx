@@ -9,7 +9,7 @@ import { ADDRESS_SOURCE_LABEL, chooseAddress, formatPostalCode, type AddressSour
 import { useEffect, useState } from "react";
 import { Switch, Text, View } from "react-native";
 import { api, messageOf } from "../api";
-import { recognizeBackAddress, recognizeFront, recognizeSavedImage } from "../photo";
+import { recognizeBack, recognizeFront, recognizeSavedImage } from "../photo";
 import { Button, Card, Choice, color, Field, Message, Row, Screen } from "../ui/kit";
 
 type CardRow = Awaited<ReturnType<typeof api.cards.listForPerson.query>>[number];
@@ -42,6 +42,7 @@ export function CardDetailsScreen({ personId, personName, onClose, onSaved }: { 
   const [form, setForm] = useState<Form | null>(null);
   const [front, setFront] = useState<FrontOcrFields | null>(null);
   const [backAddress, setBackAddress] = useState<string | null>(null);
+  const [backUnread, setBackUnread] = useState(false);
   const [addressSource, setAddressSource] = useState<AddressSource | null>(null);
   const [permanent, setPermanent] = useState(false);
   const [reading, setReading] = useState(false);
@@ -79,7 +80,9 @@ export function CardDetailsScreen({ personId, personName, onClose, onSaved }: { 
     setMsg(null);
     try {
       const f = frontImage ? await recognizeSavedImage((await api.cards.getImage.mutate({ imageId: frontImage.id })).data, recognizeFront) : null;
-      const b = backImage ? await recognizeSavedImage((await api.cards.getImage.mutate({ imageId: backImage.id })).data, recognizeBackAddress) : null;
+      const back = backImage ? await recognizeSavedImage((await api.cards.getImage.mutate({ imageId: backImage.id })).data, recognizeBack) : null;
+      const b = back?.address ?? null;
+      setBackUnread(!!back && !back.address && back.hasEntries);
       const fields = f?.fields ?? null;
       setFront(fields);
       setBackAddress(b);
@@ -95,7 +98,8 @@ export function CardDetailsScreen({ personId, personName, onClose, onSaved }: { 
           if (fields.cardValidUntil) next.cardValidUntil = fields.cardValidUntil;
         }
         // 住居地: 裏面に新しい住所があればそちらを採用する
-        const chosen = addressFromIc ? null : chooseAddress({ backPhoto: b, frontPhoto: fields?.address ?? null });
+        // 裏面に記載があるのに読めないときは、表面の古い住所を入れない
+        const chosen = addressFromIc ? null : chooseAddress({ backPhoto: b, frontPhoto: fields?.address ?? null, backHasEntries: back?.hasEntries ?? false });
         if (chosen) {
           next.address = chosen.address;
           setAddressSource(chosen.source);
@@ -240,7 +244,13 @@ export function CardDetailsScreen({ personId, personName, onClose, onSaved }: { 
             />
             {readDone && was(card.address)}
             {addressSource && <Text style={{ color: color.sub, fontSize: 12 }}>入力欄の値: {ADDRESS_SOURCE_LABEL[addressSource]}。裏面に新しい住所の記載があればそちらを優先します。</Text>}
-            {readDone && !front?.address && !backAddress && <Text style={{ color: color.sub, fontSize: 12 }}>写真から住居地を読み取れませんでした。</Text>}
+            {readDone && backUnread && (
+              <Message
+                text="裏面に住所の記載がありますが、読み取れませんでした(表面の住所は古いため入れていません)。登録者の画面の「写真を撮り直す」で裏面を撮り直すか、裏面を見て入力してください。"
+                tone="warn"
+              />
+            )}
+            {readDone && !backUnread && !front?.address && !backAddress && <Text style={{ color: color.sub, fontSize: 12 }}>写真から住居地を読み取れませんでした。</Text>}
           </>
         )}
         <Field
