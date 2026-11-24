@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><title>競合比較</title>
+<style>
+@page { size: A4 landscape; margin: 12mm 12mm 14mm; }
+body { font-family: "IPAPGothic", "IPAGothic", sans-serif; font-size: 8.6pt; line-height: 1.5; color: #1f2328; }
+h1 { font-size: 17pt; color: #0b4f8a; margin: 0 0 1mm; }
+h2 { font-size: 12pt; color: #0b4f8a; border-bottom: 2px solid #0b4f8a; margin: 3.5mm 0 1.5mm; padding-bottom: 0.5mm; }
+.sub { color: #59636e; font-size: 8.5pt; margin: 0 0 2mm; }
+table { border-collapse: collapse; width: 100%; }
+thead { display: table-header-group; }
+tr { page-break-inside: avoid; }
+th, td { border: 1px solid #c9d1d9; padding: 0.9mm 1.5mm; vertical-align: top; text-align: left; }
+th { background: #eef4fa; }
+td.f { font-weight: bold; width: 15%; background: #f8fafc; }
+td.me, th.me { background: #fff8e6; }
+.box { border: 1px solid #c9d1d9; border-radius: 2mm; padding: 2mm 3mm; margin: 2mm 0; }
+.legend { font-size: 8pt; color: #59636e; }
+.cols { display: flex; gap: 5mm; } .cols > div { flex: 1; }
+ol, ul { margin: 1mm 0; padding-left: 5mm; }
+.src { font-size: 7pt; color: #59636e; word-break: break-all; }
+</style></head><body>
+<h1>在留カード管理SaaS 競合比較</h1>
+<p class="sub">作成日: 2026年11月24日 ／ 競合の情報は各社の発表・紹介記事の Web 検索結果の要約です(公式ページの中身は直接確認していません)。料金・機能は変わることがあるため、契約・価格決定の前に各社の公式情報で確認してください。</p>
+<p class="legend">○=あり　△=一部・条件付き　×=なし　ー=今回の調査で情報なし(機能が無いという意味ではない)</p>
+<table>
+<thead><tr><th>機能</th><th class="me" style="width:21%">このアプリ(開発中)</th><th style="width:12%">入管庁の読取アプリ(無料)</th><th style="width:15%">ビザマネ</th><th style="width:15%">ロムテン</th><th style="width:13%">GPASS</th></tr></thead>
+<tr><td class="f">IC 読み取りによる偽造チェック</td><td class="me">○ 署名の検証+入管庁の証明書で発行者まで確認(旧様式は実カードで確認済み)</td><td>○ 偽造・改ざんの判定</td><td>○</td><td>○</td><td>○ 入管庁の方式で偽造検知</td></tr>
+<tr><td class="f">第2世代・特定在留カード</td><td class="me">△ 実装済み・実カード未確認(特定在留カードは配送鍵が未入手)</td><td>○ 2026年8月に新様式向けの改修</td><td>ー</td><td>ー</td><td>○ 対応と案内</td></tr>
+<tr><td class="f">顔認証での本人確認</td><td class="me">×</td><td>×</td><td>ー</td><td>ー</td><td>○</td></tr>
+<tr><td class="f">スマホアプリ</td><td class="me">△ Android のみ(iPhone は未対応)</td><td>○</td><td>○ iOS・Android</td><td>○</td><td>○</td></tr>
+<tr><td class="f">PC+カードリーダーで読み取り</td><td class="me">×</td><td>○</td><td>ー</td><td>○ Windows アプリ</td><td>ー</td></tr>
+<tr><td class="f">券面の文字の読み取り(OCR)</td><td class="me">○ 端末の中だけで処理。住所は郵便番号データで補正</td><td>ー</td><td>○</td><td>ー</td><td>ー</td></tr>
+<tr><td class="f">期限アラート</td><td class="me">○ 画面・ダッシュボード。メール・プッシュの送信は外部設定待ち</td><td>×</td><td>○ 3か月前に本部・店長・本人へメール</td><td>○</td><td>○</td></tr>
+<tr><td class="f">就労可否の判定</td><td class="me">○ カードの記載から判定(職種との照合は無し)</td><td>×</td><td>○ 200種類以上のパターン・裏面スタンプも案内</td><td>○ 200以上の組み合わせ・働ける時間も提示</td><td>ー</td></tr>
+<tr><td class="f">週28時間チェック</td><td class="me">○ 勤怠 CSV で、どの曜日から数えても7日で28時間以内かを確認</td><td>×</td><td>ー</td><td>△ 働ける時間の提示のみ確認</td><td>ー</td></tr>
+<tr><td class="f">失効情報照会</td><td class="me">△ 管理者が入管庁のページで確認して記録(自動化しない方針)</td><td>○ 照会ページ</td><td>○ 番号と期限から照会</td><td>ー</td><td>○ 失効確認を自動化</td></tr>
+<tr><td class="f">雇用状況届出などの作成・提出</td><td class="me">×</td><td>×</td><td>○</td><td>○ ワンクリック提出</td><td>ー</td></tr>
+<tr><td class="f">従業員本人が使うアプリ</td><td class="me">×</td><td>ー</td><td>○ 本人も操作できる</td><td>○</td><td>○</td></tr>
+<tr><td class="f">多言語表示</td><td class="me">× 後回し</td><td>ー</td><td>○</td><td>ー</td><td>ー</td></tr>
+<tr><td class="f">人事・労務システムとの連携</td><td class="me">△ CSV の取込・出力のみ</td><td>×</td><td>ー</td><td>ー</td><td>○ SmartHR と双方向に連携</td></tr>
+<tr><td class="f">拠点別の権限・複数拠点</td><td class="me">○ 拠点ごとの担当・閲覧者</td><td>×</td><td>○ 本社・事業所</td><td>ー</td><td>ー</td></tr>
+<tr><td class="f">監査ログ</td><td class="me">○ 画像の閲覧・出力まで記録</td><td>×</td><td>ー</td><td>ー</td><td>ー</td></tr>
+<tr><td class="f">退職後のデータの自動削除</td><td class="me">○ 保存期間を設定(3〜5年)</td><td>ー</td><td>ー</td><td>ー</td><td>ー</td></tr>
+<tr><td class="f">二重登録の検知・再入社</td><td class="me">○ 前回の退職理由も表示</td><td>×</td><td>ー</td><td>ー</td><td>ー</td></tr>
+<tr><td class="f">年末調整などへの基本情報の出力</td><td class="me">○ CSV・1項目ずつのコピー</td><td>×</td><td>ー</td><td>ー</td><td>ー</td></tr>
+<tr><td class="f">料金</td><td class="me">未定(基本料+人数×単価・段階制を設定可)</td><td>無料</td><td>30名以下 0円/31名以上 1名300円/月・初期費用30万円〜(第三者の記事)</td><td>ー</td><td>ー(資料請求)</td></tr>
+<tr><td class="f">提供状況</td><td class="me">開発中(本番は未公開)</td><td>提供中</td><td>2020年〜</td><td>2021年〜(大手コンビニが導入)</td><td>提供中</td></tr>
+</table>
+
+<h2>まとめ</h2>
+<div class="cols">
+<div class="box"><b>このアプリの強み</b>
+<ul>
+<li>署名の検証に加え、入管庁の証明書で発行者まで確かめる偽造チェック</li>
+<li>勤怠 CSV と突き合わせる週28時間チェック(今回の調査では他社に見当たらず)</li>
+<li>個人情報の守り方: 監査ログ・テナント分離・暗号化・退職後の自動削除・画像を外部に送らない読み取り</li>
+<li>二重登録の検知、再入社時の前回の退職理由、年末調整向けの出力</li>
+</ul></div>
+<div class="box"><b>競合に比べて足りないところ(本番前に検討したい順)</b>
+<ol>
+<li>iPhone 対応</li>
+<li>期限アラートのメール・プッシュの実送信(実装済み・外部設定が残り)</li>
+<li>外国人雇用状況届出などの作成・提出</li>
+<li>従業員本人が使うアプリと多言語表示</li>
+<li>人事・労務システムとの連携(SmartHR など)</li>
+<li>PC とカードリーダーでの読み取り、顔認証での本人確認</li>
+<li>料金の決定(ビザマネの「30名以下0円」が比較対象になりやすい)</li>
+</ol></div>
+</div>
+
+<h2>出典(Web 検索で参照したページ)</h2>
+<p class="src">
+ビザマネ(公式) https://visamane.jp/ ／ 機能 https://visamane.jp/top/features/ ／ よくある質問 https://visamane.jp/faq/<br>
+ビザマネの料金・機能(スクエアスタジオ) https://squarestudio.jp/foreign-worker/visamane/ ／ ASPIC https://www.aspicjapan.org/asu/service/98271 ／ ASCII STARTUP https://ascii.jp/elem/000/004/037/4037945/ ／ ウィルグループ https://willgroup.co.jp/profile/news/2021/01/13/536/<br>
+ロムテン(公式) https://romuten.jp/ ／ Windows アプリ https://news.biglobe.ne.jp/economy/0214/prt_250214_6200265295.html ／ リモート真贋判定 https://officenomikata.jp/news/11977/ ／ 届出提出 https://xexeq.jp/blogs/media/topics41063 ／ ファミリーマート https://www.family.co.jp/company/news_releases/2021/20210517_01.html ／ 従業員向けアプリ https://prtimes.jp/main/html/rd/p/000000023.000058188.html<br>
+GPASS(公式) https://liquidinc.asia/gpass ／ SmartHR Plus 公開 https://prtimes.jp/main/html/rd/p/000000143.000061051.html<br>
+入管庁 在留カード等読取アプリケーション サポートページ https://www.moj.go.jp/isa/applications/procedures/rcc-support.html ／ 新様式と読取アプリ https://takayama-gyosei.com/zairyu-card-shinyoshiki-2026/ ／ 外国人材管理ツール13選(ASPIC) https://www.aspicjapan.org/asu/article/29079
+</p>
+</body></html>
