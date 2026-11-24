@@ -252,13 +252,35 @@ const NATIONALITY_CODES: Record<string, string> = {
   マレーシア: "MYS", ロシア: "RUS", ウズベキスタン: "UZB", イラン: "IRN", ナイジェリア: "NGA", ボリビア: "BOL", アルゼンチン: "ARG", メキシコ: "MEX",
   シンガポール: "SGP", ラオス: "LAO", トルコ: "TUR", エジプト: "EGY", ガーナ: "GHA", ケニア: "KEN", イタリア: "ITA", スペイン: "ESP",
   ウクライナ: "UKR", コロンビア: "COL", パラグアイ: "PRY", キルギス: "KGZ", スリランカ民主社会主義共和国: "LKA", 香港: "HKG",
+  朝鮮: "PRK", マカオ: "MAC", 東ティモール: "TLS", ブータン: "BTN", モルディブ: "MDV", アフガニスタン: "AFG", カザフスタン: "KAZ",
+  タジキスタン: "TJK", トルクメニスタン: "TKM", アゼルバイジャン: "AZE", ジョージア: "GEO", アルメニア: "ARM", サウジアラビア: "SAU",
+  アラブ首長国連邦: "ARE", イスラエル: "ISR", ヨルダン: "JOR", シリア: "SYR", イラク: "IRQ", レバノン: "LBN", モロッコ: "MAR",
+  チュニジア: "TUN", アルジェリア: "DZA", エチオピア: "ETH", タンザニア: "TZA", ウガンダ: "UGA", カメルーン: "CMR", セネガル: "SEN",
+  南アフリカ: "ZAF", ジンバブエ: "ZWE", コンゴ民主共和国: "COD", チリ: "CHL", エクアドル: "ECU", ベネズエラ: "VEN", キューバ: "CUB",
+  ドミニカ共和国: "DOM", ハイチ: "HTI", ジャマイカ: "JAM", グアテマラ: "GTM", ホンジュラス: "HND", エルサルバドル: "SLV",
+  ニカラグア: "NIC", コスタリカ: "CRI", パナマ: "PAN", ウルグアイ: "URY", ニュージーランド: "NZL", フィジー: "FJI",
+  パプアニューギニア: "PNG", トンガ: "TON", サモア: "WSM", ポーランド: "POL", ルーマニア: "ROU", ブルガリア: "BGR", ハンガリー: "HUN",
+  チェコ: "CZE", オランダ: "NLD", ベルギー: "BEL", スイス: "CHE", オーストリア: "AUT", スウェーデン: "SWE", ノルウェー: "NOR",
+  デンマーク: "DNK", フィンランド: "FIN", アイルランド: "IRL", ポルトガル: "PRT", ギリシャ: "GRC", ベラルーシ: "BLR", モルドバ: "MDA",
+  ブルネイ: "BRN", 無国籍: "XXA",
+};
+/** IC・券面の英語の国名(主なもの) */
+const NATIONALITY_CODES_EN: Record<string, string> = {
+  CHINA: "CHN", KOREA: "KOR", "REPUBLIC OF KOREA": "KOR", "VIET NAM": "VNM", VIETNAM: "VNM", PHILIPPINES: "PHL", BRAZIL: "BRA", NEPAL: "NPL",
+  INDONESIA: "IDN", MYANMAR: "MMR", THAILAND: "THA", "UNITED STATES": "USA", "U.S.A.": "USA", INDIA: "IND", "SRI LANKA": "LKA", PERU: "PER",
+  BANGLADESH: "BGD", PAKISTAN: "PAK", CAMBODIA: "KHM", MONGOLIA: "MNG", "UNITED KINGDOM": "GBR", TAIWAN: "TWN", MALAYSIA: "MYS", UZBEKISTAN: "UZB",
 };
 export function nationalityCode(s: string | null | undefined): string | null {
   if (!s) return null;
   const t = s.normalize("NFKC").trim().toUpperCase();
   if (/^[A-Z]{3}$/.test(t)) return t;
-  const key = s.trim().replace(/\s/g, "");
-  return NATIONALITY_CODES[key] ?? (/^中国/.test(key) && /台湾/.test(key) ? "TWN" : null);
+  const key = s.normalize("NFKC").trim().replace(/\s/g, "").replace(/[()()]/g, "");
+  if (NATIONALITY_CODES_EN[t]) return NATIONALITY_CODES_EN[t]!;
+  if (/^中国/.test(key) && /台湾/.test(key)) return "TWN";
+  // 「中国(香港)」のような書き方は、かっこの中を先に見る
+  const inner = /[((](.+)[))]/.exec(s.normalize("NFKC"));
+  if (inner && NATIONALITY_CODES[inner[1]!.trim()]) return NATIONALITY_CODES[inner[1]!.trim()]!;
+  return NATIONALITY_CODES[key] ?? null;
 }
 
 /**

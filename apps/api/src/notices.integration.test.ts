@@ -61,6 +61,11 @@ describe.skipIf(!url)("外国人雇用状況の届出", () => {
     expect(await codeOf(admin.org.sites.update({ id: tokyo, insuranceOfficeNumber: "abc" }))).toBe("BAD_REQUEST");
     await admin.org.settings.updateEmployer({ name: "株式会社例", address: "東京都新宿区西新宿2-8-1", phone: "03-0000-0000", representativeName: "例 太郎" });
     expect(await admin.org.settings.employer()).toMatchObject({ name: "株式会社例", representativeName: "例 太郎", noticesFrom: "2026-04-01" });
+    // 管理を始める日を早めると、前の入社も一覧に出る(未来の日付は不可)
+    await admin.org.settings.updateEmployer({ noticesFrom: "2026-02-01" });
+    expect((await admin.notices.list()).items.some((i) => i.employeeCode === "OLD")).toBe(true);
+    expect(await codeOf(admin.org.settings.updateEmployer({ noticesFrom: "2026-12-01" }))).toBe("BAD_REQUEST");
+    await admin.org.settings.updateEmployer({ noticesFrom: "2026-04-01" });
     const d = await admin.notices.detail({ personId: ids.INS!, kind: "hire", eventDate: "2026-04-10" });
     const f = (label: string) => d.fields.find((x) => x.label === label)?.value;
     expect(f("外国人の氏名(ローマ字)")).toBe("NAME INS");

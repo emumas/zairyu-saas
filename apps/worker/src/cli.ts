@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 import { createDb } from "@zairyu/db";
 import { createVaultFromEnv } from "@zairyu/vault";
 import { recordDailyBilling } from "./billing.js";
-import { activeTenantIds, generateAlerts, sendNotifications } from "./jobs.js";
+import { activeTenantIds, generateAlerts, generateNoticeAlerts, sendNotifications } from "./jobs.js";
 import { notifierFromEnv } from "./notifiers.js";
 import { purgeAuditLogs, purgeExpired, sweepOrphanBlobs } from "./purge.js";
 
@@ -77,6 +77,14 @@ try {
         }
         const r = await generateAlerts(db, tenantId, Date.now());
         console.log(`tenant=${tenantId} alerts_created=${r.created} recipients=${r.notified}`);
+        // 外国人雇用状況の届出の期限(失敗しても期限アラート・送信は止めない)
+        try {
+          const n = await generateNoticeAlerts(db, tenantId, Date.now());
+          if (n.created > 0) console.log(`tenant=${tenantId} notice_alerts_created=${n.created} recipients=${n.notified}`);
+        } catch (e) {
+          failures++;
+          console.error(`tenant=${tenantId} notice_alert_error=${(e as Error).name}`);
+        }
       }
       const s = await sendNotifications(db, tenantId, notifier, Date.now());
       if (s.sent + s.failed > 0) console.log(`tenant=${tenantId} sent=${s.sent} failed=${s.failed}`);

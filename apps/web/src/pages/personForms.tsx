@@ -79,8 +79,8 @@ export function PersonEditForm({ person, onDone }: { person: Person; onDone: () 
         <input type="tel" value={f.phone} onChange={(e) => setF({ ...f, phone: e.target.value })} placeholder="090-1234-5678" maxLength={30} />
       </label>
       <label className="field">
-        <span>国籍・地域(英大文字 3 文字)</span>
-        <input value={f.nationality} onChange={(e) => setF({ ...f, nationality: e.target.value })} placeholder="VNM" maxLength={3} />
+        <span>国籍・地域(国コード VNM など、または国名。カードを登録すると空欄は自動で入ります)</span>
+        <input value={f.nationality} onChange={(e) => setF({ ...f, nationality: e.target.value })} placeholder="VNM / ベトナム" maxLength={30} />
       </label>
       <label className="field">
         <span>生年月日</span>

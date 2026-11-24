@@ -64,6 +64,8 @@ export const alertType = pgEnum("alert_type", [
   "hours_limit",
   /** 署名検証に失敗(偽造の疑い)。登録時に即時通知 */
   "needs_review",
+  /** 外国人雇用状況の届出の期限が近い・過ぎた(未提出) */
+  "notice_due",
 ]);
 export const notificationChannel = pgEnum("notification_channel", ["push", "email"]);
 export const notificationStatus = pgEnum("notification_status", ["pending", "sent", "failed"]);

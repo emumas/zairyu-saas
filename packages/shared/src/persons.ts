@@ -1,6 +1,7 @@
 /** 登録者 API の入出力(mobile / web / api で共有) */
 import { z } from "zod";
 import { EXPIRY_BUCKETS } from "./expiry.js";
+import { nationalityCode } from "./address.js";
 import { isValidDate } from "./jst.js";
 
 export const dateString = z.string().refine(isValidDate, "日付は YYYY-MM-DD で入力してください");
@@ -16,7 +17,12 @@ export const employeeCodeSchema = z
   .max(50)
   .regex(/^[\x21-\x7E]+$/, "社員番号は半角英数記号で入力してください");
 /** 国籍・地域(ISO 3166-1 alpha-3 相当の英大文字 3 文字) */
-export const nationalitySchema = z.string().regex(/^[A-Z]{3}$/, "国籍は英大文字 3 文字(例: VNM)で入力してください");
+/** 国籍・地域の国コード(英大文字 3 文字)。「ベトナム」「vnm」のような入力も国コードに直す */
+export const nationalitySchema = z
+  .string()
+  .trim()
+  .transform((v) => nationalityCode(v) ?? v.toUpperCase())
+  .pipe(z.string().regex(/^[A-Z]{3}$/, "国籍は英大文字 3 文字(例: VNM)か国名(例: ベトナム)で入力してください"));
 
 /** ひらがなをカタカナに、全角空白を半角にそろえる */
 export function toKatakana(s: string): string {

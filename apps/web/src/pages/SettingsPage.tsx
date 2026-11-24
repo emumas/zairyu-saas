@@ -8,7 +8,7 @@ import { api, messageOf } from "../api";
 import { Button, Card, Message } from "../ui";
 
 type Settings = { retentionYears: number; auditRetentionYears: number };
-type Employer = { name: string; address: string; phone: string; representativeName: string };
+type Employer = { name: string; address: string; phone: string; representativeName: string; noticesFrom: string };
 
 /** 外国人雇用状況の届出に書く事業主の情報 */
 function EmployerCard() {
@@ -20,7 +20,7 @@ function EmployerCard() {
   useEffect(() => {
     api.org.settings.employer.query().then(
       (e) => {
-        setF({ name: e.name ?? "", address: e.address ?? "", phone: e.phone ?? "", representativeName: e.representativeName ?? "" });
+        setF({ name: e.name ?? "", address: e.address ?? "", phone: e.phone ?? "", representativeName: e.representativeName ?? "", noticesFrom: e.noticesFrom });
         setFrom(e.noticesFrom);
       },
       (e) => setError(messageOf(e)),
@@ -32,7 +32,9 @@ function EmployerCard() {
     if (!f) return;
     setBusy(true);
     try {
+      if (f.noticesFrom < from && !window.confirm(`${f.noticesFrom} 以後の入社・退職がすべて「届出」の一覧に出ます(提出済みのものは「提出済みにする」で記録してください)。変更しますか?`)) return;
       await api.org.settings.updateEmployer.mutate(f);
+      setFrom(f.noticesFrom);
       setMsg("保存しました");
       setError(null);
     } catch (e) {
@@ -59,6 +61,10 @@ function EmployerCard() {
       <label className="field">
         <span>代表者の氏名</span>
         <input value={f.representativeName} onChange={set("representativeName")} maxLength={50} />
+      </label>
+      <label className="field">
+        <span>届出の管理を始める日(この日以後の雇入れ・離職を「届出」の一覧に出します)</span>
+        <input type="date" value={f.noticesFrom} onChange={set("noticesFrom")} />
       </label>
       <Message text={error} />
       <Message text={msg} tone="ok" />

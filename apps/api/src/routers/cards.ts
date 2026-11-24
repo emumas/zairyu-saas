@@ -570,6 +570,12 @@ export const cardsRouter = router({
         if (patch.postalCode !== undefined && patch.postalCode !== card.postalCode) changed.push("postalCode");
         if (changed.length === 0) throw new TRPCError({ code: "BAD_REQUEST", message: "変更された項目がありません" });
         await updateCard(tx, card.id, patch);
+        // 登録者の生年月日・国籍(国コード)が空欄なら、カードの値で埋める
+        const filled = await fillPersonFromCard(tx, card.personId, {
+          birthDate: patch.birthDate !== undefined ? patch.birthDate : card.birthDate,
+          nationality: patch.nationality !== undefined ? patch.nationality : card.nationality,
+        });
+        if (filled.length > 0) await ctx.audit(tx, { action: "person.update", targetType: "person", targetId: card.personId, detail: { via: "card_details", fields: filled } });
         await insertVerification(tx, {
           cardId: card.id,
           method: "visual",

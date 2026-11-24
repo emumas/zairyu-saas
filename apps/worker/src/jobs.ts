@@ -11,6 +11,7 @@ import {
   lockDueNotifications,
   markAlertsQueued,
   markNotification,
+  noticesDueSoon,
   pushTokensFor,
   removePushToken,
   schema,
@@ -18,7 +19,7 @@ import {
   withTenant,
   type Db,
 } from "@zairyu/db";
-import { expiryAlertFor, expiryDigest, jstDate, type ExpiryAlertType, type NotificationPayload } from "@zairyu/shared";
+import { expiryAlertFor, expiryDigest, jstDate, noticeDueDigest, type ExpiryAlertType, type NotificationPayload } from "@zairyu/shared";
 import { ne } from "drizzle-orm";
 import type { Notifier } from "./notifiers.js";
 
@@ -60,6 +61,45 @@ export async function generateAlerts(db: Db, tenantId: string, nowMs: number): P
     }
     for (const [userId, counts] of perUser) {
       const payload = expiryDigest(counts);
+      if (payload) await enqueueNotifications(tx, [userId], payload, new Date(nowMs));
+    }
+    await markAlertsQueued(
+      tx,
+      created.map((a) => a.id),
+      new Date(nowMs),
+    );
+    return { created: created.length, notified: perUser.size };
+  });
+}
+
+/**
+ * 外国人雇用状況の届出の期限のアラート(毎日)。期限が 7 日以内か過ぎた未提出の届出ごとに 1 件(同じ届出は 1 度だけ)作り、
+ * 担当の拠点の管理者に件数だけのお知らせを送る(氏名は入れない)
+ */
+export async function generateNoticeAlerts(db: Db, tenantId: string, nowMs: number): Promise<{ created: number; notified: number }> {
+  const today = jstDate(nowMs);
+  return withTenant(db, tenantId, async (tx) => {
+    const due = await noticesDueSoon(tx, today);
+    const created = await insertAlertsIfAbsent(
+      tx,
+      due.map((d) => ({ personId: d.personId, cardId: null, type: "notice_due" as const, dueDate: d.dueDate })),
+    );
+    if (created.length === 0) return { created: 0, notified: 0 };
+    const byKey = new Map(due.map((d) => [`${d.personId}|${d.dueDate}`, d]));
+    const createdDue = created.flatMap((c) => byKey.get(`${c.personId}|${c.dueDate}`) ?? []);
+    const perUser = new Map<string, { overdue: number; soon: number }>();
+    const recipientsBySite = new Map<string, string[]>();
+    for (const d of createdDue) {
+      if (!recipientsBySite.has(d.siteId)) recipientsBySite.set(d.siteId, (await alertRecipients(tx, d.siteId)).map((r) => r.id));
+      for (const userId of recipientsBySite.get(d.siteId)!) {
+        const c = perUser.get(userId) ?? { overdue: 0, soon: 0 };
+        if (d.overdue) c.overdue++;
+        else c.soon++;
+        perUser.set(userId, c);
+      }
+    }
+    for (const [userId, counts] of perUser) {
+      const payload = noticeDueDigest(counts);
       if (payload) await enqueueNotifications(tx, [userId], payload, new Date(nowMs));
     }
     await markAlertsQueued(

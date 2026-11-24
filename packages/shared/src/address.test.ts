@@ -166,6 +166,10 @@ describe("氏名と国籍(登録者の下書き)", () => {
     expect(nationalityCode("vnm")).toBe("VNM");
     expect(nationalityCode("中国(台湾)")).toBe("TWN");
     expect(nationalityCode("どこか")).toBeNull();
+    expect(nationalityCode("ネパール")).toBe("NPL");
+    expect(nationalityCode("中国(香港)")).toBe("HKG");
+    expect(nationalityCode("VIET NAM")).toBe("VNM");
+    expect(nationalityCode("ポーランド")).toBe("POL");
   });
 });
 
@@ -180,5 +184,14 @@ describe("裏面の資格外活動許可欄・申請欄", () => {
   });
   it("欄の見出しだけでは許可・申請中としない", () => {
     expect(backPermissionsFromOcr([{ text: "資格外活動許可欄" }, { text: "在留期間更新等許可申請欄" }])).toEqual({ outsideActivity: null, pendingApplication: null });
+  });
+});
+
+describe("国籍の入力", () => {
+  it("国名・小文字も国コードに直す", async () => {
+    const { nationalitySchema } = await import("./persons.js");
+    expect(nationalitySchema.parse("ベトナム")).toBe("VNM");
+    expect(nationalitySchema.parse(" phl ")).toBe("PHL");
+    expect(nationalitySchema.safeParse("どこか").success).toBe(false);
   });
 });

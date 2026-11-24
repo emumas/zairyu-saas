@@ -20,7 +20,7 @@ import {
   type Tx,
 } from "@zairyu/db";
 import { eq } from "drizzle-orm";
-import { inviteUserInput, siteNameInput, USER_ROLES } from "@zairyu/shared";
+import { dateString, inviteUserInput, jstDate, siteNameInput, USER_ROLES } from "@zairyu/shared";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import type { Actor } from "../authz/permissions.js";
@@ -277,7 +277,16 @@ export const orgRouter = router({
         }),
       ),
     updateEmployer: permissionProcedure("tenant.settings")
-      .input(z.object({ name: optionalText(100), address: optionalText(200), phone: optionalText(20), representativeName: optionalText(50) }))
+      .input(
+        z.object({
+          name: optionalText(100),
+          address: optionalText(200),
+          phone: optionalText(20),
+          representativeName: optionalText(50),
+          /** 届出の管理を始める日(この日以後の雇入れ・離職を一覧に出す) */
+          noticesFrom: dateString.optional(),
+        }),
+      )
       .output(z.object({ ok: z.literal(true) }))
       .mutation(({ ctx, input }) =>
         ctx.tenantTx(async (tx) => {
@@ -286,7 +295,11 @@ export const orgRouter = router({
             ...(input.address !== undefined ? { employerAddress: input.address } : {}),
             ...(input.phone !== undefined ? { employerPhone: input.phone } : {}),
             ...(input.representativeName !== undefined ? { representativeName: input.representativeName } : {}),
+            ...(input.noticesFrom !== undefined ? { noticesFrom: input.noticesFrom } : {}),
           };
+          if (input.noticesFrom && input.noticesFrom > jstDate(ctx.services.now())) {
+            throw new TRPCError({ code: "BAD_REQUEST", message: "届出の管理を始める日は今日以前にしてください" });
+          }
           if (Object.keys(set).length === 0) throw new TRPCError({ code: "BAD_REQUEST", message: "変更する項目がありません" });
           await tx.update(schema.tenants).set(set).where(eq(schema.tenants.id, ctx.actor.tenantId));
           await ctx.audit(tx, { action: "tenant.employer_update", targetType: "tenant", targetId: ctx.actor.tenantId, detail: { fields: Object.keys(set).sort() } });

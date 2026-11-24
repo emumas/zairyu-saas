@@ -5,7 +5,7 @@
 import { alertDueDates, classifyExpiry, type CardForExpiry } from "./expiry.js";
 
 export type ExpiryAlertType = "expiry_90" | "expiry_60" | "expiry_30" | "expired";
-export type AlertType = ExpiryAlertType | "needs_review" | "recheck_revocation" | "hours_limit";
+export type AlertType = ExpiryAlertType | "needs_review" | "recheck_revocation" | "hours_limit" | "notice_due";
 
 export const ALERT_LABEL: Record<AlertType, string> = {
   expiry_90: "期限まで90日",
@@ -15,6 +15,7 @@ export const ALERT_LABEL: Record<AlertType, string> = {
   needs_review: "要確認(署名検証に失敗)",
   recheck_revocation: "失効情報の再照会",
   hours_limit: "就労時間の上限",
+  notice_due: "外国人雇用状況の届出の期限",
 };
 
 /**
@@ -33,7 +34,7 @@ export interface NotificationPayload {
   title: string;
   body: string;
   /** 通知の種類(アプリでの表示切り替え用) */
-  kind: "expiry_digest" | "needs_review" | "revoked" | "recheck_revocation" | "invite" | "password_reset" | "security";
+  kind: "expiry_digest" | "needs_review" | "revoked" | "recheck_revocation" | "invite" | "password_reset" | "security" | "notice_due";
 }
 
 /** 期限アラートのまとめ通知(受け取る人ごとに件数を数える) */
@@ -98,4 +99,17 @@ export type SecurityEvent = "password_changed" | "totp_reset" | "totp_changed";
 export function securityNotice(event: SecurityEvent): NotificationPayload {
   const what = { password_changed: "パスワードが変更されました", totp_reset: "管理者が認証アプリの設定をリセットしました。次のログインで設定し直してください", totp_changed: "認証アプリが付け替えられました" }[event];
   return { kind: "security", title: "在留カード管理 アカウントの変更", body: `${what}。心当たりがない場合は、すぐに管理者に連絡してください。` };
+}
+
+/** 外国人雇用状況の届出の期限のお知らせ(人数だけ。氏名は入れない) */
+export function noticeDueDigest(counts: { overdue: number; soon: number }): NotificationPayload | null {
+  const parts: string[] = [];
+  if (counts.overdue) parts.push(`期限切れ ${counts.overdue}件`);
+  if (counts.soon) parts.push(`7日以内 ${counts.soon}件`);
+  if (parts.length === 0) return null;
+  return {
+    kind: "notice_due",
+    title: "外国人雇用状況の届出の期限のお知らせ",
+    body: `未提出の届出があります(${parts.join("、")})。Web の「届出」で確認してください。`,
+  };
 }

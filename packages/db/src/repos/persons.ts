@@ -2,7 +2,7 @@
  * 登録者のリポジトリ。拠点の範囲(scope)は呼び出し側(権限ミドルウェア)が決め、ここで必ず SQL に反映する。
  * テナントの絞り込みは RLS が行う(withTenant のトランザクションで呼ぶこと)。
  */
-import { toKatakana, type ExpiryBucket } from "@zairyu/shared";
+import { nationalityCode, toKatakana, type ExpiryBucket } from "@zairyu/shared";
 import { and, asc, count, desc, eq, ilike, inArray, isNotNull, isNull, ne, or, sql, type SQL } from "drizzle-orm";
 import type { Tx } from "../client.js";
 import { personEmployments, persons, residenceCards, sites, verifications } from "../schema.js";
@@ -256,7 +256,9 @@ export async function findPersonsByEmployeeCodes(tx: Tx, codes: readonly string[
 export async function fillPersonFromCard(tx: Tx, id: string, v: { birthDate: string | null; nationality: string | null }): Promise<string[]> {
   const set: Record<string, unknown> = {};
   if (v.birthDate) set.birthDate = sql`coalesce(${persons.birthDate}, ${v.birthDate}::date)`;
-  if (v.nationality && /^[A-Z]{3}$/.test(v.nationality)) set.nationality = sql`coalesce(${persons.nationality}, ${v.nationality})`;
+  // カードの国籍・地域の表記(「フィリピン」など)を国コード(PHL)に直して入れる。直せない表記は入れない
+  const code = nationalityCode(v.nationality);
+  if (code) set.nationality = sql`coalesce(${persons.nationality}, ${code})`;
   if (Object.keys(set).length === 0) return [];
   const [before] = await tx.select({ birthDate: persons.birthDate, nationality: persons.nationality }).from(persons).where(eq(persons.id, id));
   await tx.update(persons).set(set).where(eq(persons.id, id));

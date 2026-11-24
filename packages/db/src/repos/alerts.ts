@@ -37,7 +37,7 @@ export async function insertAlertsIfAbsent(
     .insert(alerts)
     .values(rows)
     .onConflictDoNothing()
-    .returning({ id: alerts.id, personId: alerts.personId, type: alerts.type });
+    .returning({ id: alerts.id, personId: alerts.personId, type: alerts.type, dueDate: alerts.dueDate });
 }
 
 export async function markAlertsQueued(tx: Tx, ids: string[], at: Date): Promise<void> {

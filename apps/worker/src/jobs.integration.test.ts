@@ -4,7 +4,7 @@ import { createDb, schema, upsertPushToken, withPlatform, withTenant, type Db } 
 import { prepareTestDatabase } from "@zairyu/db/testing";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { generateAlerts, MAX_ATTEMPTS, sendNotifications } from "./jobs.js";
+import { generateAlerts, generateNoticeAlerts, MAX_ATTEMPTS, sendNotifications } from "./jobs.js";
 import { LogNotifier, type Notifier } from "./notifiers.js";
 
 const url = process.env.TEST_DATABASE_URL;
@@ -122,5 +122,39 @@ describe.skipIf(!url)("アラートジョブ", () => {
     expect(email).toMatchObject({ status: "failed", attempts: MAX_ATTEMPTS, lastError: "acs_Failed" });
     const devices = await withTenant(db, tenant, (tx) => tx.select().from(schema.userDevices).where(eq(schema.userDevices.userId, u.admin)));
     expect(devices).toHaveLength(0);
+  });
+
+  it("外国人雇用状況の届出: 期限が7日以内か過ぎた未提出の届出を、担当の拠点の管理者に件数だけ知らせる(1度だけ)", async () => {
+    await withPlatform(db, (tx) => tx.update(schema.tenants).set({ noticesFrom: "2026-06-01" }).where(eq(schema.tenants.id, tenant)));
+    const ids = await withTenant(db, tenant, async (tx) => {
+      const rows = await tx
+        .insert(schema.persons)
+        .values([
+          // 被保険者: 6/5 入社 → 期限 7/10(7/5 時点で 5 日前)
+          { siteId: tokyo, employeeCode: "N-INS", name: "氏名N1", hiredAt: "2026-06-05", employmentInsured: true },
+          // 被保険者でない: 6/20 入社 → 期限 7/31(まだ先)
+          { siteId: tokyo, employeeCode: "N-PART", name: "氏名N2", hiredAt: "2026-06-20", employmentInsured: false },
+          // 大阪・未設定: 6/2 入社 → 早いほう 7/10
+          { siteId: osaka, employeeCode: "N-OSAKA", name: "氏名N3", hiredAt: "2026-06-02" },
+          // 提出済み
+          { siteId: osaka, employeeCode: "N-DONE", name: "氏名N4", hiredAt: "2026-06-03", employmentInsured: true },
+        ])
+        .returning();
+      const done = rows.find((r) => r.employeeCode === "N-DONE")!;
+      await tx.insert(schema.employmentNotices).values({ personId: done.id, kind: "hire", eventDate: "2026-06-03", status: "submitted", submittedOn: "2026-06-10" });
+      return rows;
+    });
+    expect(ids).toHaveLength(4);
+    const before = (await outbox()).length;
+    const r = await generateNoticeAlerts(db, tenant, at("2026-07-05T00:30:00"));
+    expect(r.created).toBe(2);
+    const added = (await outbox()).slice(before);
+    const body = (id: string) => (added.find((n) => n.userId === id)?.payload as { body: string } | undefined)?.body;
+    expect(body(u.admin)).toBe("未提出の届出があります(7日以内 2件)。Web の「届出」で確認してください。");
+    expect(body(u.tokyo)).toBe("未提出の届出があります(7日以内 1件)。Web の「届出」で確認してください。");
+    expect(body(u.osaka)).toBe("未提出の届出があります(7日以内 1件)。Web の「届出」で確認してください。");
+    expect(JSON.stringify(added.map((n) => n.payload))).not.toContain("氏名");
+    // 同じ届出は 1 度だけ
+    expect((await generateNoticeAlerts(db, tenant, at("2026-07-12T00:30:00"))).created).toBe(0);
   });
 });

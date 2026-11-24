@@ -41,6 +41,9 @@ export function PersonCreateScreen({
   const [nationality, setNationality] = useState(person?.nationality ?? initial?.nationality ?? "");
   const [birthDate, setBirthDate] = useState(person?.birthDate ?? initial?.birthDate ?? "");
   const [hiredAt, setHiredAt] = useState(person?.hiredAt ?? (person ? "" : jstDate(Date.now())));
+  /** 雇用保険の加入(外国人雇用状況の届出の書式と期限が変わる) */
+  const [insured, setInsured] = useState<"yes" | "no" | "unset">(person?.employmentInsured === true ? "yes" : person?.employmentInsured === false ? "no" : "unset");
+  const insuredValue = insured === "yes" ? true : insured === "no" ? false : null;
   const [similar, setSimilar] = useState<Similar[]>([]);
   const [confirmDuplicate, setConfirmDuplicate] = useState(false);
 
@@ -87,6 +90,7 @@ export function PersonCreateScreen({
         if (nationality.trim().toUpperCase() !== (person.nationality ?? "")) patch.nationality = nationality.trim() ? nationality.trim().toUpperCase() : null;
         if (birthDate.trim() !== (person.birthDate ?? "")) patch.birthDate = birthDate.trim() || null;
         if (hiredAt.trim() !== (person.hiredAt ?? "")) patch.hiredAt = hiredAt.trim() || null;
+        if (insuredValue !== (person.employmentInsured ?? null)) patch.employmentInsured = insuredValue;
         if (Object.keys(patch).length === 1) {
           onCreated(person.id);
           return;
@@ -104,6 +108,7 @@ export function PersonCreateScreen({
         ...(nationality.trim() ? { nationality: nationality.trim().toUpperCase() } : {}),
         ...(birthDate.trim() ? { birthDate: birthDate.trim() } : {}),
         ...(hiredAt.trim() ? { hiredAt: hiredAt.trim() } : {}),
+        ...(insuredValue !== null ? { employmentInsured: insuredValue } : {}),
         ...(confirmDuplicate ? { confirmDuplicate: true } : {}),
       });
       onCreated(id);
@@ -127,9 +132,19 @@ export function PersonCreateScreen({
       <Field label="氏名" value={name} onChangeText={setName} placeholder="カードの表記どおり" />
       <Field label="フリガナ(任意。ひらがなでも可)" value={nameKana} onChangeText={setNameKana} placeholder="グエン ヴァン アー" />
       <Field label="電話番号(任意)" value={phone} onChangeText={setPhone} placeholder="090-1234-5678" keyboardType="phone-pad" />
-      <Field label="国籍・地域(任意。英大文字 3 文字)" value={nationality} onChangeText={setNationality} placeholder="VNM" autoCapitalize="characters" maxLength={3} />
+      <Field label="国籍・地域(任意。国コード VNM など、または国名。カードを登録すると自動で入ります)" value={nationality} onChangeText={setNationality} placeholder="VNM / ベトナム" maxLength={30} />
       <Field label="生年月日(任意。YYYY-MM-DD)" value={birthDate} onChangeText={setBirthDate} placeholder="1995-04-01" keyboardType="numbers-and-punctuation" />
       <Field label="入社日(任意。YYYY-MM-DD)" value={hiredAt} onChangeText={setHiredAt} placeholder="2024-04-01" keyboardType="numbers-and-punctuation" />
+      <Text style={{ fontWeight: "600" }}>雇用保険(外国人雇用状況の届出の書式と期限が変わります)</Text>
+      <Choice
+        options={[
+          { value: "yes" as const, label: "加入している(被保険者)" },
+          { value: "no" as const, label: "加入していない(アルバイトなど)" },
+          { value: "unset" as const, label: "未設定" },
+        ]}
+        value={insured}
+        onChange={setInsured}
+      />
       {similar.length > 0 && (
         <Card>
           <Text style={{ fontWeight: "700", color: color.warn }}>同一人物と思われる登録者がいます</Text>

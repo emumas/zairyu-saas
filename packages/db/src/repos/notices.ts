@@ -5,6 +5,7 @@
 import { and, eq, gte, inArray, isNotNull, ne, or, sql, type SQL } from "drizzle-orm";
 import type { Tx } from "../client.js";
 import { employmentNotices, personEmployments, persons, residenceCards, sites, tenants } from "../schema.js";
+import { noticeDueDate } from "@zairyu/shared";
 import type { SiteScope } from "./persons.js";
 
 const scopeCondition = (scope: SiteScope): SQL | undefined =>
@@ -126,4 +127,24 @@ export async function siteInfo(tx: Tx, ids: readonly string[]) {
     .select({ id: sites.id, name: sites.name, officialName: sites.officialName, address: sites.address, phone: sites.phone, insuranceOfficeNumber: sites.insuranceOfficeNumber })
     .from(sites)
     .where(inArray(sites.id, [...ids]));
+}
+
+/**
+ * 期限が 7 日以内か過ぎた未提出の届出(期限のアラート用。テナント全体)。
+ * 特別永住者は届出の対象外なので除く
+ */
+export async function noticesDueSoon(tx: Tx, today: string, withinDays = 7) {
+  const employer = await getEmployerInfo(tx);
+  if (!employer) return [];
+  const events = await listNoticeEvents(tx, null, employer.noticesFrom);
+  const ids = [...new Set(events.map((e) => e.personId))];
+  const people = new Map((await noticePersons(tx, ids)).map((p) => [p.id, p]));
+  const done = new Set((await listNoticeRecords(tx, ids)).map((r) => `${r.personId}|${r.kind}|${r.eventDate}`));
+  const limit = new Date(Date.parse(`${today}T00:00:00Z`) + withinDays * 86_400_000).toISOString().slice(0, 10);
+  return events.flatMap((e) => {
+    const p = people.get(e.personId);
+    if (!p || p.card?.cardKind === "special_permanent" || done.has(`${e.personId}|${e.kind}|${e.eventDate}`)) return [];
+    const dueDate = noticeDueDate(e.kind, e.eventDate, p.employmentInsured);
+    return dueDate <= limit ? [{ personId: e.personId, siteId: e.siteId, kind: e.kind, eventDate: e.eventDate, dueDate, overdue: dueDate < today }] : [];
+  });
 }

@@ -16,7 +16,7 @@ const EXAMPLE_COLUMNS = [
   { header: "氏名", required: true, note: "在留カードの表記(ローマ字は大文字)" },
   { header: "フリガナ", note: "カタカナ(ひらがなも可)" },
   { header: "拠点", required: true, note: "登録済みの拠点名" },
-  { header: "国籍", note: "英大文字 3 文字(VNM・PHL など)" },
+  { header: "国籍", note: "国コード(VNM・PHL など)か国名(ベトナムなど)" },
   { header: "生年月日", note: "1995/04/01 または 1995-04-01" },
   { header: "電話番号", note: "ハイフンあり・なしどちらも可" },
   { header: "入社日", note: "2024/04/01 または 2024-04-01" },

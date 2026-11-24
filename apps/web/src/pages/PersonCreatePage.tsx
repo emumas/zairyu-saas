@@ -113,7 +113,7 @@ export function PersonCreatePage() {
             {input("name", "氏名(カードの表記どおり)", { required: true, maxLength: 200 })}
             {input("nameKana", "フリガナ(任意。ひらがなでも可)", { maxLength: 200, placeholder: "グエン ヴァン アー" })}
             {input("birthDate", "生年月日(任意)", { type: "date" })}
-            {input("nationality", "国籍・地域(任意。英大文字 3 文字)", { maxLength: 3, placeholder: "VNM" })}
+            {input("nationality", "国籍・地域(任意。国コード VNM など、または国名。カードを登録すると自動で入ります)", { maxLength: 30, placeholder: "VNM / ベトナム" })}
             {input("phone", "電話番号(任意)", { type: "tel", maxLength: 30, placeholder: "090-1234-5678" })}
             {input("hiredAt", "入社日(任意)", { type: "date" })}
             <label className="field">

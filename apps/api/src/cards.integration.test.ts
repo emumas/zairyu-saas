@@ -183,6 +183,9 @@ describe.skipIf(!url)("カード登録", () => {
     // 記載事項の修正で在留資格を直すと、決まるものは入る
     expect((await tokyoAdmin.cards.updateDetails({ cardId: c3, statusOfResidence: "定住者" })).changed).toEqual(expect.arrayContaining(["statusOfResidence", "workRestriction"]));
     expect((await tokyoAdmin.persons.get({ id: p3 })).card?.workRestriction).toBe("1");
+    // 記載事項で国籍を入れると、登録者の国籍(空欄)に国コードで入る
+    await tokyoAdmin.cards.updateDetails({ cardId: c3, nationality: "フィリピン" });
+    expect((await tokyoAdmin.persons.get({ id: p3 })).nationality).toBe("PHL");
   });
 
   it("新しい登録者: 登録者を作る前にカードを照合できる(同じカードの登録者も返す)。その後に作った登録者へ登録できる", async () => {
@@ -371,8 +374,8 @@ describe.skipIf(!url)("カード登録", () => {
       const logs = await withTenant(h.db, tenant, (tx) => tx.select().from(schema.auditLogs).where(eq(schema.auditLogs.targetId, card!.id)));
       expect(JSON.stringify(logs)).not.toContain("さいたま");
       expect(logs.find((l) => l.action === "card.register")?.detail).toMatchObject({ addressSource: "ic_back" });
-      // 登録者の生年月日は空欄だったのでカードの値で埋まる(国籍はコードでないので埋めない)
-      expect((await admin.persons.get({ id: personId })).birthDate).toBe("1995-04-01");
+      // 登録者の生年月日・国籍は空欄だったのでカードの値で埋まる(国籍は「ベトナム」を国コードに直す)
+      expect(await admin.persons.get({ id: personId })).toMatchObject({ birthDate: "1995-04-01", nationality: "VNM" });
     });
 
     it("申告書の入力用に、在籍者の氏名・フリガナ・郵便番号・住居地を出力できる(テナント管理者のみ。監査ログに件数だけ)", async () => {
