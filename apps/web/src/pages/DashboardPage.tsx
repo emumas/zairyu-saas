@@ -77,6 +77,15 @@ export function DashboardPage() {
             <span>週28時間超過(4 週間)</span>
           </Link>
         )}
+        {s && s.notices && s.notices.pending > 0 && (
+          <Link to="/notices" className={`tile ${s.notices.overdue ? "tile-danger" : s.notices.dueSoon ? "tile-warn" : ""}`}>
+            <strong>
+              {s.notices.pending}
+              {s.notices.overdue > 0 && <small> / 期限切れ {s.notices.overdue}</small>}
+            </strong>
+            <span>雇用状況の届出 未提出</span>
+          </Link>
+        )}
         {s && s.duplicateGroups !== null && (
           <Link to="/duplicates" className={`tile ${s.duplicateGroups ? "tile-warn" : ""}`}>
             <strong>{s.duplicateGroups}</strong>

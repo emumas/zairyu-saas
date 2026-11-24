@@ -99,6 +99,13 @@ export const tenants = pgTable("tenants", {
   planId: uuid("plan_id").references(() => plans.id),
   /** 退職後の保存期間(年)。3〜5、標準 5 */
   retentionYears: integer("retention_years").notNull().default(5),
+  /** 届出に書く事業主の情報(法人の名称・主たる事務所の所在地と電話番号・代表者の氏名) */
+  employerName: text("employer_name"),
+  employerAddress: text("employer_address"),
+  employerPhone: text("employer_phone"),
+  representativeName: text("representative_name"),
+  /** 外国人雇用状況の届出を管理する対象の始まり(この日より前の雇入れ・離職は一覧に出さない) */
+  noticesFrom: date("notices_from").notNull().default(sql`current_date`),
   /** 監査ログの保存期間(年)。5〜10、標準 7(退職後の保存期間より短くならない) */
   auditRetentionYears: integer("audit_retention_years").notNull().default(7),
   /** 支払い失敗の日時(未払い時の制御。1-18) */
@@ -188,6 +195,11 @@ export const sites = pgTable(
     id: id(),
     tenantId: tenantId(),
     name: text("name").notNull(),
+    /** 届出に書く事業所の正式名称・所在地・電話番号・雇用保険適用事業所番号(外国人雇用状況の届出) */
+    officialName: text("official_name"),
+    address: text("address"),
+    phone: text("phone"),
+    insuranceOfficeNumber: text("insurance_office_number"),
     archivedAt: timestamp("archived_at", { withTimezone: true }),
     createdAt: createdAt(),
   },
@@ -317,6 +329,8 @@ export const persons = pgTable(
     birthDate: date("birth_date"),
     /** 入社日(今の在籍期間の始まり。再入社で更新し、以前の期間は person_employments に残す) */
     hiredAt: date("hired_at"),
+    /** 雇用保険の被保険者か(外国人雇用状況の届出の書式と期限が変わる。未設定は null) */
+    employmentInsured: boolean("employment_insured"),
     /** 課金対象の判定に使う(active のみ数える) */
     status: personStatus("status").notNull().default("active"),
     retiredAt: date("retired_at"),
@@ -653,4 +667,37 @@ export const postalCodes = pgTable(
     townKey: text("town_key").notNull(),
   },
   (t) => [index("postal_codes_pref_city_idx").on(t.pref, t.city), index("postal_codes_code_idx").on(t.code)],
+);
+
+/**
+ * 外国人雇用状況の届出の提出記録(雇入れ・離職ごと)。届出が必要な出来事は登録者の入社日・在籍期間の履歴から求め、
+ * ここには「提出した/不要とした」の記録だけを置く(記録が無ければ未提出)
+ */
+export const employmentNotices = pgTable(
+  "employment_notices",
+  {
+    id: id(),
+    tenantId: tenantId(),
+    personId: uuid("person_id")
+      .notNull()
+      .references(() => persons.id),
+    /** hire / separation */
+    kind: text("kind").notNull(),
+    eventDate: date("event_date").notNull(),
+    /** submitted / not_required */
+    status: text("status").notNull(),
+    submittedOn: date("submitted_on"),
+    /** hellowork_internet / e_gov / window / mail / other */
+    method: text("method"),
+    receiptNo: text("receipt_no"),
+    note: text("note"),
+    recordedBy: uuid("recorded_by").references(() => users.id),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    uniqueIndex("employment_notices_event_uq").on(t.personId, t.kind, t.eventDate),
+    index("employment_notices_tenant_idx").on(t.tenantId),
+    check("employment_notices_kind_ck", sql`${t.kind} in ('hire', 'separation')`),
+    check("employment_notices_status_ck", sql`${t.status} in ('submitted', 'not_required')`),
+  ],
 );

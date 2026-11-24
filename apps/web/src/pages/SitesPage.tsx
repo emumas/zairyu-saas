@@ -8,6 +8,8 @@ export function SitesPage() {
   const [sites, setSites] = useState<Site[]>([]);
   const [name, setName] = useState("");
   const [editing, setEditing] = useState<{ id: string; name: string } | null>(null);
+  /** 届出に書く事業所の情報を編集中の拠点 */
+  const [detail, setDetail] = useState<{ id: string; officialName: string; address: string; phone: string; insuranceOfficeNumber: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const load = useCallback(() => api.org.sites.list.query().then(setSites, (e) => setError(messageOf(e))), []);
   useEffect(() => {
@@ -73,6 +75,14 @@ export function SitesPage() {
                     <Button kind="secondary" onClick={() => setEditing({ id: s.id, name: s.name })}>
                       名前を変更
                     </Button>
+                    <Button
+                      kind="secondary"
+                      onClick={() =>
+                        setDetail({ id: s.id, officialName: s.officialName ?? "", address: s.address ?? "", phone: s.phone ?? "", insuranceOfficeNumber: s.insuranceOfficeNumber ?? "" })
+                      }
+                    >
+                      届出用の情報{s.address && s.phone ? "" : "(未入力)"}
+                    </Button>
                     <Button kind="secondary" onClick={() => void act(api.org.sites.update.mutate({ id: s.id, archived: !s.archivedAt }))}>
                       {s.archivedAt ? "利用を再開" : "アーカイブ"}
                     </Button>
@@ -84,6 +94,40 @@ export function SitesPage() {
         </tbody>
       </table>
       <p className="sub">アーカイブした拠点には登録者を追加できません(既存の登録者はそのまま残ります)。</p>
+      {detail && (
+        <Card title={`届出用の事業所の情報: ${sites.find((x) => x.id === detail.id)?.name ?? ""}`}>
+          <p className="sub">外国人雇用状況の届出に書く、雇入れ・離職に係る事業所の情報です。</p>
+          <form
+            onSubmit={(e: FormEvent) => {
+              e.preventDefault();
+              void act(api.org.sites.update.mutate(detail).then(() => setDetail(null)));
+            }}
+          >
+            <label className="field">
+              <span>事業所の正式名称(空欄なら拠点名)</span>
+              <input value={detail.officialName} onChange={(e) => setDetail({ ...detail, officialName: e.target.value })} maxLength={100} />
+            </label>
+            <label className="field">
+              <span>所在地</span>
+              <input value={detail.address} onChange={(e) => setDetail({ ...detail, address: e.target.value })} maxLength={200} />
+            </label>
+            <label className="field">
+              <span>電話番号</span>
+              <input value={detail.phone} onChange={(e) => setDetail({ ...detail, phone: e.target.value })} maxLength={20} />
+            </label>
+            <label className="field">
+              <span>雇用保険適用事業所番号(あれば。例: 1234-567890-1)</span>
+              <input value={detail.insuranceOfficeNumber} onChange={(e) => setDetail({ ...detail, insuranceOfficeNumber: e.target.value })} maxLength={15} />
+            </label>
+            <div className="row">
+              <Button kind="secondary" type="button" onClick={() => setDetail(null)}>
+                やめる
+              </Button>
+              <Button type="submit">保存</Button>
+            </div>
+          </form>
+        </Card>
+      )}
     </>
   );
 }

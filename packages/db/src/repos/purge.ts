@@ -8,7 +8,7 @@
  */
 import { and, count, eq, inArray, lt, or, sql } from "drizzle-orm";
 import type { Tx } from "../client.js";
-import { alerts, auditLogs, cardImages, platformAuditLogs, personEmployments, persons, residenceCards, tenants, studyBreaks, verifications, workDays, workHours } from "../schema.js";
+import { alerts, auditLogs, cardImages, employmentNotices, platformAuditLogs, personEmployments, persons, residenceCards, tenants, studyBreaks, verifications, workDays, workHours } from "../schema.js";
 
 export async function tenantsForPurge(tx: Tx) {
   return tx.select({ id: tenants.id, retentionYears: tenants.retentionYears, auditRetentionYears: tenants.auditRetentionYears }).from(tenants);
@@ -59,6 +59,7 @@ export async function deletePersonsData(tx: Tx, tenantId: string, personIds: rea
   await tx.delete(workHours).where(and(eq(workHours.tenantId, tenantId), inArray(workHours.personId, ids)));
   await tx.delete(workDays).where(and(eq(workDays.tenantId, tenantId), inArray(workDays.personId, ids)));
   await tx.delete(studyBreaks).where(and(eq(studyBreaks.tenantId, tenantId), inArray(studyBreaks.personId, ids)));
+  await tx.delete(employmentNotices).where(and(eq(employmentNotices.tenantId, tenantId), inArray(employmentNotices.personId, ids)));
   await tx.delete(personEmployments).where(and(eq(personEmployments.tenantId, tenantId), inArray(personEmployments.personId, ids)));
   if (cards.length) await tx.delete(residenceCards).where(and(eq(residenceCards.tenantId, tenantId), inArray(residenceCards.id, cards)));
   await tx.delete(persons).where(and(eq(persons.tenantId, tenantId), inArray(persons.id, ids)));

@@ -25,6 +25,7 @@ export function PersonCreatePage() {
     nationality: "",
     birthDate: "",
     hiredAt: jstDate(Date.now()),
+    insured: "",
   });
   const [similar, setSimilar] = useState<Similar[]>([]);
   const [confirmDuplicate, setConfirmDuplicate] = useState(false);
@@ -57,6 +58,7 @@ export function PersonCreatePage() {
         ...(f.nationality.trim() ? { nationality: f.nationality.trim().toUpperCase() } : {}),
         ...(f.birthDate ? { birthDate: f.birthDate } : {}),
         ...(f.hiredAt ? { hiredAt: f.hiredAt } : {}),
+        ...(f.insured ? { employmentInsured: f.insured === "yes" } : {}),
         ...(confirmDuplicate ? { confirmDuplicate: true } : {}),
       });
       navigate(`/persons/${id}`);
@@ -114,6 +116,14 @@ export function PersonCreatePage() {
             {input("nationality", "国籍・地域(任意。英大文字 3 文字)", { maxLength: 3, placeholder: "VNM" })}
             {input("phone", "電話番号(任意)", { type: "tel", maxLength: 30, placeholder: "090-1234-5678" })}
             {input("hiredAt", "入社日(任意)", { type: "date" })}
+            <label className="field">
+              <span>雇用保険(外国人雇用状況の届出の書式と期限が変わります)</span>
+              <select value={f.insured} onChange={(e) => setF({ ...f, insured: e.target.value })}>
+                <option value="">未設定</option>
+                <option value="yes">加入している(被保険者)</option>
+                <option value="no">加入していない(アルバイトなど)</option>
+              </select>
+            </label>
             {blocking && (
               <label className="check">
                 <input type="checkbox" checked={confirmDuplicate} onChange={(e) => setConfirmDuplicate(e.target.checked)} />

@@ -6,6 +6,7 @@ import { DashboardPage } from "./pages/DashboardPage";
 import { DuplicatesPage } from "./pages/DuplicatesPage";
 import { ForgotPasswordPage } from "./pages/ForgotPasswordPage";
 import { WorkHoursPage } from "./pages/WorkHoursPage";
+import { NoticesPage } from "./pages/NoticesPage";
 import { ImportPage } from "./pages/ImportPage";
 import { InvitePage } from "./pages/InvitePage";
 import { LoginPage } from "./pages/LoginPage";
@@ -54,6 +55,7 @@ function Shell() {
         <NavLink to="/persons">登録者</NavLink>
         {session.can("alerts.read") && <NavLink to="/alerts">アラート</NavLink>}
         <NavLink to="/work-hours">週28時間</NavLink>
+        {session.can("persons.write") && <NavLink to="/notices">届出</NavLink>}
         {session.can("imports.run") && <NavLink to="/import">CSV 取込</NavLink>}
         {session.can("reports.export") && <NavLink to="/reports">履歴の出力</NavLink>}
         {session.can("org.manage") && (
@@ -83,6 +85,7 @@ function Shell() {
           <Route path="/persons/:id" element={<PersonDetailPage />} />
           <Route path="/alerts" element={<AlertsPage />} />
           <Route path="/work-hours" element={<WorkHoursPage />} />
+          {session.can("persons.write") && <Route path="/notices" element={<NoticesPage />} />}
           <Route path="/account" element={<AccountPage />} />
           {session.can("persons.write") && <Route path="/duplicates" element={<DuplicatesPage />} />}
           {session.can("imports.run") && <Route path="/import" element={<ImportPage />} />}

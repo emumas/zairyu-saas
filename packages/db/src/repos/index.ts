@@ -11,3 +11,4 @@ export * from "./purge.js";
 export * from "./postal.js";
 export * from "./passwordResets.js";
 export * from "./workHours.js";
+export * from "./notices.js";

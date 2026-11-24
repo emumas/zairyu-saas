@@ -4,7 +4,19 @@ import type { Tx } from "../client.js";
 import { refreshTokens, sites, userInvitations, userSites, users } from "../schema.js";
 
 export async function listSites(tx: Tx) {
-  return tx.select({ id: sites.id, name: sites.name, archivedAt: sites.archivedAt, createdAt: sites.createdAt }).from(sites).orderBy(asc(sites.name));
+  return tx
+    .select({
+      id: sites.id,
+      name: sites.name,
+      archivedAt: sites.archivedAt,
+      createdAt: sites.createdAt,
+      officialName: sites.officialName,
+      address: sites.address,
+      phone: sites.phone,
+      insuranceOfficeNumber: sites.insuranceOfficeNumber,
+    })
+    .from(sites)
+    .orderBy(asc(sites.name));
 }
 
 export async function createSite(tx: Tx, name: string): Promise<string> {
@@ -12,7 +24,11 @@ export async function createSite(tx: Tx, name: string): Promise<string> {
   return row!.id;
 }
 
-export async function updateSite(tx: Tx, id: string, patch: { name?: string; archivedAt?: Date | null }): Promise<boolean> {
+export async function updateSite(
+  tx: Tx,
+  id: string,
+  patch: { name?: string; archivedAt?: Date | null; officialName?: string | null; address?: string | null; phone?: string | null; insuranceOfficeNumber?: string | null },
+): Promise<boolean> {
   const rows = await tx.update(sites).set(patch).where(eq(sites.id, id)).returning({ id: sites.id });
   return rows.length > 0;
 }

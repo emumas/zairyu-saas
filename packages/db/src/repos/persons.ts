@@ -40,6 +40,7 @@ const summaryColumns = (today: string) => ({
   nationality: persons.nationality,
   birthDate: persons.birthDate,
   hiredAt: persons.hiredAt,
+  employmentInsured: persons.employmentInsured,
   status: persons.status,
   retiredAt: persons.retiredAt,
   archivedAt: persons.archivedAt,
@@ -137,6 +138,7 @@ export async function createPerson(
     nationality?: string | null | undefined;
     birthDate?: string | null | undefined;
     hiredAt?: string | null | undefined;
+    employmentInsured?: boolean | null | undefined;
   },
 ) {
   const [row] = await tx
@@ -150,6 +152,7 @@ export async function createPerson(
       nationality: input.nationality ?? null,
       birthDate: input.birthDate ?? null,
       hiredAt: input.hiredAt ?? null,
+      employmentInsured: input.employmentInsured ?? null,
     })
     .returning({ id: persons.id });
   return row!.id;
@@ -172,6 +175,7 @@ export async function updatePerson(
     nationality: string | null;
     birthDate: string | null;
     hiredAt: string | null;
+    employmentInsured: boolean | null;
   }>,
 ): Promise<void> {
   await tx

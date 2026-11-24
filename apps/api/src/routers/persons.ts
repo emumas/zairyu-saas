@@ -76,6 +76,7 @@ const personOutput = z.object({
   retiredAt: z.string().nullable(),
   /** 入社日(今の在籍期間) */
   hiredAt: z.string().nullable(),
+  employmentInsured: z.boolean().nullable(),
   card: cardSummary,
   /** 就労可否(カードの記載による判定。雇用主の確認の補助) */
   work: z.object({
@@ -156,6 +157,7 @@ function present(row: PersonRow, role: Role, today: string): z.infer<typeof pers
     status: row.status,
     retiredAt: row.retiredAt,
     hiredAt: row.hiredAt,
+    employmentInsured: hidePersonal ? null : row.employmentInsured,
     card: row.card,
     expiry,
     work: judgeWorkEligibility(row.card, expiry, today),

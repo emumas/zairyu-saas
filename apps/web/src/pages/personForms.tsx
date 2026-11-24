@@ -20,6 +20,7 @@ export function PersonEditForm({ person, onDone }: { person: Person; onDone: () 
     nationality: person.nationality ?? "",
     birthDate: person.birthDate ?? "",
     hiredAt: person.hiredAt ?? "",
+    insured: person.employmentInsured === true ? "yes" : person.employmentInsured === false ? "no" : "",
   });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -35,6 +36,8 @@ export function PersonEditForm({ person, onDone }: { person: Person; onDone: () 
     if (f.nationality.trim().toUpperCase() !== (person.nationality ?? "")) patch.nationality = f.nationality.trim() ? f.nationality.trim().toUpperCase() : null;
     if (f.birthDate !== (person.birthDate ?? "")) patch.birthDate = f.birthDate || null;
     if (f.hiredAt !== (person.hiredAt ?? "")) patch.hiredAt = f.hiredAt || null;
+    const insured = f.insured === "yes" ? true : f.insured === "no" ? false : null;
+    if (insured !== (person.employmentInsured ?? null)) patch.employmentInsured = insured;
     if (Object.keys(patch).length === 1) return onDone();
     setBusy(true);
     try {
@@ -87,6 +90,14 @@ export function PersonEditForm({ person, onDone }: { person: Person; onDone: () 
         <span>入社日</span>
         <input type="date" value={f.hiredAt} onChange={(e) => setF({ ...f, hiredAt: e.target.value })} />
       </label>
+      <label className="field">
+              <span>雇用保険(外国人雇用状況の届出の書式と期限が変わります)</span>
+              <select value={f.insured} onChange={(e) => setF({ ...f, insured: e.target.value })}>
+                <option value="">未設定</option>
+                <option value="yes">加入している(被保険者)</option>
+                <option value="no">加入していない(アルバイトなど)</option>
+              </select>
+            </label>
       <Message text={error} />
       <div className="row">
         <Button kind="secondary" type="button" onClick={onDone}>

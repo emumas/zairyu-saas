@@ -8,6 +8,66 @@ import { api, messageOf } from "../api";
 import { Button, Card, Message } from "../ui";
 
 type Settings = { retentionYears: number; auditRetentionYears: number };
+type Employer = { name: string; address: string; phone: string; representativeName: string };
+
+/** 外国人雇用状況の届出に書く事業主の情報 */
+function EmployerCard() {
+  const [f, setF] = useState<Employer | null>(null);
+  const [from, setFrom] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    api.org.settings.employer.query().then(
+      (e) => {
+        setF({ name: e.name ?? "", address: e.address ?? "", phone: e.phone ?? "", representativeName: e.representativeName ?? "" });
+        setFrom(e.noticesFrom);
+      },
+      (e) => setError(messageOf(e)),
+    );
+  }, []);
+  if (!f) return <Message text={error} />;
+  const set = (k: keyof Employer) => (e: { target: { value: string } }) => setF({ ...f, [k]: e.target.value });
+  async function save() {
+    if (!f) return;
+    setBusy(true);
+    try {
+      await api.org.settings.updateEmployer.mutate(f);
+      setMsg("保存しました");
+      setError(null);
+    } catch (e) {
+      setError(messageOf(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <Card title="届出用の事業主の情報">
+      <p className="sub">外国人雇用状況の届出に書く、事業主(法人)の情報です。{from} 以後の雇入れ・離職を「届出」画面で管理しています。</p>
+      <label className="field">
+        <span>法人の名称(空欄ならテナント名)</span>
+        <input value={f.name} onChange={set("name")} maxLength={100} />
+      </label>
+      <label className="field">
+        <span>主たる事務所の所在地</span>
+        <input value={f.address} onChange={set("address")} maxLength={200} />
+      </label>
+      <label className="field">
+        <span>主たる事務所の電話番号</span>
+        <input value={f.phone} onChange={set("phone")} maxLength={20} />
+      </label>
+      <label className="field">
+        <span>代表者の氏名</span>
+        <input value={f.representativeName} onChange={set("representativeName")} maxLength={50} />
+      </label>
+      <Message text={error} />
+      <Message text={msg} tone="ok" />
+      <Button busy={busy} onClick={() => void save()}>
+        保存
+      </Button>
+    </Card>
+  );
+}
 
 export function SettingsPage() {
   const [form, setForm] = useState<Settings | null>(null);
@@ -78,6 +138,7 @@ export function SettingsPage() {
               </Button>
             </div>
           </Card>
+          <EmployerCard />
           <Card title="監査ログの保存期間">
             <p className="sub">
               ログイン・登録者の変更・カード画像の閲覧・出力などの操作の記録(監査ログ)は、記録した日からこの期間を過ぎると自動的に削除されます(毎日深夜に処理)。

@@ -9,6 +9,7 @@ import {
   createSite,
   getUser,
   insertInvitedUser,
+  getEmployerInfo,
   listSites,
   listUsers,
   revokeUserTokens,
@@ -59,10 +60,32 @@ const userOutput = z.object({
   siteIds: z.array(z.string()),
 });
 
+/** 空欄は null にする任意の文字列 */
+const optionalText = (max: number) =>
+  z
+    .string()
+    .trim()
+    .max(max)
+    .transform((v) => v || null)
+    .nullish();
+
 export const orgRouter = router({
   sites: router({
     list: p
-      .output(z.array(z.object({ id: z.string(), name: z.string(), archivedAt: z.date().nullable(), createdAt: z.date() })))
+      .output(
+        z.array(
+          z.object({
+            id: z.string(),
+            name: z.string(),
+            archivedAt: z.date().nullable(),
+            createdAt: z.date(),
+            officialName: z.string().nullable(),
+            address: z.string().nullable(),
+            phone: z.string().nullable(),
+            insuranceOfficeNumber: z.string().nullable(),
+          }),
+        ),
+      )
       .query(({ ctx }) => ctx.tenantTx((tx) => listSites(tx))),
 
     create: p
@@ -77,13 +100,33 @@ export const orgRouter = router({
       ),
 
     update: p
-      .input(z.object({ id: z.uuid(), name: siteNameInput.optional(), archived: z.boolean().optional() }))
+      .input(
+        z.object({
+          id: z.uuid(),
+          name: siteNameInput.optional(),
+          archived: z.boolean().optional(),
+          // 外国人雇用状況の届出に書く事業所の情報(空欄は null)
+          officialName: optionalText(100),
+          address: optionalText(200),
+          phone: optionalText(20),
+          insuranceOfficeNumber: z
+            .string()
+            .trim()
+            .regex(/^$|^[0-9-]{11,15}$/, "雇用保険適用事業所番号は数字とハイフンで入力してください(例: 1234-567890-1)")
+            .transform((v) => v || null)
+            .nullish(),
+        }),
+      )
       .output(z.object({ id: z.string() }))
       .mutation(({ ctx, input }) =>
         ctx.tenantTx(async (tx) => {
           const patch = {
             ...(input.name !== undefined ? { name: input.name } : {}),
             ...(input.archived !== undefined ? { archivedAt: input.archived ? new Date(ctx.services.now()) : null } : {}),
+            ...(input.officialName !== undefined ? { officialName: input.officialName } : {}),
+            ...(input.address !== undefined ? { address: input.address } : {}),
+            ...(input.phone !== undefined ? { phone: input.phone } : {}),
+            ...(input.insuranceOfficeNumber !== undefined ? { insuranceOfficeNumber: input.insuranceOfficeNumber } : {}),
           };
           if (!(await updateSite(tx, input.id, patch))) throw notFound();
           await ctx.audit(tx, { action: "site.update", targetType: "site", targetId: input.id, detail: { fields: Object.keys(patch) } });
@@ -223,6 +266,33 @@ export const orgRouter = router({
    * 監査ログの保存期間(5〜10 年。退職後の保存期間より短くならない。過ぎた記録は毎日の処理で削除)
    */
   settings: router({
+    /** 外国人雇用状況の届出に書く事業主の情報 */
+    employer: permissionProcedure("tenant.settings")
+      .output(z.object({ name: z.string().nullable(), address: z.string().nullable(), phone: z.string().nullable(), representativeName: z.string().nullable(), noticesFrom: z.string() }))
+      .query(({ ctx }) =>
+        ctx.tenantTx(async (tx) => {
+          const e = await getEmployerInfo(tx);
+          if (!e) throw notFound();
+          return { name: e.name, address: e.address, phone: e.phone, representativeName: e.representativeName, noticesFrom: e.noticesFrom };
+        }),
+      ),
+    updateEmployer: permissionProcedure("tenant.settings")
+      .input(z.object({ name: optionalText(100), address: optionalText(200), phone: optionalText(20), representativeName: optionalText(50) }))
+      .output(z.object({ ok: z.literal(true) }))
+      .mutation(({ ctx, input }) =>
+        ctx.tenantTx(async (tx) => {
+          const set = {
+            ...(input.name !== undefined ? { employerName: input.name } : {}),
+            ...(input.address !== undefined ? { employerAddress: input.address } : {}),
+            ...(input.phone !== undefined ? { employerPhone: input.phone } : {}),
+            ...(input.representativeName !== undefined ? { representativeName: input.representativeName } : {}),
+          };
+          if (Object.keys(set).length === 0) throw new TRPCError({ code: "BAD_REQUEST", message: "変更する項目がありません" });
+          await tx.update(schema.tenants).set(set).where(eq(schema.tenants.id, ctx.actor.tenantId));
+          await ctx.audit(tx, { action: "tenant.employer_update", targetType: "tenant", targetId: ctx.actor.tenantId, detail: { fields: Object.keys(set).sort() } });
+          return { ok: true as const };
+        }),
+      ),
     get: permissionProcedure("tenant.settings")
       .output(z.object({ name: z.string(), retentionYears: z.number(), auditRetentionYears: z.number() }))
       .query(({ ctx }) =>

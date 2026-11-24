@@ -60,6 +60,8 @@ export const personCreateInput = z.object({
   birthDate: dateString.nullish(),
   /** 入社日 */
   hiredAt: dateString.nullish(),
+  /** 雇用保険の被保険者か(外国人雇用状況の届出の書式と期限が変わる) */
+  employmentInsured: z.boolean().nullish(),
   /** 同一人物と思われる在籍者がいても登録する(確認済み) */
   confirmDuplicate: z.boolean().optional(),
 });
@@ -75,6 +77,7 @@ export const personUpdateInput = z.object({
   nationality: nationalitySchema.nullish(),
   birthDate: dateString.nullish(),
   hiredAt: dateString.nullish(),
+  employmentInsured: z.boolean().nullish(),
 });
 export type PersonUpdateInput = z.infer<typeof personUpdateInput>;
 

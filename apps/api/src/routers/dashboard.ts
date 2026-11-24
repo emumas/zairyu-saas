@@ -6,6 +6,7 @@ import { assertSiteAccess } from "../authz/guards.js";
 import { can, siteScope } from "../authz/permissions.js";
 import { permissionProcedure, router } from "../trpc.js";
 import { weeklyChecks } from "./workHours.js";
+import { noticeCounts } from "./notices.js";
 
 export const dashboardRouter = router({
   summary: permissionProcedure("dashboard.read")
@@ -27,6 +28,8 @@ export const dashboardRouter = router({
         work: z.record(z.enum(WORK_LEVELS), z.number()),
         /** 週28時間の確認(今日までの 4 週間): 超過・注意の人数 */
         weeklyHours: z.object({ over: z.number(), near: z.number(), targets: z.number() }),
+        /** 外国人雇用状況の届出の未提出(登録者を編集できない人には null) */
+        notices: z.object({ overdue: z.number(), dueSoon: z.number(), pending: z.number() }).nullable(),
       }),
     )
     .query(({ ctx, input }) =>
@@ -47,7 +50,8 @@ export const dashboardRouter = router({
           near: checks.filter((c) => c.check.status === "near").length,
           targets: checks.length,
         };
-        return { weeklyHours, today, total: r.total, buckets, icUnverified: r.icUnverified, needsReview: r.needsReview, openAlerts, duplicateGroups, work };
+        const notices = can(ctx.actor.role, "persons.write") ? await noticeCounts(tx, ctx.actor, ctx.services) : null;
+        return { notices, weeklyHours, today, total: r.total, buckets, icUnverified: r.icUnverified, needsReview: r.needsReview, openAlerts, duplicateGroups, work };
       }),
     ),
 });
