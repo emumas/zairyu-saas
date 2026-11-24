@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 import { createDb } from "@zairyu/db";
 import { createVaultFromEnv } from "@zairyu/vault";
 import { recordDailyBilling } from "./billing.js";
-import { activeTenantIds, generateAlerts, generateNoticeAlerts, sendNotifications } from "./jobs.js";
+import { activeTenantIds, backfillNationalities, generateAlerts, generateNoticeAlerts, sendNotifications } from "./jobs.js";
 import { notifierFromEnv } from "./notifiers.js";
 import { purgeAuditLogs, purgeExpired, sweepOrphanBlobs } from "./purge.js";
 
@@ -77,6 +77,14 @@ try {
         }
         const r = await generateAlerts(db, tenantId, Date.now());
         console.log(`tenant=${tenantId} alerts_created=${r.created} recipients=${r.notified}`);
+        // 国籍が空欄の登録者にカードの国籍(国コード)を入れる
+        try {
+          const filled = await backfillNationalities(db, tenantId);
+          if (filled > 0) console.log(`tenant=${tenantId} nationality_filled=${filled}`);
+        } catch (e) {
+          failures++;
+          console.error(`tenant=${tenantId} nationality_error=${(e as Error).name}`);
+        }
         // 外国人雇用状況の届出の期限(失敗しても期限アラート・送信は止めない)
         try {
           const n = await generateNoticeAlerts(db, tenantId, Date.now());

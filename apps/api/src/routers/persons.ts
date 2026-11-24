@@ -5,6 +5,7 @@
  * - 変更はすべて監査ログに記録する(項目名のみ。値は残さない)
  */
 import {
+  backfillNationalityFromCards,
   createPerson,
   findSimilarPersons,
   insertEmployment,
@@ -215,8 +216,13 @@ export const personsRouter = router({
     .query(({ ctx, input }) =>
       ctx.tenantTx(async (tx) => {
         const today = jstDate(ctx.services.now());
-        const p = await getPerson(tx, input.id, siteScope(ctx.actor), today);
+        let p = await getPerson(tx, input.id, siteScope(ctx.actor), today);
         if (!p) throw notFound();
+        // 国籍が空欄で、今のカードの国籍・地域が国コードに直せるなら入れる(以前に登録した人も、開いたときに埋まる)
+        if (!p.nationality && ctx.actor.role !== "viewer" && (await backfillNationalityFromCards(tx, [p.id])).length > 0) {
+          await ctx.audit(tx, { action: "person.update", targetType: "person", targetId: p.id, detail: { via: "card_nationality", fields: ["nationality"] } });
+          p = (await getPerson(tx, input.id, siteScope(ctx.actor), today))!;
+        }
         // 退職理由は個人の事情を含みうるので、閲覧者には見せない
         const employments = ctx.actor.role === "viewer" ? [] : await listEmployments(tx, [p.id]);
         return { ...present(p, ctx.actor.role, today), employments: employments.map(({ personId: _p, ...e }) => ({ ...e, reasonCode: e.reasonCode as RetireReason })) };

@@ -4,6 +4,8 @@
  * - sendNotifications: 数分おき。送信待ちの通知を送り、失敗は間隔を空けて再送(最大 5 回)
  */
 import {
+  backfillNationalityFromCards,
+  insertAudit,
   activeCardsForAlerts,
   alertRecipients,
   enqueueNotifications,
@@ -108,6 +110,17 @@ export async function generateNoticeAlerts(db: Db, tenantId: string, nowMs: numb
       new Date(nowMs),
     );
     return { created: created.length, notified: perUser.size };
+  });
+}
+
+/** 国籍が空欄の登録者に、今のカードの国籍・地域を国コードで入れる(毎日。開いたときにも埋まるが、一覧・出力のために全員分) */
+export async function backfillNationalities(db: Db, tenantId: string): Promise<number> {
+  return withTenant(db, tenantId, async (tx) => {
+    const ids = await backfillNationalityFromCards(tx);
+    for (const id of ids) {
+      await insertAudit(tx, { actorId: null, action: "person.update", targetType: "person", targetId: id, detail: { via: "card_nationality", fields: ["nationality"] } });
+    }
+    return ids.length;
   });
 }
 

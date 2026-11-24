@@ -183,6 +183,13 @@ describe.skipIf(!url)("カード登録", () => {
     // 記載事項の修正で在留資格を直すと、決まるものは入る
     expect((await tokyoAdmin.cards.updateDetails({ cardId: c3, statusOfResidence: "定住者" })).changed).toEqual(expect.arrayContaining(["statusOfResidence", "workRestriction"]));
     expect((await tokyoAdmin.persons.get({ id: p3 })).card?.workRestriction).toBe("1");
+    // 以前に登録して国籍が空欄の人も、開いたときにカードの国籍(国コード)が入る。変更の無い保存でも埋まる
+    await withTenant(h.db, tenant, (tx) => tx.update(schema.residenceCards).set({ nationality: "ネパール" }).where(eq(schema.residenceCards.id, c1)));
+    await withTenant(h.db, tenant, (tx) => tx.update(schema.persons).set({ nationality: null }).where(eq(schema.persons.id, p1)));
+    expect((await tokyoAdmin.persons.get({ id: p1 })).nationality).toBe("NPL");
+    await withTenant(h.db, tenant, (tx) => tx.update(schema.persons).set({ nationality: null }).where(eq(schema.persons.id, p1)));
+    expect((await tokyoAdmin.cards.updateDetails({ cardId: c1 })).changed).toEqual(["person.nationality"]);
+    expect((await viewer.persons.get({ id: p1 })).nationality).toBeNull(); // 閲覧者には国籍を見せない
     // 記載事項で国籍を入れると、登録者の国籍(空欄)に国コードで入る
     await tokyoAdmin.cards.updateDetails({ cardId: c3, nationality: "フィリピン" });
     expect((await tokyoAdmin.persons.get({ id: p3 })).nationality).toBe("PHL");

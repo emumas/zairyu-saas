@@ -396,3 +396,28 @@ export async function personsByBirthDates(tx: Tx, birthDates: readonly string[])
     .innerJoin(sites, eq(sites.id, persons.siteId))
     .where(and(ne(persons.status, "archived"), inArray(persons.birthDate, [...birthDates])));
 }
+
+/**
+ * 国籍が空欄の登録者に、今のカードの国籍・地域を国コードに直して入れる(直せない表記は入れない)。
+ * personIds を省くとテナント全体。入れた登録者の ID を返す(呼び出し側で監査ログに残す)
+ */
+export async function backfillNationalityFromCards(tx: Tx, personIds?: readonly string[]): Promise<string[]> {
+  if (personIds && personIds.length === 0) return [];
+  const rows = await tx
+    .select({ id: persons.id, cardNationality: residenceCards.nationality })
+    .from(persons)
+    .innerJoin(residenceCards, currentCardJoin)
+    .where(and(isNull(persons.nationality), isNotNull(residenceCards.nationality), ne(persons.status, "archived"), personIds ? inArray(persons.id, [...personIds]) : undefined));
+  const filled: string[] = [];
+  for (const r of rows) {
+    const code = nationalityCode(r.cardNationality);
+    if (!code) continue;
+    const done = await tx
+      .update(persons)
+      .set({ nationality: code, updatedAt: new Date() })
+      .where(and(eq(persons.id, r.id), isNull(persons.nationality)))
+      .returning({ id: persons.id });
+    if (done.length) filled.push(r.id);
+  }
+  return filled;
+}
