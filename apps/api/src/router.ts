@@ -18,6 +18,7 @@ import { personsRouter } from "./routers/persons.js";
 import { verificationsRouter } from "./routers/verifications.js";
 import { workHoursRouter } from "./routers/workHours.js";
 import { noticesRouter } from "./routers/notices.js";
+import { jobsRouter } from "./routers/jobs.js";
 import { publicProcedure, router } from "./trpc.js";
 
 export const appRouter = router({
@@ -37,6 +38,7 @@ export const appRouter = router({
   postal: postalRouter,
   workHours: workHoursRouter,
   notices: noticesRouter,
+  jobs: jobsRouter,
 
   health: publicProcedure.output(z.object({ status: z.literal("ok") })).query(() => ({ status: "ok" as const })),
 

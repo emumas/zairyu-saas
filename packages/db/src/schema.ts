@@ -106,6 +106,8 @@ export const tenants = pgTable("tenants", {
   employerAddress: text("employer_address"),
   employerPhone: text("employer_phone"),
   representativeName: text("representative_name"),
+  /** 職種照合(テスト運用)を使うか */
+  jobMatchingEnabled: boolean("job_matching_enabled").notNull().default(false),
   /** 外国人雇用状況の届出を管理する対象の始まり(この日より前の雇入れ・離職は一覧に出さない) */
   noticesFrom: date("notices_from").notNull().default(sql`current_date`),
   /** 監査ログの保存期間(年)。5〜10、標準 7(退職後の保存期間より短くならない) */
@@ -333,6 +335,10 @@ export const persons = pgTable(
     hiredAt: date("hired_at"),
     /** 雇用保険の被保険者か(外国人雇用状況の届出の書式と期限が変わる。未設定は null) */
     employmentInsured: boolean("employment_insured"),
+    /** 職種照合(テスト運用): 割り当てた自社の職種 */
+    jobCategoryId: uuid("job_category_id"),
+    /** 職種照合(テスト運用): 指定書に記載された特定技能の分野 */
+    sswField: text("ssw_field"),
     /** 課金対象の判定に使う(active のみ数える) */
     status: personStatus("status").notNull().default("active"),
     retiredAt: date("retired_at"),
@@ -702,4 +708,50 @@ export const employmentNotices = pgTable(
     check("employment_notices_kind_ck", sql`${t.kind} in ('hire', 'separation')`),
     check("employment_notices_status_ck", sql`${t.status} in ('submitted', 'not_required')`),
   ],
+);
+
+/** 職種照合(テスト運用): テナントが登録する自社の職種 */
+export const jobCategories = pgTable(
+  "job_categories",
+  {
+    id: id(),
+    tenantId: tenantId(),
+    name: text("name").notNull(),
+    /** 単純作業(ライン作業・清掃・梱包・接客レジなど)を含む */
+    simpleWork: boolean("simple_work").notNull().default(false),
+    /** 風俗営業等に当たる */
+    adultEntertainment: boolean("adult_entertainment").notNull().default(false),
+    /** 特定技能の分野 */
+    sswField: text("ssw_field"),
+    note: text("note"),
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
+    createdAt: createdAt(),
+  },
+  (t) => [index("job_categories_tenant_idx").on(t.tenantId)],
+);
+
+/** 職種照合(テスト運用): 確認の記録(追加だけ。誰が・いつ・何を確かめたか) */
+export const jobChecks = pgTable(
+  "job_checks",
+  {
+    id: id(),
+    tenantId: tenantId(),
+    personId: uuid("person_id")
+      .notNull()
+      .references(() => persons.id),
+    jobCategoryId: uuid("job_category_id")
+      .notNull()
+      .references(() => jobCategories.id),
+    /** 確認した時点の在留資格(後で見返すため) */
+    statusOfResidence: text("status_of_residence"),
+    /** ok: 問題なしと確認 / concern: 懸念あり */
+    result: text("result").notNull(),
+    items: jsonb("items").notNull(),
+    note: text("note"),
+    checkedBy: uuid("checked_by")
+      .notNull()
+      .references(() => users.id),
+    checkedAt: timestamp("checked_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("job_checks_person_idx").on(t.tenantId, t.personId, t.checkedAt), check("job_checks_result_ck", sql`${t.result} in ('ok', 'concern')`)],
 );

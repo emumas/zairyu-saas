@@ -5,10 +5,42 @@
  */
 import { useEffect, useState } from "react";
 import { api, messageOf } from "../api";
+import { refreshJobMatching, useJobMatchingEnabled } from "../jobMatching";
 import { Button, Card, Message } from "../ui";
 
 type Settings = { retentionYears: number; auditRetentionYears: number };
 type Employer = { name: string; address: string; phone: string; representativeName: string; noticesFrom: string };
+
+/** 職種照合(テスト運用)を使うか */
+function JobMatchingCard() {
+  const enabled = useJobMatchingEnabled();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  async function toggle() {
+    setBusy(true);
+    try {
+      const r = await api.jobs.setEnabled.mutate({ enabled: !enabled });
+      refreshJobMatching(r.enabled);
+      setError(null);
+    } catch (e) {
+      setError(messageOf(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <Card title="職種照合(テスト運用)">
+      <p className="sub">
+        自社の職種を登録し、登録者の在留資格で働ける職種かの目安を出す、試験的な機能です。判定は目安で、最終的な判断は雇用主が行います。有効にすると、左のメニューに「職種(テスト)」、登録者の画面に「職種照合」が出ます。
+      </p>
+      <Message text={error} />
+      <Button busy={busy} kind={enabled ? "secondary" : "primary"} onClick={() => void toggle()}>
+        {enabled ? "無効にする" : "有効にする"}
+      </Button>
+      <span className="sub"> 今: {enabled ? "有効" : "無効"}</span>
+    </Card>
+  );
+}
 
 /** 外国人雇用状況の届出に書く事業主の情報 */
 function EmployerCard() {
@@ -145,6 +177,7 @@ export function SettingsPage() {
             </div>
           </Card>
           <EmployerCard />
+          <JobMatchingCard />
           <Card title="監査ログの保存期間">
             <p className="sub">
               ログイン・登録者の変更・カード画像の閲覧・出力などの操作の記録(監査ログ)は、記録した日からこの期間を過ぎると自動的に削除されます(毎日深夜に処理)。

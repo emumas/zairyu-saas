@@ -7,6 +7,8 @@ import { DuplicatesPage } from "./pages/DuplicatesPage";
 import { ForgotPasswordPage } from "./pages/ForgotPasswordPage";
 import { WorkHoursPage } from "./pages/WorkHoursPage";
 import { NoticesPage } from "./pages/NoticesPage";
+import { JobsPage } from "./pages/JobsPage";
+import { useJobMatchingEnabled } from "./jobMatching";
 import { ImportPage } from "./pages/ImportPage";
 import { InvitePage } from "./pages/InvitePage";
 import { LoginPage } from "./pages/LoginPage";
@@ -42,6 +44,7 @@ function BillingBanner({ billing, canManage }: { billing: Me["billing"]; canMana
 
 function Shell() {
   const session = useSession();
+  const jobMatching = useJobMatchingEnabled();
   if (session.state.status === "loading") return <main className="center">読み込み中…</main>;
   if (session.state.status === "signedOut") return <LoginPage />;
   const me = session.state.me;
@@ -56,6 +59,7 @@ function Shell() {
         {session.can("alerts.read") && <NavLink to="/alerts">アラート</NavLink>}
         <NavLink to="/work-hours">週28時間</NavLink>
         {session.can("persons.write") && <NavLink to="/notices">届出</NavLink>}
+        {jobMatching && <NavLink to="/jobs">職種(テスト)</NavLink>}
         {session.can("imports.run") && <NavLink to="/import">CSV 取込</NavLink>}
         {session.can("reports.export") && <NavLink to="/reports">履歴の出力</NavLink>}
         {session.can("org.manage") && (
@@ -86,6 +90,7 @@ function Shell() {
           <Route path="/alerts" element={<AlertsPage />} />
           <Route path="/work-hours" element={<WorkHoursPage />} />
           {session.can("persons.write") && <Route path="/notices" element={<NoticesPage />} />}
+          {jobMatching && <Route path="/jobs" element={<JobsPage />} />}
           <Route path="/account" element={<AccountPage />} />
           {session.can("persons.write") && <Route path="/duplicates" element={<DuplicatesPage />} />}
           {session.can("imports.run") && <Route path="/import" element={<ImportPage />} />}
