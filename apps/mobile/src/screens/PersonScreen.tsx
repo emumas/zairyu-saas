@@ -6,7 +6,7 @@ import { api, messageOf } from "../api";
 import { useSession } from "../auth/session";
 import { EmploymentCard } from "./EmploymentCard";
 import { WeeklyHoursCard } from "./WeeklyHoursCard";
-import { CardFaceView, type ImageData } from "../ui/CardFaceView";
+import { CardFaceView, Gen2CardFaceView, type ImageData } from "../ui/CardFaceView";
 import { CardImage, IMAGE_KIND_LABEL } from "../ui/CardImage";
 import { Button, Card, color, Message, Row, Screen } from "../ui/kit";
 import { bucketTone, FORMAT_LABEL, METHOD_LABEL, RESULT_LABEL } from "./format";
@@ -42,6 +42,8 @@ export function PersonScreen({
   /** 表示中の画像(画面を離れると破棄される) */
   const [shown, setShown] = useState<Record<string, { kind: string } & ImageData>>({});
   const [cardFace, setCardFace] = useState<{ front: ImageData; face: ImageData | null } | null>(null);
+  /** 第2世代: 氏名・顔・住居地の画像(IC の文字情報と合わせてカードの見た目で表示する) */
+  const [gen2Face, setGen2Face] = useState<{ name: ImageData | null; face: ImageData | null; address: ImageData | null } | null>(null);
   const [loadingImage, setLoadingImage] = useState<string | null>(null);
   /** 全桁表示した番号(この画面を開いている間だけ) */
   const [revealed, setRevealed] = useState<Record<string, string>>({});
@@ -64,6 +66,19 @@ export function PersonScreen({
         faceId ? api.cards.getImage.mutate({ imageId: faceId }) : Promise.resolve(null),
       ]);
       setCardFace({ front, face });
+    } catch (e) {
+      setError(messageOf(e));
+    } finally {
+      setLoadingImage(null);
+    }
+  }
+
+  async function showGen2Face(ids: { name?: string | undefined; face?: string | undefined; address?: string | undefined }) {
+    setLoadingImage("cardFace");
+    try {
+      const get = (id: string | undefined) => (id ? api.cards.getImage.mutate({ imageId: id }) : Promise.resolve(null));
+      const [name, face, address] = await Promise.all([get(ids.name), get(ids.face), get(ids.address)]);
+      setGen2Face({ name, face, address });
     } catch (e) {
       setError(messageOf(e));
     } finally {
@@ -191,8 +206,21 @@ export function PersonScreen({
           <Text style={{ fontWeight: "700" }}>カード画像</Text>
           <Text style={{ color: color.sub, fontSize: 13 }}>表示した記録が監査ログに残ります。</Text>
           {(() => {
-            const imgs = cards.find((x) => x.isCurrent)!.images;
+            const cur = cards.find((x) => x.isCurrent)!;
+            const imgs = cur.images;
             const front = imgs.find((i) => i.kind === "ic_front");
+            const idOf = (k: string) => imgs.find((i) => i.kind === k)?.id;
+            if (!front && cur.cardFormat !== "legacy" && (idOf("ic_name") || idOf("ic_face"))) {
+              return gen2Face ? (
+                <Gen2CardFaceView kind={cur.cardKind} fields={cur} cardNumber={cur.cardNumberMasked} name={gen2Face.name} face={gen2Face.face} address={gen2Face.address} />
+              ) : (
+                <Button
+                  label="IC の記録をカードの見た目で表示"
+                  busy={loadingImage === "cardFace"}
+                  onPress={() => void showGen2Face({ name: idOf("ic_name"), face: idOf("ic_face"), address: idOf("ic_address") })}
+                />
+              );
+            }
             if (!front) return null;
             return cardFace ? (
               <CardFaceView front={cardFace.front} face={cardFace.face} />

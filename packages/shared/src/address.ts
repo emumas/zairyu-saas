@@ -325,3 +325,11 @@ export function backPermissionsFromOcr(lines: readonly OcrLine[]): { outsideActi
   const pendingApplication = /(?:更新|変更)(?:許可)?申請中/.test(text) ? true : null;
   return { outsideActivity, pendingApplication };
 }
+
+/** 国コード(英大文字 3 文字)→ 国名(日本語)。対応が無ければ null */
+export function nationalityName(code: string | null | undefined): string | null {
+  if (!code) return null;
+  const c = code.trim().toUpperCase();
+  for (const [name, v] of Object.entries(NATIONALITY_CODES)) if (v === c) return name;
+  return null;
+}

@@ -286,10 +286,9 @@ export const cardsRouter = router({
         else if (!can(ctx.actor.role, "persons.write")) throw new TRPCError({ code: "FORBIDDEN", message: "この操作を行う権限がありません" });
         const ic = evaluateIc(input.ic, ctx.services.config.trustedIssuers);
         const sameCard = await sameCardPersons(tx, ctx.actor, await cardNumberHmac(requireVault(ctx.services).keyring, ctx.actor.tenantId, input.cardNumber), input.personId ?? null);
-        // 住居地イメージは照合に使わないので、ここでは返さない(OCR 用に別に返す)
+        // 住居地イメージも返す(第2世代のカード表示に使う。OCR 用は別に返す)
         const icImages = await Promise.all(
           ic.images
-            .filter((img) => img.kind !== "ic_address")
             .map(async (img) => {
               try {
                 const d = await toDisplayImage(img.contentType, img.data);

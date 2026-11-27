@@ -61,7 +61,7 @@ describe.skipIf(!url)("カード登録", () => {
     const ic = icPayload({ format: "gen2", kind: "residence", signer: ec, renewalApplying: false, images: realImages });
     const v = await tokyoAdmin.cards.verifyIcRead({ personId, cardNumber: NUMBER, ic });
     // IC 内の画像(氏名・顔)が表示用に変換されて返る
-    expect(v.icImages.map((i) => `${i.kind}:${i.contentType}`).sort()).toEqual(["ic_face:image/jpeg", "ic_name:image/png"]);
+    expect(v.icImages.map((i) => `${i.kind}:${i.contentType}`).sort()).toEqual(["ic_address:image/png", "ic_face:image/jpeg", "ic_name:image/png"]);
     expect(v).toMatchObject({ format: "gen2", icVerified: true, needsReview: false, diffs: [] });
     expect(v.signature).toMatchObject({ status: "valid", issuerTrusted: null });
     expect(v.fields).toMatchObject({ expiryDate: "2029-06-20", cardValidUntil: "2031-03-31", workRestriction: "2", statusOfResidence: "15" });

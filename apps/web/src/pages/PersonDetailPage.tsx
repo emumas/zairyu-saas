@@ -8,7 +8,7 @@ import {
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router";
 import { api, messageOf } from "../api";
-import { CardFaceView, type ImageData } from "../CardFaceView";
+import { CardFaceView, Gen2CardFaceView, type ImageData } from "../CardFaceView";
 import { FORMAT_LABEL, METHOD_LABEL, RESULT_LABEL } from "../labels";
 import { useSession } from "../session";
 import { EmploymentSection } from "./EmploymentSection";
@@ -47,6 +47,10 @@ export function PersonDetailPage() {
   const [faces, setFaces] = useState<
     Record<string, { front: ImageData; face: ImageData | null }>
   >({});
+  /** 第2世代: 氏名・顔・住居地の画像(IC の文字情報と合わせて組み立てる) */
+  const [gen2Faces, setGen2Faces] = useState<
+    Record<string, { name: ImageData | null; face: ImageData | null; address: ImageData | null }>
+  >({});
   const [loadingFace, setLoadingFace] = useState<string | null>(null);
   /** 全桁表示した番号(この画面を開いている間だけ。表示は監査ログに残る) */
   const [revealed, setRevealed] = useState<Record<string, string>>({});
@@ -79,6 +83,22 @@ export function PersonDetailPage() {
   }
 
   /** IC の券面イメージと顔写真から、カードの見た目で表示する(旧様式。閲覧は監査ログに記録される) */
+  async function showGen2Face(cardId: string, images: { id: string; kind: string }[]) {
+    setLoadingFace(cardId);
+    try {
+      const get = (kind: string) => {
+        const id = images.find((i) => i.kind === kind)?.id;
+        return id ? api.cards.getImage.mutate({ imageId: id }) : Promise.resolve(null);
+      };
+      const [name, face, address] = await Promise.all([get("ic_name"), get("ic_face"), get("ic_address")]);
+      setGen2Faces((f) => ({ ...f, [cardId]: { name, face, address } }));
+    } catch (e) {
+      setError(messageOf(e));
+    } finally {
+      setLoadingFace(null);
+    }
+  }
+
   async function showCardFace(
     cardId: string,
     frontId: string,
@@ -341,6 +361,16 @@ export function PersonDetailPage() {
           {faces[c.id] && (
             <CardFaceView front={faces[c.id]!.front} face={faces[c.id]!.face} />
           )}
+          {gen2Faces[c.id] && (
+            <Gen2CardFaceView
+              kind={c.cardKind}
+              fields={c}
+              cardNumber={c.cardNumberMasked}
+              name={gen2Faces[c.id]!.name}
+              face={gen2Faces[c.id]!.face}
+              address={gen2Faces[c.id]!.address}
+            />
+          )}
           {session.can("cards.viewImage") && c.images.length > 0 && (
             <div className="row wrap">
               {c.cardFormat === "legacy" &&
@@ -356,6 +386,13 @@ export function PersonDetailPage() {
                       )
                     }
                   >
+                    カードの見た目で表示
+                  </Button>
+                )}
+              {c.cardFormat !== "legacy" &&
+                !gen2Faces[c.id] &&
+                c.images.some((i) => i.kind === "ic_name" || i.kind === "ic_face") && (
+                  <Button busy={loadingFace === c.id} onClick={() => void showGen2Face(c.id, c.images)}>
                     カードの見た目で表示
                   </Button>
                 )}

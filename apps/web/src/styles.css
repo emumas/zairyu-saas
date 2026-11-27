@@ -76,6 +76,7 @@ dd { margin: 0; }
 .cardface > * { position: absolute; }
 .cardface-band { background: #d7e8f3; }
 .cardface-label { color: #4a5a4a; white-space: pre; line-height: 1.2; }
+.cardface-value { color: #111; font-weight: 600; white-space: nowrap; line-height: 1.2; }
 .cardface img { -webkit-user-drag: none; pointer-events: none; }
 .hint { color: var(--sub, #667); font-size: 12px; margin: 4px 0 0; }
 .print-only { display: none; }

@@ -31,7 +31,7 @@ import { Button, Card, Choice, color, Field, Message, Row, Screen } from "../ui/
 import { CameraCapture } from "../ui/CameraCapture";
 import { PersonCreateScreen } from "../screens/PersonCreateScreen";
 import { correctAddress } from "../addressFix";
-import { CardFaceView } from "../ui/CardFaceView";
+import { CardFaceView, Gen2CardFaceView } from "../ui/CardFaceView";
 import { CardImage } from "../ui/CardImage";
 
 type Photo = { contentType: "image/jpeg"; data: string };
@@ -413,6 +413,15 @@ export function CardWizard({
               {front && <CardImage kind="front" contentType={front.contentType} data={front.data} />}
               {verify?.icImages.some((i) => i.kind === "ic_front") ? (
                 <CardFaceView front={verify.icImages.find((i) => i.kind === "ic_front")!} face={verify.icImages.find((i) => i.kind === "ic_face")} />
+              ) : verify && hasIcText ? (
+                <Gen2CardFaceView
+                  kind={verify.kind}
+                  fields={{ ...verify.fields, statusOfResidence: isStatusCode(verify.fields.statusOfResidence) && manual.statusOfResidence ? manual.statusOfResidence : verify.fields.statusOfResidence }}
+                  cardNumber={cardNumber.length === 12 ? `${cardNumber.slice(0, 2)}******${cardNumber.slice(8)}` : null}
+                  name={verify.icImages.find((i) => i.kind === "ic_name")}
+                  face={verify.icImages.find((i) => i.kind === "ic_face")}
+                  address={verify.icImages.find((i) => i.kind === "ic_address")}
+                />
               ) : (
                 verify?.icImages
                   .slice()

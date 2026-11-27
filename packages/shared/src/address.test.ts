@@ -216,3 +216,19 @@ describe("addressFromIcImageOcr(第2世代の IC の住居地イメージ)", () 
     expect(chooseAddress({ icImage: "東京都新宿区西新宿2-8-1", backPhoto: "埼玉県さいたま市浦和区高砂3-15-1" })?.source).toBe("back_photo");
   });
 });
+
+describe("第2世代のカード表示", () => {
+  it("在留期間・日付・国名を整える", async () => {
+    const { periodOfStayLabel, jaDate, gen2FaceTexts } = await import("./cardLayout.js");
+    const { nationalityName } = await import("./address.js");
+    expect(periodOfStayLabel("0300")).toBe("3年");
+    expect(periodOfStayLabel("0106")).toBe("1年6月");
+    expect(periodOfStayLabel("0000")).toBe("無期限");
+    expect(periodOfStayLabel("090")).toBe("90日");
+    expect(jaDate("2027-11-25")).toBe("2027年11月25日");
+    expect(nationalityName("PHL")).toBe("フィリピン");
+    const t = gen2FaceTexts({ statusOfResidence: "T630100000", nationality: "PHL" }, { kind: "residence", statusIsCode: true, nationalityLabel: nationalityName });
+    expect(t.values.map((v) => v.text)).toEqual(expect.arrayContaining(["コード T630100000", "フィリピン(PHL)"]));
+    expect(gen2FaceTexts({}, { kind: "special_permanent" }).labels.some((l) => l.ja === "在留資格")).toBe(false);
+  });
+});
