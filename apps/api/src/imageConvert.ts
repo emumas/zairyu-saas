@@ -96,3 +96,29 @@ export async function toDisplayImage(contentType: string, data: Uint8Array): Pro
   }
   throw new ImageConvertError(contentType, Buffer.from(data.subarray(0, 8)).toString("hex").toUpperCase());
 }
+
+/**
+ * 端末内 OCR 用の画像(第2世代の IC の住居地イメージなど、白黒の文字画像)。
+ * 白い背景に黒い文字の PNG にし、小さい文字が読めるよう 3 倍に拡大して余白を付ける。外部には送らない
+ */
+export async function toOcrImage(contentType: string, data: Uint8Array): Promise<{ data: Buffer; width: number; height: number }> {
+  try {
+    {
+      // TIFF 以外(想定外の形式)でも sharp で開ければ使う
+      const meta = await sharp(data).metadata();
+      const w = meta.width ?? 0;
+      if (!w) throw new Error("size");
+      const out = await sharp(data)
+        .flatten({ background: "#ffffff" })
+        .greyscale()
+        .resize({ width: w * 3, kernel: "cubic" })
+        .extend({ top: 24, bottom: 24, left: 24, right: 24, background: "#ffffff" })
+        .png()
+        .toBuffer({ resolveWithObject: true });
+      return { data: out.data, width: out.info.width, height: out.info.height };
+    }
+  } catch {
+    // 変換の失敗理由は返さない
+  }
+  throw new ImageConvertError(contentType, Buffer.from(data.subarray(0, 8)).toString("hex").toUpperCase());
+}

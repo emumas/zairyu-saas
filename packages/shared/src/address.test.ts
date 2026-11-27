@@ -195,3 +195,24 @@ describe("国籍の入力", () => {
     expect(nationalitySchema.safeParse("どこか").success).toBe(false);
   });
 });
+
+describe("addressFromIcImageOcr(第2世代の IC の住居地イメージ)", () => {
+  it("行を上から(同じ高さは左から)つなぐ", async () => {
+    const { addressFromIcImageOcr } = await import("./address.js");
+    expect(
+      addressFromIcImageOcr([
+        { text: "コーポ新宿101号室", top: 60, left: 10, height: 30 },
+        { text: "東京都新宿区", top: 10, left: 10, height: 30 },
+        { text: "西新宿2丁目8番1号", top: 12, left: 200, height: 30 },
+      ]),
+    ).toBe("東京都新宿区 西新宿2丁目8番1号 コーポ新宿101号室");
+  });
+  it("短すぎれば null", async () => {
+    const { addressFromIcImageOcr } = await import("./address.js");
+    expect(addressFromIcImageOcr([{ text: "東京", top: 0 }])).toBeNull();
+  });
+  it("chooseAddress: 裏面の記載 > IC の住居地イメージ > 表面", () => {
+    expect(chooseAddress({ icImage: "東京都新宿区西新宿2-8-1", frontPhoto: "大阪府大阪市北区1-1" })).toEqual({ address: "東京都新宿区西新宿2-8-1", source: "ic_image" });
+    expect(chooseAddress({ icImage: "東京都新宿区西新宿2-8-1", backPhoto: "埼玉県さいたま市浦和区高砂3-15-1" })?.source).toBe("back_photo");
+  });
+});

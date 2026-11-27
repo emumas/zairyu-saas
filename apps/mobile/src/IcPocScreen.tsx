@@ -224,7 +224,7 @@ export function IcPocScreen() {
               .entries.map((e) => `${e.header} → ${e.sw ?? "-"} ${e.responseLength ?? "-"}B ${e.ms ?? "-"}ms`)
               .join("\n")}
           </Text>
-          {result.cardNumber && <Row k="IC内の番号" v={result.cardNumber === cardNumber ? "券面と一致" : "券面と不一致"} />}
+          {result.cardNumber && <Row k="IC内の番号" v={normalizeCardNumberInput(result.cardNumber) === cardNumber ? "券面と一致" : `券面と不一致(IC ${result.cardNumber.length} 文字「${cardPattern(result.cardNumber)}」/ 入力 ${cardNumber.length} 文字「${cardPattern(cardNumber)}」。A=英字 9=数字)`} />}
           {result.faceItems &&
             Object.entries(result.faceItems).map(([k, v]) => <Row key={k} k={k} v={v ?? "—"} />)}
           {Object.entries(result.back).map(([k, v]) => (
@@ -305,3 +305,8 @@ const styles = StyleSheet.create({
   secondaryText: { color: "#0b5cad", fontSize: 15, fontWeight: "600" },
   mono: { fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace", fontSize: 12 },
 });
+
+/** 番号の形だけ(英字 A・数字 9・それ以外は文字コード)。番号そのものは表示しない */
+function cardPattern(s: string): string {
+  return [...s].map((c) => (/[A-Za-z]/.test(c) ? "A" : /\d/.test(c) ? "9" : `[${c.charCodeAt(0).toString(16).padStart(2, "0")}]`)).join("");
+}

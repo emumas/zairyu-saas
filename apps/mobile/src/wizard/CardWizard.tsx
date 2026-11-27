@@ -7,6 +7,7 @@
 import {
   ADDRESS_SOURCE_LABEL,
   chooseAddress,
+  isStatusCode,
   RETIRE_REASON_LABEL,
   isValidCardNumber,
   normalizeCardNumberInput,
@@ -24,7 +25,7 @@ import { useState } from "react";
 import { Modal, Switch, Text, View } from "react-native";
 import { api, messageOf } from "../api";
 import { IcProgressView, icErrorMessage, isCardReadError, readIcPayload, type IcProgress } from "../ic/readIc";
-import { compressForUpload, deleteFile, recognizeBack, recognizeFront } from "../photo";
+import { compressForUpload, deleteFile, recognizeBack, recognizeFront, recognizeIcAddressImage } from "../photo";
 import { FORMAT_LABEL } from "../screens/format";
 import { Button, Card, Choice, color, Field, Message, Row, Screen } from "../ui/kit";
 import { CameraCapture } from "../ui/CameraCapture";
@@ -96,6 +97,8 @@ export function CardWizard({
   /** 表面・裏面の端末内 OCR で読み取った候補(画像は外部に送らない) */
   const [frontOcr, setFrontOcr] = useState<FrontOcrFields | null>(null);
   const [backOcrAddress, setBackOcrAddress] = useState<string | null>(null);
+  /** 第2世代: IC の住居地イメージの端末内 OCR */
+  const [icImageAddress, setIcImageAddress] = useState<string | null>(null);
   const [backEntries, setBackEntries] = useState(false);
   /** 裏面の資格外活動許可欄・申請欄の読み取り(旧様式で IC に記録が無いときに使う) */
   const [backPerms, setBackPerms] = useState<{ outsideActivity: string | null; pendingApplication: boolean | null }>({ outsideActivity: null, pendingApplication: null });
@@ -144,6 +147,13 @@ export function CardWizard({
       setVerify(v);
       // 旧様式は IC に文字情報が無いので、表面の読み取り結果を入力欄に入れておく(第2世代は IC の値を使う)
       if (v.format === "legacy") prefillFromFront();
+      // 第2世代の在留資格はコードなので、名称は券面の表記(表面の読み取り)を下書きにする
+      else if (isStatusCode(v.fields.statusOfResidence) && frontOcr?.statusOfResidence) setManual((m) => ({ ...m, statusOfResidence: m.statusOfResidence ?? frontOcr.statusOfResidence }));
+      // 第2世代: IC の住居地イメージを端末内で読む(画像は外部に送らない)
+      if (v.icAddressImage) {
+        const a = await recognizeIcAddressImage(v.icAddressImage.data);
+        setIcImageAddress(a ? (await correctAddress(a)).address : null);
+      }
       setStep("confirm");
     } catch (e) {
       setError(isCardReadError(e) ? icErrorMessage(e) : messageOf(e, icErrorMessage(e)));
@@ -197,6 +207,7 @@ export function CardWizard({
     setError(null);
     try {
       await api.persons.reactivate.mutate({ id, hiredAt: jstDate(Date.now()) });
+      setPersonId(id);
     } catch (e) {
       setError(messageOf(e));
       setBusy(false);
@@ -240,7 +251,7 @@ export function CardWizard({
 
   // 住居地: 裏面に新しい住所がある場合はそちらを採用する(IC の裏面追記 > 裏面の読み取り > 表面の読み取り)
   const icBackAddress = verify?.icBackAddress?.address ?? null;
-  const autoAddress = chooseAddress({ icBack: icBackAddress, backPhoto: backOcrAddress, frontPhoto: frontOcr?.address ?? null, backHasEntries: backEntries });
+  const autoAddress = chooseAddress({ icBack: icBackAddress, icImage: icImageAddress, backPhoto: backOcrAddress, frontPhoto: frontOcr?.address ?? null, backHasEntries: backEntries });
   const address = icBackAddress ? icBackAddress : (addressEdit ?? autoAddress?.address ?? "");
   const addressSource: AddressSource | null = icBackAddress ? "ic_back" : addressEdit !== null ? "manual" : (autoAddress?.source ?? null);
 
@@ -271,6 +282,8 @@ export function CardWizard({
           submitLabel="追加してカードを登録"
           onCreated={(id) => {
             setPersonForm(false);
+            // 登録者は作れた。カードの登録に失敗してやり直すときに、登録者を二重に作らない
+            setPersonId(id);
             void register(id);
           }}
         />
@@ -369,7 +382,20 @@ export function CardWizard({
                   <>
                     <Row k="在留期間満了日" v={verify.fields.expiryDate ?? "—"} />
                     <Row k="カード有効期限" v={verify.fields.cardValidUntil ?? "—"} />
-                    <Row k="在留資格(コード)" v={verify.fields.statusOfResidence ?? "—"} />
+                    <Row k={isStatusCode(verify.fields.statusOfResidence) ? "在留資格(IC のコード)" : "在留資格"} v={verify.fields.statusOfResidence ?? "—"} />
+                    {isStatusCode(verify.fields.statusOfResidence) && (
+                      <>
+                        <Field
+                          label="在留資格(券面の表記)"
+                          value={manual.statusOfResidence ?? ""}
+                          onChangeText={(v) => setManual({ ...manual, statusOfResidence: v || null })}
+                          placeholder="技術・人文知識・国際業務"
+                        />
+                        <Text style={{ color: color.sub }}>
+                          第2世代のカードの IC は在留資格をコードで記録しています。名称への対応表が入るまでは、券面の表記を入れてください(表面の読み取り結果を入れています)。空欄ならコードのまま登録します。
+                        </Text>
+                      </>
+                    )}
                     <Row k="就労制限" v={verify.fields.workRestriction ? WORK_RESTRICTION_LABEL[verify.fields.workRestriction as keyof typeof WORK_RESTRICTION_LABEL] : "—"} />
                     <Row k="更新申請中" v={verify.fields.pendingApplication ? "はい" : "いいえ"} />
                   </>
@@ -542,6 +568,9 @@ export function CardWizard({
             </>
           ) : (
             <>
+              {verify?.icAddressImage && (
+                <CardImage kind="ic_address" contentType="image/png" data={verify.icAddressImage.data} width={verify.icAddressImage.width} height={verify.icAddressImage.height} />
+              )}
               <Field label="住居地" value={address} onChangeText={setAddressEdit} placeholder="東京都新宿区西新宿2-8-1" multiline />
               <Text style={{ color: color.sub }}>
                 {addressSource
@@ -551,7 +580,7 @@ export function CardWizard({
             </>
           )}
           <Message text={error} />
-          <Button label={newPerson ? "次へ(登録者の情報を入力)" : "保存する"} busy={busy} disabled={!canSave} onPress={save} />
+          <Button label={newPerson && !personId ? "次へ(登録者の情報を入力)" : "保存する"} busy={busy} disabled={!canSave} onPress={save} />
         </Card>
       )}
 

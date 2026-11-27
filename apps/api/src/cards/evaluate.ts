@@ -4,7 +4,7 @@
  */
 import { parseCardRead, type EfPath, type ParsedCard } from "@zairyu/zairyu-ic";
 import { verifyCardSignature, type SignatureVerification } from "@zairyu/zairyu-ic/verify";
-import { workRestrictionFromStatus, type CardManualFields, type IcReadPayload } from "@zairyu/shared";
+import { isStatusCode, normalizeCardNumberInput, workRestrictionFromStatus, type CardManualFields, type IcReadPayload } from "@zairyu/shared";
 import { TRPCError } from "@trpc/server";
 import type { X509Certificate } from "node:crypto";
 
@@ -129,11 +129,13 @@ export interface FieldDiff {
 export function diffFields(ic: IcEvaluation | null, inputCardNumber: string, manual: CardManualFields): FieldDiff[] {
   if (!ic) return [];
   const diffs: FieldDiff[] = [];
-  if (ic.cardNumber !== null && ic.cardNumber !== inputCardNumber) diffs.push({ field: "cardNumber", ic: null, input: null });
+  if (ic.cardNumber !== null && normalizeCardNumberInput(ic.cardNumber) !== normalizeCardNumberInput(inputCardNumber)) diffs.push({ field: "cardNumber", ic: null, input: null });
   const keys = ["expiryDate", "cardValidUntil", "statusOfResidence", "workRestriction", "pendingApplication", "birthDate"] as const;
   for (const k of keys) {
     const a = ic.fields[k];
     const b = manual[k];
+    // 第2世代の在留資格はコードなので、券面の表記(名称)とは比べない
+    if (k === "statusOfResidence" && isStatusCode(a as string | null)) continue;
     if (a !== null && a !== undefined && b !== null && b !== undefined && a !== b) diffs.push({ field: k, ic: a, input: b });
   }
   return diffs;
@@ -146,7 +148,8 @@ export function mergeFields(ic: IcEvaluation | null, manual: CardManualFields): 
     ...base,
     expiryDate: base.expiryDate ?? manual.expiryDate ?? null,
     cardValidUntil: base.cardValidUntil ?? manual.cardValidUntil ?? null,
-    statusOfResidence: base.statusOfResidence ?? manual.statusOfResidence ?? null,
+    // 第2世代の在留資格はコード。券面の表記(名称)が入力されていればそちらを保存する
+    statusOfResidence: (isStatusCode(base.statusOfResidence) && manual.statusOfResidence?.trim() ? manual.statusOfResidence.trim() : null) ?? base.statusOfResidence ?? manual.statusOfResidence ?? null,
     // 旧様式は IC に無いので入力の値。入力が無ければ、在留資格だけで決まるもの(永住者・留学など)を入れる
     workRestriction: base.workRestriction ?? manual.workRestriction ?? workRestrictionFromStatus(base.statusOfResidence ?? manual.statusOfResidence),
     pendingApplication: base.pendingApplication ?? manual.pendingApplication ?? null,

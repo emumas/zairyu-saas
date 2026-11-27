@@ -6,10 +6,11 @@
 import { z } from "zod";
 import { workRestrictionFromText } from "./workRestriction.js";
 
-export const ADDRESS_SOURCES = ["ic_back", "back_photo", "front_photo", "manual"] as const;
+export const ADDRESS_SOURCES = ["ic_back", "ic_image", "back_photo", "front_photo", "manual"] as const;
 export type AddressSource = (typeof ADDRESS_SOURCES)[number];
 export const ADDRESS_SOURCE_LABEL: Record<AddressSource, string> = {
   ic_back: "IC(裏面の記載)",
+  ic_image: "IC の住居地イメージの読み取り",
   back_photo: "裏面の読み取り",
   front_photo: "表面の読み取り",
   manual: "手入力",
@@ -131,11 +132,31 @@ export function backHasEntries(lines: readonly OcrLine[]): boolean {
 }
 
 /**
+ * 第2世代・特定在留カードの IC の住居地イメージ(住所だけが写った白黒の画像)の OCR から住所を取り出す。
+ * 上から順に行をつなぐ(都道府県名があればそこから)。読めなければ null
+ */
+export function addressFromIcImageOcr(lines: readonly OcrLine[]): string | null {
+  const sorted = [...lines].sort((a, b) => {
+    const dy = (a.top ?? 0) - (b.top ?? 0);
+    // 同じ行(高さの半分以内)なら左から
+    const h = Math.max(a.height ?? 0, b.height ?? 0);
+    return h && Math.abs(dy) < h / 2 ? (a.left ?? 0) - (b.left ?? 0) : dy;
+  });
+  const parts = sorted.map((l) => cleanAddress(l.text)).filter((t) => t.replace(/[\s.,、。・]/g, "").length > 0 && !SKIP_RE.test(t));
+  let joined = parts.join(" ").replace(/\s+/g, " ").trim();
+  const m = PREF_RE.exec(joined);
+  if (m) joined = joined.slice(m.index);
+  return joined.length >= 5 ? joined : null;
+}
+
+/**
  * 採用する住居地を決める。裏面に新しい住所がある場合はそちらを採用する
- * (IC の裏面追記 > 裏面の読み取り > 表面の読み取り)
+ * (IC の裏面追記 > 裏面の読み取り > IC の住居地イメージの読み取り > 表面の読み取り)
  */
 export function chooseAddress(c: {
   icBack?: string | null;
+  /** 第2世代: IC の住居地イメージの読み取り */
+  icImage?: string | null;
   backPhoto?: string | null;
   frontPhoto?: string | null;
   /** 裏面に記載(届出年月日)が読めたか。true で住所が読めなければ、表面(古い住所)は使わない */
@@ -143,6 +164,7 @@ export function chooseAddress(c: {
 }): { address: string; source: AddressSource } | null {
   if (c.icBack?.trim()) return { address: cleanAddress(c.icBack), source: "ic_back" };
   if (c.backPhoto?.trim()) return { address: c.backPhoto.trim(), source: "back_photo" };
+  if (c.icImage?.trim()) return { address: c.icImage.trim(), source: "ic_image" };
   if (c.backHasEntries) return null;
   if (c.frontPhoto?.trim()) return { address: c.frontPhoto.trim(), source: "front_photo" };
   return null;

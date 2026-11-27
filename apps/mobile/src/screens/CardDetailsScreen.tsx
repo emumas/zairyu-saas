@@ -15,6 +15,7 @@ import {
   type AddressSource,
   type FrontOcrFields,
   type WorkRestrictionCode,
+  isStatusCode,
 } from "@zairyu/shared";
 import { useEffect, useState } from "react";
 import { Switch, Text, View } from "react-native";
@@ -41,7 +42,7 @@ const fromCard = (c: CardRow): Form => ({
   birthDate: c.birthDate ?? "",
   sex: c.sex === "M" || c.sex === "F" ? c.sex : null,
   nationality: c.nationality ?? "",
-  statusOfResidence: c.statusOfResidence ?? "",
+  statusOfResidence: isStatusCode(c.statusOfResidence) ? "" : (c.statusOfResidence ?? ""),
   workRestriction: (WORK_RESTRICTIONS as readonly string[]).includes(c.workRestriction ?? "") ? (c.workRestriction as WorkRestrictionCode) : null,
   outsideActivity: c.outsideActivity ?? "",
   expiryDate: c.expiryDate ?? "",
@@ -118,6 +119,7 @@ export function CardDetailsScreen({ personId, personName, onClose, onSaved }: { 
           if (fields.expiryDate) next.expiryDate = fields.expiryDate;
           if (fields.cardValidUntil) next.cardValidUntil = fields.cardValidUntil;
         }
+        if (!legacy && fields?.statusOfResidence && isStatusCode(card?.statusOfResidence)) next.statusOfResidence = fields.statusOfResidence;
         // 住居地: 裏面に新しい住所があればそちらを採用する
         // 資格外活動許可欄(旧様式で IC に記録が無いとき)
         if (legacy && back?.outsideActivity) next.outsideActivity = back.outsideActivity;
@@ -172,6 +174,10 @@ export function CardDetailsScreen({ personId, personName, onClose, onSaved }: { 
         if (form.outsideActivity.trim() !== (card.outsideActivity ?? "")) input.outsideActivity = orNull(form.outsideActivity);
         input.expiryDate = permanent ? null : orNull(form.expiryDate);
         input.cardValidUntil = orNull(form.cardValidUntil);
+      }
+      // 第2世代で在留資格がコードのままなら、券面の表記(名称)を入れられる
+      if (!legacy && isStatusCode(card.statusOfResidence) && form.statusOfResidence.trim() && form.statusOfResidence.trim() !== card.statusOfResidence) {
+        input.statusOfResidence = form.statusOfResidence.trim();
       }
       if (!addressFromIc) {
         input.address = orNull(form.address);
@@ -255,7 +261,14 @@ export function CardDetailsScreen({ personId, personName, onClose, onSaved }: { 
             <Row k="生年月日" v={card.birthDate ?? "—"} />
             <Row k="性別" v={card.sex === "M" ? "男" : card.sex === "F" ? "女" : "—"} />
             <Row k="国籍・地域" v={card.nationality ?? "—"} />
-            <Row k="在留資格" v={card.statusOfResidence ?? "—"} />
+            {isStatusCode(card.statusOfResidence) ? (
+              <>
+                <Field label={`在留資格(IC のコード ${card.statusOfResidence}。券面の表記を入れてください)`} value={form.statusOfResidence} onChangeText={(v) => setForm({ ...form, statusOfResidence: v })} placeholder="技術・人文知識・国際業務" />
+                {readDone && was(card.statusOfResidence)}
+              </>
+            ) : (
+              <Row k="在留資格" v={card.statusOfResidence ?? "—"} />
+            )}
             <Row k="在留期間満了日" v={card.expiryDate ?? "—"} />
             <Row k="カードの有効期限" v={card.cardValidUntil ?? "—"} />
           </>

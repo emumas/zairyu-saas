@@ -26,14 +26,14 @@ import {
   replaceCurrentCard,
   type Tx,
 } from "@zairyu/db";
-import { workRestrictionFromStatus, cardDetailsUpdateInput, cardPhotoReplaceInput, cardRegisterInput, cardVerifyInput, RETIRE_REASON_LABEL, RETIRE_REASONS, type RetireReason, icReadPayload, jstDate, needsReviewNotice } from "@zairyu/shared";
+import { isStatusCode, workRestrictionFromStatus, cardDetailsUpdateInput, cardPhotoReplaceInput, cardRegisterInput, cardVerifyInput, RETIRE_REASON_LABEL, RETIRE_REASONS, type RetireReason, icReadPayload, jstDate, needsReviewNotice } from "@zairyu/shared";
 import { cardNumberHmac, decryptAddress, decryptCardNumber, encryptAddress, encryptCardNumber, putEncryptedBlob } from "@zairyu/vault";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { assertSiteAccess } from "../authz/guards.js";
 import { can, canAccessSite, type Actor } from "../authz/permissions.js";
 import { diffFields, evaluateIc, judgeSignature, mergeFields } from "../cards/evaluate.js";
-import { toDisplayImage } from "../imageConvert.js";
+import { toDisplayImage, toOcrImage } from "../imageConvert.js";
 import { getDisplayImage, issueImageUrl } from "../images.js";
 import { permissionProcedure, requireVault, router } from "../trpc.js";
 
@@ -273,6 +273,8 @@ export const cardsRouter = router({
         icImages: z.array(z.object({ kind: z.string(), contentType: z.string(), data: z.string(), width: z.number(), height: z.number() })),
         /** 裏面に追記された住居地(旧様式の IC。あれば保存時にこちらを採用する) */
         icBackAddress: z.object({ address: z.string(), writtenAt: z.string().nullable() }).nullable(),
+        /** 第2世代: IC の住居地イメージ(白い背景・拡大済みの PNG。端末内 OCR で住所を読み取り、見比べ用に表示する) */
+        icAddressImage: z.object({ data: z.string(), width: z.number(), height: z.number() }).nullable(),
         /** 同じカード番号を持つほかの登録者(今のカード・過去のカード) */
         sameCard: z.array(sameCardOutput),
       }),
@@ -284,7 +286,7 @@ export const cardsRouter = router({
         else if (!can(ctx.actor.role, "persons.write")) throw new TRPCError({ code: "FORBIDDEN", message: "この操作を行う権限がありません" });
         const ic = evaluateIc(input.ic, ctx.services.config.trustedIssuers);
         const sameCard = await sameCardPersons(tx, ctx.actor, await cardNumberHmac(requireVault(ctx.services).keyring, ctx.actor.tenantId, input.cardNumber), input.personId ?? null);
-        // 住居地イメージは照合に使わないので返さない(通信量を抑える)
+        // 住居地イメージは照合に使わないので、ここでは返さない(OCR 用に別に返す)
         const icImages = await Promise.all(
           ic.images
             .filter((img) => img.kind !== "ic_address")
@@ -297,6 +299,13 @@ export const cardsRouter = router({
               }
             }),
         );
+        const addrImg = ic.images.find((img) => img.kind === "ic_address");
+        const icAddressImage = addrImg
+          ? await toOcrImage(addrImg.contentType, addrImg.data).then(
+              (d) => ({ data: d.data.toString("base64"), width: d.width, height: d.height }),
+              () => null,
+            )
+          : null;
         const judged = judgeSignature(ic.signature);
         await ctx.audit(tx, {
           action: "card.ic_verify",
@@ -313,6 +322,7 @@ export const cardsRouter = router({
           diffs: diffFields(ic, input.cardNumber, input.manual),
           icImages: icImages.flat(),
           icBackAddress: ic.backAddress,
+          icAddressImage,
           sameCard,
         };
       }),
@@ -527,7 +537,9 @@ export const cardsRouter = router({
         const card = await loadCurrentCardForWrite(tx, ctx.actor, input.cardId, "記載事項を直せるのは現在のカードだけです");
         const fromIc = card.cardFormat !== "legacy";
         const icOnly = ["birthDate", "sex", "nationality", "statusOfResidence", "expiryDate", "cardValidUntil", "workRestriction", "outsideActivity"] as const;
-        if (fromIc && icOnly.some((k) => input[k] !== undefined)) {
+        // 第2世代の在留資格がコードのまま(名称の対応表が無い)なら、券面の表記(名称)を入れられる
+        const statusNameFix = fromIc && isStatusCode(card.statusOfResidence);
+        if (fromIc && icOnly.some((k) => input[k] !== undefined && !(k === "statusOfResidence" && statusNameFix && input.statusOfResidence))) {
           throw new TRPCError({ code: "BAD_REQUEST", message: "第2世代のカードの記載事項は IC の値を使うため変更できません" });
         }
         if (input.address !== undefined && card.addressSource === "ic_back") {

@@ -43,6 +43,15 @@ export const cardNumberInput = z
   .string()
   .regex(CARD_NUMBER_PATTERN, "在留カード番号は英字2文字+数字8桁+英字2文字です");
 
+/**
+ * 第2世代・特定在留カードの IC の在留資格は「在留資格期間コード」(英数字 10 桁。例: 英字 1 + 数字 9)。
+ * 名称への対応表は仕様書の範囲外(入管庁へのコード表データの利用申出で入手する)ため、
+ * 対応表が入るまでは券面の表記(表面の写真の読み取り・入力)を名称として使う
+ */
+export function isStatusCode(s: string | null | undefined): boolean {
+  return !!s && /^[A-Z0-9]{10}$/.test(s.trim()) && /\d/.test(s);
+}
+
 export const WORK_RESTRICTIONS = ["1", "2", "4", "9"] as const;
 export const WORK_RESTRICTION_LABEL: Record<(typeof WORK_RESTRICTIONS)[number], string> = {
   "1": "就労制限なし",
@@ -69,7 +78,7 @@ export const cardManualFields = z.object({
   nationality: z.string().trim().max(50).nullish(),
   /** 住居地(撮影画像の端末内 OCR か手入力。IC に裏面の記載があればサーバーはそちらを採用する) */
   address: addressInput.nullish(),
-  addressSource: z.enum(["back_photo", "front_photo", "manual"]).nullish(),
+  addressSource: z.enum(["ic_image", "back_photo", "front_photo", "manual"]).nullish(),
   /** 郵便番号(省略すると住居地から自動で引く) */
   postalCode: postalCodeInput.nullish(),
 });
@@ -118,7 +127,7 @@ export const cardDetailsUpdateInput = z.object({
   sex: z.enum(["M", "F"]).nullable().optional(),
   nationality: z.string().trim().max(50).nullable().optional(),
   address: addressInput.nullable().optional(),
-  addressSource: z.enum(["back_photo", "front_photo", "manual"]).optional(),
+  addressSource: z.enum(["ic_image", "back_photo", "front_photo", "manual"]).optional(),
   /** 郵便番号(null で消す。住居地を変えて郵便番号を省略すると自動で引き直す) */
   postalCode: postalCodeInput.nullable().optional(),
   /** 旧様式のみ(IC に文字情報が無いため) */

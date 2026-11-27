@@ -2,7 +2,7 @@
  * 撮影画像の処理。カメラロールには保存しない。一時ファイルは処理後すぐ消す(CLAUDE.md ルール4)
  */
 import TextRecognition, { TextRecognitionScript } from "@react-native-ml-kit/text-recognition";
-import { backHasEntries, backPermissionsFromOcr, extractCardNumberCandidates, frontFieldsFromOcr, latestAddressFromBackOcr, type FrontOcrFields, type OcrLine } from "@zairyu/shared";
+import { addressFromIcImageOcr, backHasEntries, backPermissionsFromOcr, extractCardNumberCandidates, frontFieldsFromOcr, latestAddressFromBackOcr, type FrontOcrFields, type OcrLine } from "@zairyu/shared";
 import { File, Paths } from "expo-file-system";
 import { manipulateAsync, SaveFormat } from "expo-image-manipulator";
 
@@ -145,13 +145,25 @@ export async function compressForUpload(pathOrUrl: string): Promise<{ contentTyp
  * 保存済みの撮影画像(サーバーから受け取った base64)を端末内 OCR にかける。
  * ML Kit はファイルから読むため一時ファイルに書き、読み取り後すぐに消す(カメラロールには保存しない)
  */
-export async function recognizeSavedImage<T>(base64: string, recognize: (path: string) => Promise<T>): Promise<T> {
-  const file = new File(Paths.cache, `ocr-${Date.now()}-${Math.random().toString(36).slice(2)}.jpg`);
+export async function recognizeSavedImage<T>(base64: string, recognize: (path: string) => Promise<T>, ext: "jpg" | "png" = "jpg"): Promise<T> {
+  const file = new File(Paths.cache, `ocr-${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`);
   try {
     file.create();
     file.write(base64, { encoding: "base64" });
     return await recognize(file.uri);
   } finally {
     deleteFile(file.uri);
+  }
+}
+
+/**
+ * 第2世代・特定在留カードの IC の住居地イメージ(サーバーで白地・拡大した PNG)を端末内 OCR で読む。
+ * 一時ファイルは読み終えたら消す。読めなければ null
+ */
+export async function recognizeIcAddressImage(pngBase64: string): Promise<string | null> {
+  try {
+    return await recognizeSavedImage(pngBase64, async (path) => addressFromIcImageOcr(await japaneseLines(path)), "png");
+  } catch {
+    return null;
   }
 }

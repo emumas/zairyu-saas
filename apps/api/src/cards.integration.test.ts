@@ -36,7 +36,7 @@ describe.skipIf(!url)("カード登録", () => {
     return { format: o.format, kind: o.kind, files: b64 };
   };
   const fixture = (name: string) => new Uint8Array(readFileSync(new URL(`../test-fixtures/${name}`, import.meta.url)));
-  const realImages = { front: fixture("g4.tif"), name: fixture("g4.tif"), face: fixture("face8.jp2") };
+  const realImages = { front: fixture("g4.tif"), name: fixture("g4.tif"), face: fixture("face8.jp2"), address: fixture("g4.tif") };
   let photoJpeg: Buffer;
   let photo: { contentType: "image/jpeg"; data: string };
   const newPerson = async (code: string, siteId = tokyo) => (await admin.persons.create({ siteId, employeeCode: code, name: code })).id;
@@ -65,6 +65,9 @@ describe.skipIf(!url)("カード登録", () => {
     expect(v).toMatchObject({ format: "gen2", icVerified: true, needsReview: false, diffs: [] });
     expect(v.signature).toMatchObject({ status: "valid", issuerTrusted: null });
     expect(v.fields).toMatchObject({ expiryDate: "2029-06-20", cardValidUntil: "2031-03-31", workRestriction: "2", statusOfResidence: "15" });
+    // 住居地イメージは端末内 OCR 用に、白地・拡大した PNG で返る
+    expect(v.icAddressImage).not.toBeNull();
+    expect(Buffer.from(v.icAddressImage!.data, "base64").subarray(1, 4).toString()).toBe("PNG");
 
     const r = await tokyoAdmin.cards.register({ personId, cardNumber: NUMBER, ic, photos: { front: photo }, deviceId: "dev-1" });
     expect(r).toMatchObject({ icVerified: true, needsReview: false });

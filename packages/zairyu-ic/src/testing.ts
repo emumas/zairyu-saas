@@ -28,7 +28,7 @@ export interface FixtureOptions {
   /** 更新申請中(第2世代・特定は D8、旧様式は D7) */
   renewalApplying?: boolean;
   /** 画像の中身(省略するとダミーのバイト列)。表示用の変換を試すときに本物の TIFF / JPEG2000 を入れる */
-  images?: { front?: Uint8Array; face?: Uint8Array; name?: Uint8Array };
+  images?: { front?: Uint8Array; face?: Uint8Array; name?: Uint8Array; address?: Uint8Array };
   /** 旧様式: 裏面に追記された住居地(null で追記なし。省略すると東京都千代田区霞が関1-1-1) */
   backAddress?: { address: string; writtenAt: string } | null;
 }
@@ -74,7 +74,7 @@ export function buildCardFiles(o: FixtureOptions): Partial<Record<EfPath, Uint8A
       encodeTlv(0xd0, padNulls(o.images?.name ?? fill(2000, 3), 2500)),
       encodeTlv(0xd1, padNulls(o.images?.face ?? fill(2900, 4), 3000)),
     );
-    files["df1/ef04"] = encodeTlv(0xdfd1, padNulls(fill(1800, 5), 2500));
+    files["df1/ef04"] = encodeTlv(0xdfd1, padNulls(o.images?.address ?? fill(1800, 5), 2500));
     if (residence) {
       files["df2/ef01"] = concatBytes(encodeTlv(0xd5, padNulls(ascii("1"), 7)), encodeTlv(0xd6, ascii("20290620")), encodeTlv(0xd7, ascii("0")));
       files["df2/ef02"] = encodeTlv(0xd8, ascii(o.renewalApplying === false ? "0" : "1"));
