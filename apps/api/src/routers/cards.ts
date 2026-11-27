@@ -26,7 +26,7 @@ import {
   replaceCurrentCard,
   type Tx,
 } from "@zairyu/db";
-import { isStatusCode, workRestrictionFromStatus, cardDetailsUpdateInput, cardPhotoReplaceInput, cardRegisterInput, cardVerifyInput, RETIRE_REASON_LABEL, RETIRE_REASONS, type RetireReason, icReadPayload, jstDate, needsReviewNotice } from "@zairyu/shared";
+import { isStatusCode, normalizeCardNumberInput, workRestrictionFromStatus, cardDetailsUpdateInput, cardPhotoReplaceInput, cardRegisterInput, cardVerifyInput, RETIRE_REASON_LABEL, RETIRE_REASONS, type RetireReason, icReadPayload, jstDate, needsReviewNotice } from "@zairyu/shared";
 import { cardNumberHmac, decryptAddress, decryptCardNumber, encryptAddress, encryptCardNumber, putEncryptedBlob } from "@zairyu/vault";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
@@ -187,6 +187,17 @@ export const cardsRouter = router({
         icVerified: z.boolean(),
         needsReview: z.boolean(),
         changes: z.array(z.object({ field: z.string(), before: z.union([z.string(), z.boolean()]).nullable(), after: z.union([z.string(), z.boolean()]).nullable() })),
+        /**
+         * 第2世代・特定: IC の住居地イメージ(白地・拡大した PNG)と、登録済みの住居地。
+         * アプリが端末内 OCR で読み、違っていれば利用者の確認のうえ updateDetails で更新する(署名 NG のときは返さない)
+         */
+        icAddress: z
+          .object({
+            image: z.object({ data: z.string(), width: z.number(), height: z.number() }),
+            stored: z.string().nullable(),
+            storedSource: z.string().nullable(),
+          })
+          .nullable(),
       }),
     )
     .mutation(({ ctx, input }) =>
@@ -195,7 +206,7 @@ export const cardsRouter = router({
         const ic = evaluateIc(input.ic, ctx.services.config.trustedIssuers);
         // 別のカードを読んでいないか(第2世代・特定は IC 内の番号で確かめる。旧様式は番号による IC の認証が通ったことで確かめられる)
         const stored = await decryptCardNumber(requireVault(ctx.services).keyring, ctx.actor.tenantId, card.cardNumberEnc);
-        if (ic.format !== card.cardFormat || (ic.cardNumber !== null && ic.cardNumber !== stored)) {
+        if (ic.format !== card.cardFormat || (ic.cardNumber !== null && normalizeCardNumberInput(ic.cardNumber) !== normalizeCardNumberInput(stored))) {
           throw new TRPCError({ code: "BAD_REQUEST", message: "登録済みのカードと違うカードが読み取られました" });
         }
         const judged = judgeSignature(ic.signature);
@@ -252,7 +263,20 @@ export const cardsRouter = router({
         });
         const issuerTrusted = ic.signature.status === "valid" ? ic.signature.issuerTrusted : null;
         const icBackAddress = ic.format === "legacy" ? { recorded: !!ic.backAddress, writtenAt: ic.backAddress?.writtenAt ?? null } : null;
-        return { signature: ic.signature.status, issuerTrusted, icBackAddress, icVerified: judged.icVerified, needsReview: judged.needsReview, changes };
+        let icAddress = null;
+        const addrImg = judged.result !== "failed" ? ic.images.find((img) => img.kind === "ic_address") : undefined;
+        if (addrImg) {
+          const image = await toOcrImage(addrImg.contentType, addrImg.data).then(
+            (d) => ({ data: d.data.toString("base64"), width: d.width, height: d.height }),
+            () => null,
+          );
+          if (image) {
+            // 第2世代は再検証で住居地を変えないので、読み込んだカードの値が現在の値
+            const storedAddr = card.addressEnc ? await decryptAddress(requireVault(ctx.services).keyring, ctx.actor.tenantId, card.addressEnc) : null;
+            icAddress = { image, stored: storedAddr, storedSource: card.addressSource ?? null };
+          }
+        }
+        return { signature: ic.signature.status, issuerTrusted, icBackAddress, icVerified: judged.icVerified, needsReview: judged.needsReview, changes, icAddress };
       }),
     ),
 

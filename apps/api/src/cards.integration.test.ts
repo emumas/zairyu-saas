@@ -299,6 +299,24 @@ describe.skipIf(!url)("カード登録", () => {
       expect(card!.verifications.filter((v) => v.method === "ic_signature")).toHaveLength(2);
     });
 
+    it("第2世代: 再検証で IC の住居地イメージと登録済みの住居地を返し、アプリの確認で住居地を更新できる", async () => {
+      const personId = await newPerson("RV0A");
+      const n = "AB10000011CD";
+      const { cardId } = await tokyoAdmin.cards.register({
+        personId,
+        cardNumber: n,
+        ic: icPayload({ format: "gen2", kind: "residence", signer: ec, cardNumber: n, images: realImages }),
+        manual: { address: "東京都新宿区西新宿2-8-1", addressSource: "ic_image" },
+      });
+      const r = await tokyoAdmin.cards.reverifyIc({ cardId, ic: icPayload({ format: "gen2", kind: "residence", signer: ec, cardNumber: n, images: realImages }) });
+      expect(r.icAddress).toMatchObject({ stored: "東京都新宿区西新宿2-8-1", storedSource: "ic_image" });
+      expect(Buffer.from(r.icAddress!.image.data, "base64").subarray(1, 4).toString()).toBe("PNG");
+      // 端末で読んだ新しい住所に更新(出どころは IC の住居地イメージ)
+      await tokyoAdmin.cards.updateDetails({ cardId, address: "埼玉県さいたま市浦和区高砂3-15-1", addressSource: "ic_image" });
+      const [card] = await tokyoAdmin.cards.listForPerson({ personId });
+      expect(card).toMatchObject({ address: "埼玉県さいたま市浦和区高砂3-15-1", addressSource: "ic_image" });
+    });
+
     it("別のカードを読んだら拒否する", async () => {
       const personId = await newPerson("RV02");
       const { cardId } = await tokyoAdmin.cards.register({

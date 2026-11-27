@@ -2,11 +2,21 @@
  * IC 再検証(1-8): 登録済みのカードの IC を読み直して署名を検証し、確認履歴に追記する。
  * 更新申請中・資格外活動など、交付後に IC へ追記された内容も反映される
  */
+import { ADDRESS_SOURCE_LABEL } from "@zairyu/shared";
 import { useState } from "react";
 import { Text } from "react-native";
 import { api, messageOf } from "../api";
+import { correctAddress } from "../addressFix";
 import { IcProgressView, icErrorMessage, isCardReadError, readIcPayload, type IcProgress } from "../ic/readIc";
-import { Button, Card, Message, Row, Screen } from "../ui/kit";
+import { recognizeIcAddressImage } from "../photo";
+import { CardImage } from "../ui/CardImage";
+import { Button, Card, Field, Message, Row, Screen } from "../ui/kit";
+
+/** 住所の比較用(空白・全角半角・ハイフンの違いは同じとみなす) */
+const sameAddress = (a: string, b: string) => {
+  const n = (s: string) => s.normalize("NFKC").replace(/[\s\u3000]/g, "").replace(/[‐−ー―-]/g, "-");
+  return n(a) === n(b);
+};
 
 type Result = Awaited<ReturnType<typeof api.cards.reverifyIc.mutate>>;
 
@@ -23,6 +33,10 @@ export function ReverifyScreen({ cardId, personName, onDone }: { cardId: string;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<Result | null>(null);
+  /** 第2世代: IC の住居地イメージを端末内 OCR で読んだ住所(undefined はまだ、null は読めなかった) */
+  const [icAddr, setIcAddr] = useState<string | null | undefined>(undefined);
+  const [addrEdit, setAddrEdit] = useState("");
+  const [addrSaved, setAddrSaved] = useState(false);
 
   async function run() {
     setBusy(true);
@@ -31,7 +45,15 @@ export function ReverifyScreen({ cardId, personName, onDone }: { cardId: string;
       // IC の認証には登録済みの番号を使う(番号の表示として監査ログに残る)
       const { cardNumber } = await api.cards.reverifyStart.mutate({ cardId });
       const ic = await readIcPayload(cardNumber, setProgress);
-      setResult(await api.cards.reverifyIc.mutate({ cardId, ic }));
+      const r = await api.cards.reverifyIc.mutate({ cardId, ic });
+      setResult(r);
+      if (r.icAddress) {
+        // 画像は外部に送らず端末内で読む。地名の読み違いは自社の郵便番号データで直す
+        const read = await recognizeIcAddressImage(r.icAddress.image.data);
+        const fixed = read ? (await correctAddress(read)).address : null;
+        setIcAddr(fixed);
+        setAddrEdit(fixed ?? "");
+      }
     } catch (e) {
       setError(isCardReadError(e) ? icErrorMessage(e) : messageOf(e, icErrorMessage(e)));
     } finally {
@@ -39,6 +61,21 @@ export function ReverifyScreen({ cardId, personName, onDone }: { cardId: string;
       setProgress(null);
     }
   }
+
+  async function saveAddress() {
+    setBusy(true);
+    setError(null);
+    try {
+      await api.cards.updateDetails.mutate({ cardId, address: addrEdit.trim(), addressSource: "ic_image" });
+      setAddrSaved(true);
+    } catch (e) {
+      setError(messageOf(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const addr = result?.icAddress ?? null;
 
   return (
     <Screen title={`IC 再検証: ${personName}`} onBack={onDone}>
@@ -87,6 +124,29 @@ export function ReverifyScreen({ cardId, personName, onDone }: { cardId: string;
             </>
           ) : (
             <Text>登録内容から変わった項目はありません。</Text>
+          )}
+          {addr && (
+            <>
+              <Text style={{ fontWeight: "600", marginTop: 8 }}>住居地(IC の住居地イメージ)</Text>
+              <CardImage kind="ic_address" contentType="image/png" data={addr.image.data} width={addr.image.width} height={addr.image.height} />
+              {icAddr === null ? (
+                <Text style={{ color: "#59636e" }}>画像から住所を読み取れませんでした。登録済みの住居地と見比べ、違っていれば「記載事項を入力・直す」で直してください。</Text>
+              ) : icAddr && addr.stored && sameAddress(icAddr, addr.stored) ? (
+                <Row k="住居地" v="登録済みの住居地と一致" tone="ok" />
+              ) : icAddr ? (
+                addrSaved ? (
+                  <Message text="住居地を更新しました(郵便番号も住所から引き直します)。" tone="ok" />
+                ) : (
+                  <>
+                    <Row k="登録済み" v={addr.stored ? `${addr.stored}${addr.storedSource ? `(${ADDRESS_SOURCE_LABEL[addr.storedSource as keyof typeof ADDRESS_SOURCE_LABEL] ?? addr.storedSource})` : ""}` : "—"} />
+                    <Text>IC の住居地イメージの内容が登録済みの住居地と違います。画像と見比べて、正しければ更新してください(住居地の変更届のあと、IC の記録が書き換えられていることがあります)。</Text>
+                    <Field label="IC から読み取った住居地" value={addrEdit} onChangeText={setAddrEdit} multiline />
+                    <Button label="住居地をこの内容に更新" busy={busy} disabled={!addrEdit.trim()} onPress={() => void saveAddress()} />
+                    <Message text={error} />
+                  </>
+                )
+              ) : null}
+            </>
           )}
           <Button label="登録者の画面に戻る" onPress={onDone} />
         </Card>
