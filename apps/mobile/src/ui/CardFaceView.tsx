@@ -7,6 +7,7 @@ import { Image, Text, View } from "react-native";
 import {
   gen2FaceTexts,
   GEN2_ADDRESS_BOX,
+  GEN2_BACKGROUND,
   GEN2_BANDS,
   GEN2_FACE_BOX,
   GEN2_NAME_BOX,
@@ -116,7 +117,7 @@ export function Gen2CardFaceView({
     <View style={{ gap: 4 }}>
       <View
         onLayout={(e) => setWidth(e.nativeEvent.layout.width)}
-        style={{ width: "100%", aspectRatio: 85.6 / 54, backgroundColor: "#edf5e9", borderRadius: 10, overflow: "hidden", borderWidth: 1, borderColor: color.border }}
+        style={{ width: "100%", aspectRatio: 85.6 / 54, backgroundColor: GEN2_BACKGROUND, borderRadius: 10, overflow: "hidden", borderWidth: 1, borderColor: color.border }}
       >
         {GEN2_BANDS.map((b, i) => (
           <View key={i} style={{ ...box(b), backgroundColor: "#d7e8f3" }} />

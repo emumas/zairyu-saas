@@ -5,6 +5,7 @@
 import {
   gen2FaceTexts,
   GEN2_ADDRESS_BOX,
+  GEN2_BACKGROUND,
   GEN2_BANDS,
   GEN2_FACE_BOX,
   GEN2_NAME_BOX,
@@ -88,7 +89,7 @@ export function Gen2CardFaceView({
   });
   return (
     <div className="cardface-wrap">
-      <div className="cardface" style={{ aspectRatio: "85.6 / 54" }}>
+      <div className="cardface" style={{ aspectRatio: "85.6 / 54", background: GEN2_BACKGROUND }}>
         {GEN2_BANDS.map((b, i) => (
           <div key={i} className="cardface-band" style={boxStyle(b)} />
         ))}
